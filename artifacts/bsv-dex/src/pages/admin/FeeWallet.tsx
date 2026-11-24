@@ -581,8 +581,8 @@ export function AdminFeeWallet() {
       <div className="flex items-start gap-3 p-4 rounded-xl border border-primary/20 bg-primary/5">
         <ShieldCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" />
         <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
-          <p className="font-semibold text-foreground">Private & Non-Custodial</p>
-          <p>Fee wallet addresses are stored securely on the platform server. Fees flow directly on-chain to your wallet — the platform never holds or pools them. Your private keys are never stored.</p>
+          <p className="font-semibold text-foreground">Fee Routing and Custody</p>
+          <p>Fee wallet addresses are stored on the platform server. Verify each configured address and network; key custody and fee handling depend on the destination wallet and settlement route.</p>
         </div>
       </div>
 

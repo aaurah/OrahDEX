@@ -1,6 +1,17 @@
 #!/bin/bash
 set -e
 
+if [[ "${ORAHDEX_CONFIRM_GIT_PUSH:-}" != "1" || ! -t 0 ]]; then
+  echo "Refusing to stage, commit, or push without an explicit interactive confirmation."
+  echo "Review the working tree, set ORAHDEX_CONFIRM_GIT_PUSH=1, and rerun from a terminal."
+  exit 1
+fi
+read -r -p "Type PUSH TO ORIGIN MAIN to stage, commit, and publish this tree: " confirmation
+if [[ "$confirmation" != "PUSH TO ORIGIN MAIN" ]]; then
+  echo "Cancelled."
+  exit 1
+fi
+
 echo "=== OrahDEX GitHub Push ==="
 echo ""
 

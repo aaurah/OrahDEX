@@ -16,6 +16,7 @@ import { usePriceAlertsWatcher } from "@/hooks/usePriceAlertsWatcher";
 import { primeAudioContext } from "@/lib/notificationFx";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { CATEGORY_OF, ALL_CATEGORIES, CATEGORY_META, type NotifCategory } from "@/lib/notificationCategories";
+import { walletRequestAuthHeaders } from "@/lib/walletRequestAuth";
 
 /* ── Heavy modals — loaded only when first opened ── */
 const AiAssistant = lazy(() => import("./AiAssistant").then(m => ({ default: m.AiAssistant })));
@@ -255,7 +256,15 @@ export function Layout({ children }: { children: ReactNode }) {
   const pollNotifications = useCallback(async (addr: string) => {
     try {
       const since = lastPollRef.current;
-      const r = await fetch(`${BASE}/api/notifications?address=${encodeURIComponent(addr)}&since=${since}`);
+      const wallet = useWalletStore.getState();
+      const headers = await walletRequestAuthHeaders({
+        address: addr,
+        network: wallet.network ?? "evm",
+        provider: wallet.provider ?? undefined,
+        resource: "notifications",
+        method: "GET",
+      });
+      const r = await fetch(`${BASE}/api/notifications?address=${encodeURIComponent(addr)}&since=${since}`, { headers });
       if (!r.ok) return;
       const { notifications: fresh } = await r.json() as { notifications: Array<{ id: string; type: string; title: string; body: string; timestamp: number; pair?: string; txid?: string; side?: string }> };
       if (fresh?.length) {
@@ -271,12 +280,13 @@ export function Layout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!address) return;
-    pollNotifications(address);
     // Auto-follow official OrahDEX profile on connect this session (idempotent server-side)
     fetch(`${BASE}/api/social/follow-official`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: address.toLowerCase() }) }).catch(() => {});
-    const interval = setInterval(() => pollNotifications(address), 20_000);
-    return () => clearInterval(interval);
-  }, [address, pollNotifications]);
+  }, [address, provider]);
+
+  useEffect(() => {
+    if (notifOpen && address) void pollNotifications(address);
+  }, [notifOpen, address, pollNotifications]);
   const { toast } = useToast();
 
   const safeTheme = (THEME_CYCLE as readonly string[]).includes(theme) ? (theme as typeof THEME_CYCLE[number]) : "dark";

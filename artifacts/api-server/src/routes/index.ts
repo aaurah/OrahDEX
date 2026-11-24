@@ -75,8 +75,11 @@ import { getOrCreateBsvWallet, getBsvWallet } from "../lib/internalBsvWallet.js"
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { BSV_NET, getBsvNetworkConfig, type BsvNetwork } from "../lib/bsvNetworkConfig.js";
-import { arcBroadcast } from "../lib/arcBroadcaster.js";
 import { randomBytes } from "node:crypto";
+import { issueWalletRequestChallenge, verifyWalletRequestProof, type WalletRequestResource } from "../lib/walletRequestAuth.js";
+import rateLimit from "express-rate-limit";
+import crypto from "node:crypto";
+import { fetchPublicJson } from "../lib/safePublicFetch.js";
 import externalDepthRouter from "./externalDepth";
 import leEstimateShimRouter from "./leEstimateShim";
 
@@ -313,12 +316,8 @@ router.get("/bsv/balance/:address", async (req, res) => {
     const paymailDomains = [domain, `bsvalias.${domain}`];
     for (const d of paymailDomains) {
       try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 3000);
-        const wk = await fetch(`https://${d}/.well-known/bsvalias`, { signal: ctrl.signal });
-        clearTimeout(timer);
-        if (wk.ok) {
-          const caps = await wk.json() as any;
+        const caps = await fetchPublicJson<any>(`https://${d}/.well-known/bsvalias`, { timeoutMs: 3000, maxBytes: 64 * 1024 });
+        if (caps) {
           const pkiTmpl: string | undefined = caps?.capabilities?.pki;
           if (pkiTmpl) {
             // Only follow https:// PKI template URLs to prevent SSRF
@@ -326,12 +325,8 @@ router.get("/bsv/balance/:address", async (req, res) => {
               .replace("{alias}", encodeURIComponent(alias))
               .replace("{domain.tld}", encodeURIComponent(domain));
             if (!pkiUrl.startsWith("https://")) { break; }
-            const ctrl2 = new AbortController();
-            const t2 = setTimeout(() => ctrl2.abort(), 3000);
-            const pkiRes = await fetch(pkiUrl, { signal: ctrl2.signal });
-            clearTimeout(t2);
-            if (pkiRes.ok) {
-              const pkiData = await pkiRes.json() as any;
+            const pkiData = await fetchPublicJson<any>(pkiUrl, { timeoutMs: 3000, maxBytes: 64 * 1024 });
+            if (pkiData) {
               const pubkey: string | undefined = pkiData?.pubkey ?? pkiData?.publicKey;
               if (pubkey && pubkey.length >= 66) {
                 bsvAddress = pubKeyToAddress(pubkey, selectedNetwork);
@@ -356,12 +351,8 @@ router.get("/bsv/balance/:address", async (req, res) => {
       ];
       for (const url of pkiPatterns) {
         try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 2500);
-          const r = await fetch(url, { signal: ctrl.signal });
-          clearTimeout(timer);
-          if (r.ok) {
-            const d = await r.json() as any;
+          const d = await fetchPublicJson<any>(url, { timeoutMs: 2500, maxBytes: 64 * 1024 });
+          if (d) {
             const pubkey = d?.pubkey ?? d?.publicKey ?? d?.key;
             if (pubkey && pubkey.length >= 66) {
               bsvAddress = pubKeyToAddress(pubkey, selectedNetwork);
@@ -486,29 +477,11 @@ router.get("/bsv/utxos/:address", async (req, res) => {
   }
 });
 
-/* ── BSV raw tx broadcast (proxied to WhatsonChain) ─────────────────────────
- * POST /api/bsv/broadcast
- * Body: { rawHex: string }
- * Mirrors signAndBroadcastBsvTx() from the reference implementation.
- * WhatsonChain returns the txid as a JSON-quoted string on success.
+/* The unauthenticated raw-transaction relay was abused as a public ARC proxy.
+ * Wallets should broadcast their own signed transaction through their provider.
  */
-router.post("/bsv/broadcast", async (req, res) => {
-  const { rawHex } = req.body ?? {};
-  if (!rawHex || typeof rawHex !== "string") {
-    res.status(400).json({ error: "rawHex is required" });
-    return;
-  }
-  try {
-    const result = await arcBroadcast(rawHex);
-    if (result.txid) {
-      res.json({ txid: result.txid, arcStatus: result.arcStatus, explorerUrl: `${BSV_NET.explorer}/tx/${result.txid}` });
-    } else {
-      res.status(400).json({ error: result.error ?? "Broadcast failed" });
-    }
-  } catch (err: any) {
-    logger.warn({ err: err?.message }, "BSV broadcast failed");
-    res.status(500).json({ error: "Broadcast failed" });
-  }
+router.post("/bsv/broadcast", (_req, res) => {
+  res.status(410).json({ error: "Public BSV broadcast relay is disabled. Broadcast signed transactions through your wallet provider." });
 });
 
 /* ── Passkey Wallet — Cloud Backup & Restore ────────────────────────────────
@@ -519,7 +492,7 @@ router.post("/bsv/broadcast", async (req, res) => {
  *
  * POST /api/passkey/backup   — save encrypted wallet
  * GET  /api/passkey/backup/:credentialId — retrieve backup
- * POST /api/passkey/transfer — generate a short 8-char transfer code
+ * POST /api/passkey/transfer — generate a short 12-char transfer code
  * GET  /api/passkey/transfer/:code — retrieve wallet by transfer code
  */
 
@@ -565,18 +538,24 @@ router.post("/passkey/transfer", async (req, res) => {
       res.status(400).json({ error: "credentialId, encryptedKey, iv and address are required" });
       return;
     }
-    // Generate 8-char alphanumeric code using rejection sampling (no modulo bias)
+    // Generate a 12-char alphanumeric code using rejection sampling (no modulo bias).
+    // Only its SHA-256 digest is stored; the plaintext is returned once.
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 32 chars
     const threshold = 256 - (256 % chars.length);      // 256 (no remainder, so threshold = 256 → accept all)
     let code = "";
-    while (code.length < 8) {
+    while (code.length < 12) {
       const buf = randomBytes(16);
-      for (let i = 0; i < buf.length && code.length < 8; i++) {
+      for (let i = 0; i < buf.length && code.length < 12; i++) {
         if (buf[i]! < threshold) code += chars[buf[i]! % chars.length];
       }
     }
-    const key = `pk_tc:${code}`;
-    const value = JSON.stringify({ credentialId, encryptedKey, iv, address, label: label ?? "Passkey Wallet", expiresAt: Date.now() + 10 * 60 * 1000 });
+    const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+    const key = `pk_tc:${codeHash}`;
+    const value = JSON.stringify({ credentialId, encryptedKey, iv, address, label: label ?? "Passkey Wallet", expiresAt: Date.now() + 2 * 60 * 1000 });
+    await pool.query(
+      "DELETE FROM platform_settings WHERE key LIKE 'pk_tc:%' AND updated_at < $1",
+      [new Date(Date.now() - 2 * 60 * 1000)],
+    );
     await db.insert(platformSettingsTable)
       .values({ key, value })
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
@@ -586,25 +565,44 @@ router.post("/passkey/transfer", async (req, res) => {
   }
 });
 
-router.get("/passkey/transfer/:code", async (req, res) => {
+const passkeyTransferRedeemLimiter = rateLimit({
+  windowMs: 10 * 60_000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Too many transfer-code attempts. Try again later." },
+});
+
+router.post("/passkey/transfer/redeem", passkeyTransferRedeemLimiter, async (req, res) => {
   try {
-    const code = (req.params.code ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-    if (!code) { res.status(400).json({ error: "Invalid code" }); return; }
-    const key = `pk_tc:${code}`;
-    const [row] = await db.select().from(platformSettingsTable).where(
-      drizzleSql`${platformSettingsTable.key} = ${key}`
+    const code = typeof req.body?.code === "string" ? req.body.code.toUpperCase() : "";
+    if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$/.test(code)) {
+      res.status(400).json({ error: "Enter a valid 12-character transfer code." });
+      return;
+    }
+    const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+    const key = `pk_tc:${codeHash}`;
+    // Atomic consume: concurrent requests can never redeem the same code twice.
+    const { rows } = await pool.query<{ value: string }>(
+      `DELETE FROM platform_settings WHERE key = $1 RETURNING value`,
+      [key],
     );
+    const row = rows[0];
     if (!row) { res.status(404).json({ error: "Code not found or expired" }); return; }
     const data = JSON.parse(row.value);
     if (data.expiresAt && Date.now() > data.expiresAt) {
-      res.status(410).json({ error: "Transfer code has expired (10 min limit)" }); return;
+      res.status(410).json({ error: "Transfer code has expired (2 minute limit)" }); return;
     }
-    // Delete code after use
-    await db.delete(platformSettingsTable).where(drizzleSql`${platformSettingsTable.key} = ${key}`);
+    res.setHeader("Cache-Control", "no-store");
     res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: "Transfer code lookup failed" });
   }
+});
+
+// Old codes in URLs can leak through browser history and access logs.
+router.get("/passkey/transfer/:code", (_req, res) => {
+  res.status(410).json({ error: "Transfer codes are no longer accepted in URLs. Submit the code through the secure redeem request." });
 });
 
 /* ── Inbound Email Webhook ───────────────────────────────────────────────────
@@ -622,8 +620,34 @@ router.get("/passkey/transfer/:code", async (req, res) => {
  * The webhook URL to configure in your provider:
  *   https://YOUR_DOMAIN/api/webhook/email-inbound
  */
-router.post("/webhook/email-inbound", async (req, res) => {
+const inboundEmailLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+
+router.post("/webhook/email-inbound", inboundEmailLimiter, async (req, res) => {
   try {
+    const webhookSecret = process.env.EMAIL_INBOUND_WEBHOOK_SECRET;
+    const suppliedSecret =
+      req.header("x-orahdex-webhook-secret") ??
+      req.header("authorization")?.replace(/^Bearer\s+/i, "");
+    if (!webhookSecret) {
+      res.status(503).json({ error: "Inbound email webhook is not configured." });
+      return;
+    }
+    if (
+      typeof suppliedSecret !== "string" ||
+      !crypto.timingSafeEqual(
+        crypto.createHash("sha256").update(suppliedSecret).digest(),
+        crypto.createHash("sha256").update(webhookSecret).digest(),
+      )
+    ) {
+      res.status(401).json({ error: "Invalid inbound email webhook authorization." });
+      return;
+    }
+
     const b = req.body as Record<string, any>;
 
     // Normalise across providers
@@ -676,14 +700,14 @@ router.post("/webhook/email-inbound", async (req, res) => {
     // Fall back to plain text, then "(empty)".
     let storedBody: string;
     if (htmlBody && htmlBody.trim()) {
-      storedBody = htmlBody.trim();
+      storedBody = htmlToPlainText(htmlBody);
     } else if (plainBody && plainBody.trim()) {
-      storedBody = plainBody.trim();
+      storedBody = plainBody.slice(0, 50_000).trim();
     } else {
       storedBody = "(empty)";
     }
 
-    if (!from || !subject) {
+    if (!from || !subject || from.length > 500 || to.length > 500 || subject.length > 2_000) {
       res.status(400).json({ error: "Missing required fields: from, subject" });
       return;
     }
@@ -764,9 +788,50 @@ router.post("/users/ping", async (req, res) => {
  * GET /api/notifications?address=0x…&since=<timestamp>
  * Returns latest notifications for a wallet address.
  */
-router.get("/notifications", (req, res) => {
+const walletRequestChallengeLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+
+router.post("/wallet-request/challenge", walletRequestChallengeLimiter, async (req, res) => {
+  try {
+    const { walletAddress, resource, method } = req.body ?? {};
+    if (
+      typeof walletAddress !== "string" ||
+      !["withdrawal-history", "notifications", "social-notifications"].includes(resource)
+    ) {
+      res.status(400).json({ error: "walletAddress and a supported resource are required." });
+      return;
+    }
+    const challenge = await issueWalletRequestChallenge({
+      walletAddress,
+      resource: resource as WalletRequestResource,
+      method: String(method ?? ""),
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.json(challenge);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message ?? "Could not issue wallet authorization." });
+  }
+});
+
+router.get("/notifications", async (req, res) => {
   const addr = (req.query.address as string | undefined);
-  if (!addr) return res.json({ notifications: [] });
+  if (!addr) { res.status(400).json({ error: "address required" }); return; }
+  try {
+    await verifyWalletRequestProof({
+      walletAddress: addr,
+      resource: "notifications",
+      method: "GET",
+      challengeId: req.header("x-wallet-auth-challenge"),
+      signature: req.header("x-wallet-auth-signature"),
+    });
+  } catch (err: any) {
+    res.status(401).json({ error: err?.message ?? "Wallet authorization failed." });
+    return;
+  }
   const since = Number(req.query.since ?? 0);
   return res.json({ notifications: getNotifications(addr, since) });
 });
@@ -774,9 +839,22 @@ router.get("/notifications", (req, res) => {
 /**
  * DELETE /api/notifications?address=0x…
  */
-router.delete("/notifications", (req, res) => {
+router.delete("/notifications", async (req, res) => {
   const addr = (req.query.address as string | undefined);
-  if (addr) clearNotifications(addr);
+  if (!addr) { res.status(400).json({ error: "address required" }); return; }
+  try {
+    await verifyWalletRequestProof({
+      walletAddress: addr,
+      resource: "notifications",
+      method: "DELETE",
+      challengeId: req.header("x-wallet-auth-challenge"),
+      signature: req.header("x-wallet-auth-signature"),
+    });
+  } catch (err: any) {
+    res.status(401).json({ error: err?.message ?? "Wallet authorization failed." });
+    return;
+  }
+  clearNotifications(addr);
   res.json({ success: true });
 });
 
@@ -807,48 +885,18 @@ setInterval(() => {
 
 /* ─── USER API KEYS ───────────────────────────────────────────────────────── */
 
-const userApiKeys: Map<string, {
-  id: string; wallet: string; name: string;
-  key: string; permission: string; rateLimit: number;
-  calls24h: number; status: string; createdAt: string;
-}> = new Map();
-
-router.get("/user/api-keys", (req, res) => {
-  const wallet = (req.query.wallet as string ?? "").toLowerCase().trim();
-  if (!wallet) { res.status(400).json({ error: "wallet required" }); return; }
-  const keys = [...userApiKeys.values()].filter(k => k.wallet === wallet);
-  res.json(keys);
-});
-
-router.post("/user/api-keys", (req, res) => {
-  const { wallet, name, permission = "read", rateLimit = 100 } = req.body as any;
-  if (!wallet || !name) { res.status(400).json({ error: "wallet and name required" }); return; }
-  const rand = randomBytes(15).toString("base64url");
-  const id = `ukey_${randomBytes(8).toString("hex")}`;
-  const key = {
-    id, wallet: wallet.toLowerCase(),
-    name, permission, rateLimit: parseInt(rateLimit) || 100,
-    key: `orah_usr_${rand}`,
-    calls24h: 0, status: "active",
-    createdAt: new Date().toISOString().split("T")[0],
-  };
-  userApiKeys.set(id, key);
-  res.status(201).json(key);
-});
-
-router.delete("/user/api-keys/:id", (req, res) => {
-  const k = userApiKeys.get(req.params.id);
-  if (!k) { res.status(404).json({ error: "Key not found" }); return; }
-  // Require the caller to present the owning wallet address to prevent
-  // anyone with just a key ID from revoking someone else's key.
-  const callerWallet = ((req.body?.wallet ?? req.query.wallet) as string ?? "").toLowerCase().trim();
-  if (!callerWallet || callerWallet !== k.wallet) {
-    res.status(403).json({ error: "Wallet mismatch — only the key owner may revoke it" });
-    return;
-  }
-  k.status = "revoked";
-  res.json({ success: true });
-});
+// These personal-key endpoints previously trusted a caller-supplied wallet,
+// stored plaintext keys in an in-memory Map, and generated keys that the API
+// authenticator did not recognize. Fail closed until durable, signed key
+// management can be delivered as one complete feature.
+const personalApiKeysUnavailable = (_req: any, res: any) => {
+  res.status(410).json({
+    error: "Personal API keys are temporarily unavailable while secure wallet authorization and key storage are being implemented.",
+  });
+};
+router.get("/user/api-keys", personalApiKeysUnavailable);
+router.post("/user/api-keys", personalApiKeysUnavailable);
+router.delete("/user/api-keys/:id", personalApiKeysUnavailable);
 
 /* ─── INTERNAL EVM WALLET (auto-provisioned for BSV users) ──────────────────
  *

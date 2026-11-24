@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+/*
+ * LEGACY SOURCE — DO NOT DEPLOY.
+ * This copy hashes HTLC secrets with keccak256 and is incompatible with the
+ * active SHA-256 HTLC implementation used by the API and cross-chain flow at
+ * artifacts/orahdex-contracts/contracts/OrahDEXHTLC.sol. The root deployment
+ * script now refuses to compile or deploy this divergent source.
+ */
+
 /**
  * OrahDEX HTLC — Hash Time Lock Contract
  *

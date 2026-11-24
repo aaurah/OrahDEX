@@ -269,7 +269,7 @@ export default function SettingsScreen() {
         {/* Branding */}
         <View style={styles.brandingSection}>
           <Text style={styles.brandingTitle}>Orah<Text style={{ color: C.primary }}>DEX</Text></Text>
-          <Text style={styles.brandingSlogan}>✦ Trade means DEX</Text>
+          <Text style={styles.brandingSlogan}>✦ Trade Means DEX</Text>
           <Text style={styles.brandingVersion}>Non-custodial · On-chain settlement · BSV</Text>
         </View>
 

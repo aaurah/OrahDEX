@@ -55,6 +55,17 @@ const chain = defineChain({
 // Compile with: solc --optimize --optimize-runs=200 --abi --bin contracts/OrahDEXHTLC.sol
 
 async function getCompiled(): Promise<{ abi: object[]; bytecode: `0x${string}` }> {
+  const source = await fs.readFile(path.join(__dirname, "OrahDEXHTLC.sol"), "utf8");
+  if (
+    !source.includes("sha256(abi.encodePacked(secret))") ||
+    /keccak256\s*\(\s*abi\.encodePacked\s*\(\s*secret\s*\)\s*\)/.test(source)
+  ) {
+    throw new Error(
+      "Deployment blocked: contracts/OrahDEXHTLC.sol is the legacy keccak256 variant. " +
+      "Use the reviewed SHA-256 implementation in artifacts/orahdex-contracts; do not deploy the legacy source.",
+    );
+  }
+
   const abiPath = path.join(__dirname, "OrahDEXHTLC.abi.json");
   const binPath = path.join(__dirname, "OrahDEXHTLC.bin");
 

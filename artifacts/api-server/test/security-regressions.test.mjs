@@ -23,6 +23,17 @@ const advancedOrderEnginePath = path.join(__dirname, "..", "src", "lib", "advanc
 const hotWalletGeneratorPath = path.join(__dirname, "..", "scripts", "gen-new-hotwallet.ts");
 const futuresPath = path.join(__dirname, "..", "src", "routes", "futures.ts");
 const nftPath = path.join(__dirname, "..", "src", "routes", "nft.ts");
+const withdrawalPath = path.join(__dirname, "..", "src", "routes", "withdrawals.ts");
+const socialNftPath = path.join(__dirname, "..", "src", "routes", "socialNft.ts");
+const webhookHandlersPath = path.join(__dirname, "..", "src", "webhookHandlers.ts");
+const safeFetchPath = path.join(__dirname, "..", "src", "lib", "safePublicFetch.ts");
+const evmHtlcPath = path.join(__dirname, "..", "src", "lib", "evmHtlc.ts");
+const apiKeyAuthPath = path.join(__dirname, "..", "src", "middleware", "apiKeyAuth.ts");
+const portfolioAnalysisPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "AiPortfolioAnalysis.tsx");
+const emailInboxPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "EmailInbox.tsx");
+const htlcDeployPath = path.join(__dirname, "..", "..", "..", "contracts", "deploy.ts");
+const gitignorePath = path.join(__dirname, "..", "..", "..", ".gitignore");
+const v1RoutesPath = path.join(__dirname, "..", "src", "routes", "v1.ts");
 
 async function read(filePath) {
   return readFile(filePath, "utf8");
@@ -128,7 +139,7 @@ test("admin TOTP login requires a short-lived first-factor challenge", async () 
   assert.match(totpRoute, /pendingTotpChallenges\.get\(challengeId\)/);
   assert.match(totpRoute, /challenge\.expiresAt < Date\.now\(\)/);
   assert.ok(
-    totpRoute.indexOf("pendingTotpChallenges.get") < totpRoute.indexOf("generateAdminToken"),
+    totpRoute.indexOf("pendingTotpChallenges.get") < totpRoute.indexOf("tryGenerateAdminToken"),
     "a session is issued only after a valid challenge is found",
   );
 });
@@ -216,4 +227,121 @@ test("Ethereum orderbook orders require confirmed escrow proof and settlement pa
   assert.match(escrowSrc, /MIN_CONFIRMATIONS/);
   assert.match(escrowSrc, /OrderOpened/);
   assert.match(escrowSrc, /configuredEscrow\.toLowerCase\(\) !== params\.escrowAddress\.toLowerCase\(\)/);
+});
+
+test("withdrawal history and notification reads require single-use wallet proofs", async () => {
+  const [withdrawalsSrc, routesSrc, socialSrc] = await Promise.all([
+    read(withdrawalPath),
+    read(routesIndexPath),
+    read(socialNftPath),
+  ]);
+
+  assert.match(withdrawalsSrc, /verifyWalletRequestProof/);
+  assert.match(withdrawalsSrc, /resource:\s*"withdrawal-history"/);
+  assert.doesNotMatch(withdrawalsSrc, /x-wallet-address[\s\S]{0,120}===\s*paramWallet/);
+  assert.match(routesSrc, /verifyWalletRequestProof[\s\S]*resource:\s*"notifications"/);
+  assert.match(socialSrc, /verifyWalletRequestProof[\s\S]*resource:\s*"social-notifications"/);
+});
+
+test("unsafe personal API-key CRUD endpoints are disabled and legacy plaintext keys fail closed", async () => {
+  const [routesSrc, authSrc] = await Promise.all([read(routesIndexPath), read(apiKeyAuthPath)]);
+  assert.match(routesSrc, /router\.get\("\/user\/api-keys", personalApiKeysUnavailable\)/);
+  assert.match(routesSrc, /router\.post\("\/user\/api-keys", personalApiKeysUnavailable\)/);
+  assert.match(routesSrc, /router\.delete\("\/user\/api-keys\/:id", personalApiKeysUnavailable\)/);
+  assert.match(authSrc, /keyHash/);
+  assert.doesNotMatch(authSrc, /k\.key\s*===\s*presented/);
+  assert.match(authSrc, /MAX_BUFFERED_API_KEYS/);
+});
+
+test("public transaction relays are disabled instead of proxying or fabricating broadcasts", async () => {
+  const [routesSrc, v1Src] = await Promise.all([read(routesIndexPath), read(v1RoutesPath)]);
+  assert.match(routesSrc, /router\.post\("\/bsv\/broadcast", \(_req, res\) => \{\s*res\.status\(410\)/);
+  assert.match(v1Src, /router\.post\("\/tx\/broadcast", \(_req, res\) => \{\s*res\.status\(410\)/);
+  assert.doesNotMatch(v1Src, /mockHash/);
+  assert.doesNotMatch(v1Src, /arcBroadcast/);
+});
+
+test("admin sessions are hashed, capped, and fail closed if persistence fails", async () => {
+  const src = await read(adminAuthPath);
+  assert.match(src, /TOKEN_PREFIX = "admin_session_hash:"/);
+  assert.match(src, /hashToken\(token\)/);
+  assert.match(src, /MAX_ADMIN_SESSIONS/);
+  assert.match(src, /Unable to persist the admin session/);
+  assert.doesNotMatch(src, /values\(\{ key: `\$\{LEGACY_TOKEN_PREFIX\}\$\{token\}`/);
+});
+
+test("third-party paymail fetches pin public DNS results and reject redirects/private IPs", async () => {
+  const src = await read(safeFetchPath);
+  assert.match(src, /await lookup\(hostname, \{ all: true, verbatim: true \}\)/);
+  assert.match(src, /addresses\.some\(\(a\) => !isPublicAddress/);
+  assert.match(src, /callback\(null, selected\.address, selected\.family\)/);
+  assert.match(src, /Redirects are not followed/);
+  assert.match(src, /169\.254\.0\.0\/16/);
+  assert.match(src, /fc00::\/7/);
+  assert.match(src, /normalized\.startsWith\("::ffff:"\)/);
+  assert.match(src, /maxBytes = options\.maxBytes \?\? 64 \* 1024/);
+});
+
+test("email and payment webhooks fail closed without verification secrets", async () => {
+  const [routesSrc, webhookSrc] = await Promise.all([read(routesIndexPath), read(webhookHandlersPath)]);
+  assert.match(routesSrc, /EMAIL_INBOUND_WEBHOOK_SECRET/);
+  assert.match(routesSrc, /if \(!webhookSecret\)/);
+  assert.match(routesSrc, /typeof suppliedSecret !== "string"/);
+  assert.match(webhookSrc, /STRIPE_WEBHOOK_SECRET is required/);
+  assert.doesNotMatch(webhookSrc, /NODE_ENV !== "production"[\s\S]{0,160}fulfillOrder/);
+});
+
+test("passkey transfer codes are hashed, short-lived, one-time POST secrets", async () => {
+  const [routesSrc, clientSrc] = await Promise.all([read(routesIndexPath), read(path.join(__dirname, "..", "..", "bsv-dex", "src", "lib", "passkeyWallet.ts"))]);
+  assert.match(routesSrc, /while \(code\.length < 12\)/);
+  assert.match(routesSrc, /pk_tc:\$\{codeHash\}/);
+  assert.match(routesSrc, /DELETE FROM platform_settings WHERE key = \$1 RETURNING value/);
+  assert.match(routesSrc, /passkey\/transfer\/redeem/);
+  assert.match(routesSrc, /2 \* 60 \* 1000/);
+  assert.match(clientSrc, /12-char one-time code valid for 2 min/);
+  assert.match(routesSrc, /router\.get\("\/passkey\/transfer\/:code",[\s\S]*?res\.status\(410\)/);
+});
+
+test("AI output is sanitized and admin email is isolated from the app origin", async () => {
+  const [analysisSrc, emailSrc] = await Promise.all([read(portfolioAnalysisPath), read(emailInboxPath)]);
+  assert.match(analysisSrc, /DOMPurify\.sanitize/);
+  assert.match(emailSrc, /sandbox=""|sandbox=\{\s*""\s*\}/);
+  assert.doesNotMatch(emailSrc, /sandbox="allow-same-origin/);
+});
+
+test("legacy HTLC deployment is blocked and new sessions retain a reveal safety margin", async () => {
+  const [deploySrc, htlcSrc] = await Promise.all([read(htlcDeployPath), read(evmHtlcPath)]);
+  assert.match(deploySrc, /Deployment blocked: contracts\/OrahDEXHTLC\.sol is the legacy keccak256 variant/);
+  assert.match(htlcSrc, /BUYER_TIMELOCK_SECS\s*<=\s*SELLER_TIMELOCK_SECS\s*\+\s*HTLC_REVEAL_SAFETY_MARGIN_SECS/);
+  assert.match(htlcSrc, /seller leg reveals first/);
+  assert.match(htlcSrc, /export function isSafeHtlcRevealWindow/);
+  assert.match(htlcSrc, /buyerTimelockUnix > nowUnix \+ 2 \* HTLC_REVEAL_SAFETY_MARGIN_SECS/);
+  assert.match(htlcSrc, /refusing reveal because the paired lock window violates the required safety margin/);
+});
+
+test("Git automation requires an interactive explicit push confirmation", async () => {
+  const root = path.join(__dirname, "..", "..", "..");
+  const scripts = await Promise.all(["push.sh", "update-readme.sh", "remove-agents-from-git.sh", "remove-canvas-assets.sh"]
+    .map((name) => read(path.join(root, name))));
+  for (const src of scripts) {
+    assert.match(src, /ORAHDEX_CONFIRM_GIT_PUSH/);
+    assert.match(src, /PUSH TO ORIGIN MAIN/);
+    assert.match(src, /git push origin Main/);
+  }
+  const ignore = await read(gitignorePath);
+  assert.match(ignore, /backups\//);
+  assert.match(ignore, /\*\.sql\.gz/);
+});
+
+test("internal admin metadata and authentication state have bounded capacity", async () => {
+  const [adminSrc, walletAuthSrc, boundedMapSrc] = await Promise.all([
+    read(adminRoutesPath),
+    read(path.join(__dirname, "..", "src", "lib", "walletAuth.ts")),
+    read(path.join(__dirname, "..", "src", "lib", "boundedMap.ts")),
+  ]);
+  assert.match(adminSrc, /new BoundedMap<string, \{ nonce: string; message: string; expiresAt: number \}>\(10_000\)/);
+  assert.match(adminSrc, /AUTH_ACCOUNT_MAX_FAILURES/);
+  assert.match(walletAuthSrc, /new BoundedMap<string, WithdrawNonce>\(10_000\)/);
+  assert.match(walletAuthSrc, /new BoundedMap<string, TradeNonce>\(10_000\)/);
+  assert.match(boundedMapSrc, /this\.size >= this\.maxEntries/);
 });

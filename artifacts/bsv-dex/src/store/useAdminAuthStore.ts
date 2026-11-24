@@ -157,6 +157,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
         if (token) {
           fetch(`${API}/api/admin/auth/logout`, {
             method: "POST",
+            credentials: "include",
             headers: { "Content-Type": "application/json", "x-admin-token": token },
           }).catch(() => {});
         }
@@ -181,15 +182,12 @@ export const useAdminAuthStore = create<AdminAuthState>()(
     {
       name: 'orahdex-admin-auth',
       partialize: (s) => ({
-        isAuthenticated: s.isAuthenticated,
         twoFaEnabled: s.twoFaEnabled,
         twoFaSetupDone: s.twoFaSetupDone,
-        twoFaVerified: s.twoFaVerified,
         email: s.email,
         walletAddress: s.walletAddress,
         loginMethod: s.loginMethod,
         displayName: s.displayName,
-        token: s.token,
       }),
     }
   )

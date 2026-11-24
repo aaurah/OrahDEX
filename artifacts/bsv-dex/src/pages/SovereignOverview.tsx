@@ -139,7 +139,7 @@ export function SovereignOverviewPage() {
   useSEO({
     title: "Sovereign Exchange — OrahDEX",
     description: "OrahDEX is a sovereign decentralized exchange — no intermediaries, no custodians. Every trade settles on-chain via Bitcoin SV. Your keys, your coins.",
-    keywords: "sovereign DEX, non-custodial exchange, decentralized trading, BSV settlement, self-custody crypto, OrahDEX sovereign",
+    keywords: "OrahDEX, multi-chain trading, BSV settlement, wallet-signed routes, crypto exchange",
   });
   return (
     <div className="relative min-h-screen bg-background text-foreground overflow-x-hidden">
@@ -157,16 +157,15 @@ export function SovereignOverviewPage() {
           </span>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black leading-[1.1] mb-6">
-            Your Keys.{" "}
+            Choose Your Route.{" "}
             <span className="text-green-400">Your Chain.</span>
             <br />
             Your Exchange.
           </h1>
 
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-10">
-            <OrahInline /> is built on one principle: no intermediary should stand between you
-            and your money. Self-custody wallets, non-custodial settlement, and open-protocol
-            liquidity — all on the world's most scalable blockchain.
+            <OrahInline /> offers both direct wallet-signed routes and server-managed settlement
+            services. Custody depends on the feature and route; review its details before trading.
           </p>
 
           <div className="flex flex-wrap justify-center gap-4">
@@ -193,7 +192,7 @@ export function SovereignOverviewPage() {
             <MetricPill value="958"    label="Markets"       color="text-green-400" />
             <MetricPill value="10"     label="EVM Chains"    color="text-blue-400" />
             <MetricPill value="< 1¢"   label="BSV Settle Fee" color="text-yellow-400" />
-            <MetricPill value="0%"     label="Custody Risk"  color="text-green-400" />
+            <MetricPill value="Varies" label="Custody Model" color="text-green-400" />
             <MetricPill value="BIP44"  label="HD Wallet"     color="text-purple-400" />
           </div>
         </div>
@@ -215,20 +214,20 @@ export function SovereignOverviewPage() {
             <PillarCard
               icon={Key}
               color="#4ade80"
-              title="Self-Custody"
-              body="Your private keys are generated and encrypted client-side using BIP39 + BIP44. The server never sees your seed phrase. Biometric passkey authentication decrypts your key in memory — never at rest."
+              title="Wallet Control"
+              body="Supported wallet routes can sign transactions directly. The in-app wallet stores encrypted key material and some account, settlement, or payout paths use server-managed keys."
             />
             <PillarCard
               icon={Globe}
               color="#F5A623"
               title="Open Protocol"
-              body="Every settlement on the BSV layer is a verifiable on-chain transaction. OrahDEX uses HTLC atomic swaps across chains — no wrapped tokens, no bridges that can be paused, no single point of failure."
+              body="Selected settlement routes use public-chain transactions or HTLC contracts. Other routes rely on service processing, external providers, or relayers."
             />
             <PillarCard
               icon={Shield}
               color="#60a5fa"
-              title="Non-Custodial"
-              body="External wallets (MetaMask, BSV, Phantom, TRON) trade directly to on-chain addresses. OrahDEX's internal ledger is only used when you choose the Orah wallet — and you can withdraw to self-custody at any time."
+              title="Route-Specific Settlement"
+              body="External wallet and internal-ledger paths work differently. Some trades use on-chain escrow or server-managed settlement; check the pair's funding and settlement details."
             />
           </div>
         </div>
@@ -266,13 +265,13 @@ export function SovereignOverviewPage() {
               icon={ArrowRightLeft}
               href="/swap"
               title="Cross-Chain Bridge"
-              body="Swap 6,000+ coins across 40+ chains via OrahBridge — non-custodial, no registration, best-rate routing."
+              body="Compare supported swap routes across chains. Custody and execution depend on the selected provider and route."
             />
             <FeatureRow
               icon={TrendingUp}
               href="/copy"
               title="CopyVault — On-Chain Copy Trading"
-              body="ERC-4626-style vault accounting mirrors leader trades on-chain. Follow proven strategies without giving anyone custody of your capital."
+              body="Copy-trading features can involve account balances and server-side order processing; review their custody and risk disclosures before use."
             />
             <FeatureRow
               icon={Cpu}

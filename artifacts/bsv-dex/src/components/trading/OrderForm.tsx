@@ -247,7 +247,7 @@ function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?:
         </p>
         <div className="w-full grid grid-cols-3 gap-2 pt-1">
           {[
-            { icon: Shield, label: "Non-custodial" },
+            { icon: Shield, label: "Wallet-funded" },
             { icon: Zap, label: "BSV settled" },
             { icon: ArrowRightLeft, label: "Multi-chain" },
           ].map(({ icon: Icon, label }) => (

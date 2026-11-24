@@ -905,7 +905,7 @@ export function AdminEmailInbox() {
                       return (
                         <iframe
                           srcDoc={srcDoc}
-                          sandbox="allow-same-origin"
+                          sandbox=""
                           title="Email content"
                           referrerPolicy="no-referrer"
                           className="w-full rounded-xl bg-white border border-border/30"

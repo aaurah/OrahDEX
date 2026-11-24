@@ -290,15 +290,34 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
 // ── Timelock constants ─────────────────────────────────────────────────────────
 
 const SELLER_TIMELOCK_SECS = 30 * 60;   // 30 minutes (outer)
-const BUYER_TIMELOCK_SECS  = 60 * 60;   // 60 minutes (inner — must OUTLIVE the 30m seller lock: secret is public after seller reveal, buyer lock must still be revealable)
+const BUYER_TIMELOCK_SECS  = 60 * 60;   // 60 minutes — buyer's lock must outlive the first-revealed seller lock
 const SESSION_TIMEOUT_SECS = 75 * 60;   // 75 min — must exceed the 60m buyer timelock so PARTIAL_REVEAL can retry to the end
+const HTLC_REVEAL_SAFETY_MARGIN_SECS = 15 * 60;
 
 // PROTOCOL INVARIANT: the relayer reveals the SELLER leg FIRST; the secret is
 // public from that instant, so the BUYER leg must remain revealable long
 // after — buyer's timelock MUST exceed seller's. Never invert one without
 // the other (audit P0).
-if (BUYER_TIMELOCK_SECS <= SELLER_TIMELOCK_SECS + 15 * 60) {
+if (BUYER_TIMELOCK_SECS <= SELLER_TIMELOCK_SECS + HTLC_REVEAL_SAFETY_MARGIN_SECS) {
   throw new Error("HTLC invariant violated: BUYER_TIMELOCK must exceed SELLER_TIMELOCK by >15m (seller leg reveals first)");
+}
+
+export function isSafeHtlcRevealWindow(params: {
+  sellerTimelockUnix: number;
+  buyerTimelockUnix: number;
+  nowUnix: number;
+  sellerAlreadyRevealed: boolean;
+}): boolean {
+  const { sellerTimelockUnix, buyerTimelockUnix, nowUnix, sellerAlreadyRevealed } = params;
+  if (![sellerTimelockUnix, buyerTimelockUnix, nowUnix].every(Number.isFinite)) return false;
+  if (buyerTimelockUnix <= sellerTimelockUnix + HTLC_REVEAL_SAFETY_MARGIN_SECS) return false;
+  if (sellerAlreadyRevealed) {
+    return buyerTimelockUnix > nowUnix + HTLC_REVEAL_SAFETY_MARGIN_SECS;
+  }
+  return (
+    sellerTimelockUnix > nowUnix + HTLC_REVEAL_SAFETY_MARGIN_SECS &&
+    buyerTimelockUnix > nowUnix + 2 * HTLC_REVEAL_SAFETY_MARGIN_SECS
+  );
 }
 
 // ── Hash helpers ──────────────────────────────────────────────────────────────
@@ -931,6 +950,32 @@ async function revealBothLocks(
       .set({ revealSellerTxid: "REVEALED_ON_CHAIN", updatedAt: new Date() })
       .where(eq(evmHtlcSessionsTable.id, session.id));
     sellerAlreadyRevealed = true;
+  }
+
+  let latestBlockTime: number;
+  try {
+    latestBlockTime = Number((await publicClient.getBlock({ blockTag: "latest" })).timestamp);
+  } catch (err) {
+    await db.update(evmHtlcSessionsTable)
+      .set({ status: sellerAlreadyRevealed ? "PARTIAL_REVEAL" : "BOTH_LOCKED", updatedAt: new Date() })
+      .where(eq(evmHtlcSessionsTable.id, session.id));
+    logger.warn({ err, sessionId: session.id }, "evmHtlc: unable to verify latest block time; deferring reveal");
+    return;
+  }
+  if (!isSafeHtlcRevealWindow({
+    sellerTimelockUnix: Number(session.sellerTimelockUnix),
+    buyerTimelockUnix: Number(session.buyerTimelockUnix),
+    nowUnix: latestBlockTime,
+    sellerAlreadyRevealed,
+  })) {
+    await db.update(evmHtlcSessionsTable)
+      .set({ status: "SAFETY_BLOCKED", updatedAt: new Date() })
+      .where(eq(evmHtlcSessionsTable.id, session.id));
+    logger.error(
+      { sessionId: session.id, sellerTimelockUnix: session.sellerTimelockUnix, buyerTimelockUnix: session.buyerTimelockUnix, latestBlockTime },
+      "evmHtlc: refusing reveal because the paired lock window violates the required safety margin",
+    );
+    return;
   }
 
   let sellerRevealed = sellerAlreadyRevealed;

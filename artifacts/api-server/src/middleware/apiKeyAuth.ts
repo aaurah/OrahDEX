@@ -76,6 +76,7 @@ export async function withApiKeysLock<T>(fn: (keys: StoredApiKey[]) => Promise<{
 
 const callBuffer = new Map<string, number>();
 const lastUsedBuffer = new Map<string, number>();
+const MAX_BUFFERED_API_KEYS = 5_000;
 const FLUSH_INTERVAL_MS = 30_000;
 let flushTimer: NodeJS.Timeout | null = null;
 
@@ -118,9 +119,16 @@ export function startApiKeyCounterFlusher(): void {
   logger.info({ intervalMs: FLUSH_INTERVAL_MS }, "API key call counter flusher started");
 }
 
-function trackCall(id: string): void {
+function trackCall(id: string): boolean {
+  if (
+    (!callBuffer.has(id) && callBuffer.size >= MAX_BUFFERED_API_KEYS) ||
+    (!lastUsedBuffer.has(id) && lastUsedBuffer.size >= MAX_BUFFERED_API_KEYS)
+  ) {
+    return false;
+  }
   callBuffer.set(id, (callBuffer.get(id) ?? 0) + 1);
   lastUsedBuffer.set(id, Date.now());
+  return true;
 }
 
 let cache: { keys: StoredApiKey[]; loadedAt: number } | null = null;
@@ -142,7 +150,6 @@ function findMatch(keys: StoredApiKey[], presented: string): StoredApiKey | null
   for (const k of keys) {
     if (k.status !== "active") continue;
     if (k.keyHash && k.keyHash === presentedHash) return k;
-    if (k.key && k.key === presented) return k;
   }
   return null;
 }
@@ -188,7 +195,7 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction): 
   });
 }
 
-export async function apiKeyAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
+export async function apiKeyAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const presented =
     (req.header("x-api-key") ?? "").trim() ||
     (req.header("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
@@ -199,11 +206,16 @@ export async function apiKeyAuth(req: Request, _res: Response, next: NextFunctio
     const keys = await getCachedKeys();
     const match = findMatch(keys, presented);
     if (match) {
+      if (!trackCall(match.id)) {
+        res.status(503).json({ error: "API key usage tracking is at capacity. Retry shortly." });
+        return;
+      }
       req.apiKey = { id: match.id, name: match.name, type: match.type, rateLimit: match.rateLimit };
-      trackCall(match.id);
     }
   } catch (err) {
-    logger.warn({ err }, "apiKeyAuth: lookup failed (allowing request as anonymous)");
+    logger.error({ err }, "apiKeyAuth: key lookup unavailable");
+    res.status(503).json({ error: "API key verification is temporarily unavailable. Retry shortly." });
+    return;
   }
   next();
 }

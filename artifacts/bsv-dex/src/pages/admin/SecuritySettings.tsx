@@ -243,6 +243,8 @@ export function AdminSecuritySettings() {
         setVault(v => v ? { ...v, bsvWallet: d } : v);
         setConfirmRegen(false);
         toast({ title: "BSV Wallet Regenerated", description: `New address: ${d.address}` });
+      } else {
+        toast({ title: "Wallet rotation blocked", description: d.error ?? "Funds must be checked before replacing this wallet.", variant: "destructive" });
       }
     } finally { setRegenerating(false); }
   };
@@ -253,6 +255,8 @@ export function AdminSecuritySettings() {
   const [wlSaving,       setWlSaving]       = useState(false);
   const [newWlAddr,      setNewWlAddr]      = useState("");
   const [wlError,        setWlError]        = useState("");
+  const [wlPassword,     setWlPassword]     = useState("");
+  const [wlTotpCode,     setWlTotpCode]     = useState("");
 
   const loadWhitelist = async () => {
     setWlLoading(true);
@@ -288,10 +292,15 @@ export function AdminSecuritySettings() {
       const r = await adminFetch(`/api/admin/wallet-whitelist`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addresses: whitelist }),
+        body: JSON.stringify({ addresses: whitelist, password: wlPassword, totpCode: wlTotpCode }),
       });
       if (r.ok) {
         toast({ title: "Whitelist saved", description: `${whitelist.length} address${whitelist.length !== 1 ? "es" : ""} can sign in via wallet.` });
+        setWlPassword("");
+        setWlTotpCode("");
+      } else {
+        const error = await r.json().catch(() => ({}));
+        toast({ title: "Whitelist was not saved", description: error.error ?? "Re-authentication failed.", variant: "destructive" });
       }
     } finally { setWlSaving(false); }
   };
@@ -638,14 +647,33 @@ export function AdminSecuritySettings() {
 
             <div className="flex items-center justify-between pt-2">
               <p className="text-xs text-muted-foreground">{whitelist.length} address{whitelist.length !== 1 ? "es" : ""} whitelisted</p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={wlPassword}
+                  onChange={e => setWlPassword(e.target.value)}
+                  placeholder="Re-enter admin password"
+                  className="w-48 bg-background border border-border rounded-xl px-3 py-2 text-xs"
+                />
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={wlTotpCode}
+                  onChange={e => setWlTotpCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="2FA code if enabled"
+                  className="w-36 bg-background border border-border rounded-xl px-3 py-2 text-xs"
+                />
               <button
                 onClick={saveWhitelist}
-                disabled={wlSaving}
+                disabled={wlSaving || !wlPassword}
                 className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-50"
               >
                 {wlSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 {wlSaving ? "Saving…" : "Save Whitelist"}
               </button>
+              </div>
             </div>
           </div>
         )}

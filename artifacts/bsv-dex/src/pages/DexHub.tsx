@@ -848,7 +848,7 @@ export function DexHub() {
           <div className="h-8 w-px bg-border" />
           <div>
             <div className="text-[11px] text-primary font-bold uppercase tracking-widest leading-tight">Market Hub</div>
-            <div className="text-xs text-muted-foreground leading-tight">Trade means DEX</div>
+            <div className="text-xs text-muted-foreground leading-tight">Trade Means DEX</div>
           </div>
         </div>
         <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-2">

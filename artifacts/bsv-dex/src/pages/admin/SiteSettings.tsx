@@ -23,7 +23,7 @@ const TAB_LIST: { id: Tab; label: string; icon: any }[] = [
 const DEFAULT_SETTINGS = {
   // Branding
   exchangeName: "OrahDEX",
-  slogan: "Trade means DEX",
+  slogan: "Trade Means DEX",
   logoUrl: "",
   logoBase64: "",
   faviconUrl: "",
@@ -51,7 +51,7 @@ const DEFAULT_SETTINGS = {
   mediumUrl: "",
   redditUrl: "",
   // SEO
-  seoTitle: "OrahDEX — Trade means DEX | BSV Settlement Exchange",
+  seoTitle: "OrahDEX — Trade Means DEX | BSV Settlement Exchange",
   seoDescription: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, cross-chain bridge, on-chain copy trading (CopyVault), and 7-tab mobile navigation.",
   seoKeywords: "BSV DEX, Bitcoin SV, decentralized exchange, crypto trading, spot futures, cross-chain bridge, copy trading, paper trading, mobile DEX",
   ogImageUrl: "",
@@ -141,7 +141,9 @@ export function AdminSiteSettings() {
   const [settings, setSettings] = useState<Settings>(() => {
     try {
       const saved = localStorage.getItem("orahdex_site_settings") ?? "{}";
-      const migrated = saved.replace(/orahdex\.org/gi, "orahdex.com");
+      const migrated = saved
+        .replace(/orahdex\.org/gi, "orahdex.com")
+        .replaceAll("Trade means DEX", "Trade Means DEX");
       if (migrated !== saved) localStorage.setItem("orahdex_site_settings", migrated);
       return { ...DEFAULT_SETTINGS, ...JSON.parse(migrated) };
     }
@@ -229,7 +231,7 @@ export function AdminSiteSettings() {
               <Input value={settings.exchangeName} onChange={set("exchangeName")} placeholder="OrahDEX" />
             </Field>
             <Field label="Slogan / Tagline" description="Short tagline shown in the hero and metadata">
-              <Input value={settings.slogan} onChange={set("slogan")} placeholder="Trade means DEX" />
+              <Input value={settings.slogan} onChange={set("slogan")} placeholder="Trade Means DEX" />
             </Field>
             <Field label="Exchange Mode" description="Controls how orders are routed — DEX uses the internal orderbook only, Hybrid routes between internal and external CEX liquidity, CEX routes all orders to connected CEX accounts">
               <select
@@ -389,7 +391,7 @@ export function AdminSiteSettings() {
         {activeTab === "seo" && (
           <div className="space-y-0">
             <Field label="Page Title" description="Default <title> tag for all pages">
-              <Input value={settings.seoTitle} onChange={set("seoTitle")} placeholder="OrahDEX — Trade means DEX" />
+              <Input value={settings.seoTitle} onChange={set("seoTitle")} placeholder="OrahDEX — Trade Means DEX" />
               <p className="text-xs text-muted-foreground mt-1">{settings.seoTitle.length}/70 characters</p>
             </Field>
             <Field label="Meta Description" description="Default meta description (appears in Google search results)">

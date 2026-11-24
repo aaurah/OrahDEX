@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 const DEFAULTS = {
   siteName: "OrahDEX",
-  tagline: "Trade means DEX",
+  tagline: "Trade Means DEX",
   twitterUrl: "",
   telegramUrl: "",
   discordUrl: "",
@@ -20,7 +20,10 @@ type SiteConfig = typeof DEFAULTS;
 export function useSiteConfig(): SiteConfig {
   return useMemo(() => {
     try {
-      return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("orahdex_site_settings") ?? "{}") };
+      const saved = localStorage.getItem("orahdex_site_settings") ?? "{}";
+      const normalized = saved.replaceAll("Trade means DEX", "Trade Means DEX");
+      if (normalized !== saved) localStorage.setItem("orahdex_site_settings", normalized);
+      return { ...DEFAULTS, ...JSON.parse(normalized) };
     } catch {
       return DEFAULTS;
     }

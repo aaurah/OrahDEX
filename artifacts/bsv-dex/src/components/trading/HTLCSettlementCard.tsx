@@ -4,7 +4,7 @@
  * Shown after an EVM/EVM trade fills, guiding both parties through the
  * lock-and-reveal flow that atomically settles the trade on-chain.
  *
- * Non-custodial: no funds flow through OrahDEX servers.
+ * Contract escrow and relayer execution have route-specific custody and timing risks.
  * The user signs transactions directly in MetaMask/WalletConnect.
  */
 
@@ -478,7 +478,7 @@ export function HTLCSettlementCard({
       {!isTerminal && (
         <div className="border-t border-zinc-800 px-5 py-3 flex items-center justify-between">
           <p className="text-xs text-zinc-600">
-            Non-custodial · OrahDEX never holds your funds
+            Funds are locked in the configured contract; settlement depends on paired lock details and relayer availability.
           </p>
           <button
             onClick={refresh}

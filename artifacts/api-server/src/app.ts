@@ -259,7 +259,15 @@ const _allowedOrigins: (string | RegExp)[] = process.env["ALLOWED_ORIGINS"]
 app.use(cors({
   origin: _allowedOrigins,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-API-Key",
+    "x-admin-token",
+    "x-wallet-auth-challenge",
+    "x-wallet-auth-signature",
+    "x-orahdex-webhook-secret",
+  ],
   credentials: true,
 }));
 
@@ -365,25 +373,14 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-/* Stricter limit for financial write operations — keyed by wallet address when
- * available (prevents a single wallet from bypassing the cap via IP rotation).
- * Falls back to IP for requests without a wallet in the body.                 */
+/* Stricter limit for financial write operations. Use the verified client IP;
+ * request-body wallet strings are attacker-controlled and trivially rotated. */
 const exchangeLimiter = rateLimit({
   windowMs:        60_000,
   max:             30,
   standardHeaders: "draft-7",
   legacyHeaders:   false,
-  // Key by wallet address when available so rate limits are wallet-scoped.
-  // Falls back to the built-in ipKeyGenerator (normalises IPv6) when no
-  // wallet is present in the request body.
-  keyGenerator: (req) => {
-    const body = req.body as Record<string, unknown> | undefined;
-    const wallet = body?.["walletAddress"] ?? body?.["wallet_address"] ?? body?.["minter"];
-    if (typeof wallet === "string" && wallet.length > 10) {
-      return `wallet:${wallet.toLowerCase()}`;
-    }
-    return ipKeyGenerator(req.ip ?? "127.0.0.1");
-  },
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? "127.0.0.1"),
   handler: (_req, res) => res.status(429).json({ error: "Exchange rate limit reached — wait a moment before retrying." }),
 });
 const EXCHANGE_WRITE_PATHS = [
@@ -855,15 +852,6 @@ async function healthHandler(_req: any, res: any) {
   const anyDead  = services.some(s => s.status === "dead");
   const anyStuck = services.some(s => s.status === "stuck");
 
-  let bsvChain: { online: boolean; blockHeight: number } | undefined;
-  try {
-    const bsv = await Promise.race([
-      getBsvChainStatus(),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("bsv-status timeout")), 3_000)),
-    ]);
-    bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight };
-  } catch { /* non-fatal — DB may be under load */ }
-
   // Only CRITICAL services failing should degrade the public health signal.
   // Non-critical reconcilers being stuck or dead should not cause healthcheck
   // failures that trigger deployment restarts — the core exchange still works.
@@ -881,25 +869,15 @@ async function healthHandler(_req: any, res: any) {
     status:    anyCriticalDead ? "degraded" : "ok",
     uptime:    Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
-    bsvChain,
-    services:  services.map(s => ({
-      name:              s.name,
-      status:            s.status,
-      lastRunAt:         s.lastRunAt?.toISOString() ?? null,
-      lastSuccessAt:     s.lastSuccessAt?.toISOString() ?? null,
-      consecutiveFails:  s.consecutiveFails,
-      avgDurationMs:     Math.round(s.avgDurationMs),
-      staleSinceMs:      s.staleSinceMs,
-    })),
-    alerts: [
-      ...services.filter(s => s.status === "dead").map(s => `DEAD: ${s.name}`),
-      ...services.filter(s => s.status === "stuck").map(s => `STUCK: ${s.name}`),
-      ...services.filter(s => s.status === "degraded").map(s => `DEGRADED: ${s.name}`),
-    ],
   };
+  const publicAlerts = [
+    ...services.filter(s => s.status === "dead").map(s => `DEAD: ${s.name}`),
+    ...services.filter(s => s.status === "stuck").map(s => `STUCK: ${s.name}`),
+    ...services.filter(s => s.status === "degraded").map(s => `DEGRADED: ${s.name}`),
+  ];
 
   if (anyDead || anyStuck) {
-    logger.warn({ alerts: payload.alerts }, "Health check: degraded services detected");
+    logger.warn({ alerts: publicAlerts }, "Health check: degraded services detected");
   }
 
   // Always return 200 — the deployment platform kills on 503, making any
@@ -910,7 +888,7 @@ async function healthHandler(_req: any, res: any) {
     // deployment probe doesn't restart the instance due to a reporting bug.
     logger.warn({ err: err?.message }, "healthHandler threw unexpectedly");
     if (!res.headersSent) {
-      res.status(200).json({ status: "ok", uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
+      res.status(200).json({ status: "unknown", uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
     }
   }
 }

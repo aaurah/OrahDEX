@@ -784,7 +784,7 @@ export function LandingPage() {
   const MARKETS_PREVIEW_LIMIT = 200; // fetch more so preferred-quote pairs (USDT/BTC/BSV) are included
 
   useSEO({
-    title: "OrahDEX — Trade means DEX | Spot, Futures & P2P Crypto Exchange",
+    title: "OrahDEX — Trade Means DEX | Spot, Futures & P2P Crypto Exchange",
     description: "OrahDEX is a sovereign multi-chain DEX with spot trading, perpetual futures, P2P markets, copy trading, and on-chain BSV settlement. Trade 900+ markets across EVM, TRON and BSV networks.",
     keywords: "OrahDEX, DEX, decentralized exchange, crypto trading, BSV, spot trading, perpetual futures, P2P, copy trading, DeFi, multi-chain, EVM, AMM, liquidity pools",
     url: "https://orahdex.com/",
@@ -792,7 +792,7 @@ export function LandingPage() {
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "name": "OrahDEX — Trade means DEX",
+      "name": "OrahDEX — Trade Means DEX",
       "description": "Sovereign multi-chain decentralized exchange featuring spot trading, perpetual futures, P2P markets, copy trading, and on-chain BSV settlement.",
       "url": "https://orahdex.com/",
       "isPartOf": { "@type": "WebSite", "name": "OrahDEX", "url": "https://orahdex.com" }
@@ -925,7 +925,7 @@ export function LandingPage() {
               <div>
                 <h1 className="text-6xl sm:text-7xl xl:text-8xl font-black leading-[1.0] tracking-[-0.025em]">
                   <span className="text-foreground block">Trade</span>
-                  <span className="text-foreground block">means</span>
+                  <span className="text-foreground block">Means</span>
                   <span className="block" style={{
                     background: "linear-gradient(135deg, #4ade80 0%, #22d3ee 100%)",
                     WebkitBackgroundClip: "text",
@@ -1395,7 +1395,7 @@ export function LandingPage() {
           </div>
           <SocialBar iconSize="sm" variant="landing" className="max-w-sm" />
           <p className="text-[11px] text-muted-foreground/25">
-            © {new Date().getFullYear()} OrahDEX · orahdex.com · Trade means DEX
+            © {new Date().getFullYear()} OrahDEX · orahdex.com · Trade Means DEX
           </p>
         </div>
       </section>

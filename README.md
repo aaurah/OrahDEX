@@ -1,6 +1,6 @@
 # OrahDEX — The Universal Multi-Chain DEX
 
-OrahDEX is a sovereign, permissionless, multi-chain trading protocol. Users hold their own keys at all times. Trades settle on-chain via atomic swaps and EVM escrow contracts — **OrahDEX never holds your funds**.
+OrahDEX combines user-signed on-chain routes with server-managed settlement, internal-ledger, and hot-wallet payout paths. Custody depends on the feature and route; do not assume every OrahDEX flow is non-custodial.
 
 Live at **[orahdex.com](https://orahdex.com)**
 
@@ -43,7 +43,7 @@ OrahDEX aggregates pairs from multiple sources into a single unified market cata
 ### Universal Swap Router
 Every swap fires all available venues in parallel and returns the best rate:
 - **Custodial route** — instant swap, deposit-address model, 6 venues competing for best rate
-- **Onchain route** — non-custodial, user signs the transaction; settles directly on-chain across 69 chains and 36 DEX aggregators
+- **Onchain route** — the connected wallet signs the transaction and settles directly on-chain where that route is available; this does not describe internal-ledger or server-managed payout paths
 
 In live testing, OrahDEX onchain routes consistently outperform custodial rates.
 
@@ -69,7 +69,7 @@ Proprietary linear bonding curve that makes every listed asset instantly tradeab
 ### Cross-Chain Bridge
 - Trustless atomic swaps via Hash Time-Locked Contracts (HTLC)
 - BTC / BSV / BCH / EVM / TRON chains
-- Funds are never custodied — contracts enforce atomic settlement
+- HTLC-based routes use on-chain locks; settlement still depends on the configured contracts and relayer, so check the route and order status before trading
 
 ### OrahDEX Onchain API
 ```
@@ -151,7 +151,7 @@ User swap request
        │     6 venues competing simultaneously → best rate wins
        │     2,000,000+ pairs across 3,396 coins
        │
-       └── Onchain routes (parallel, non-custodial)
+       └── Wallet-signed on-chain routes (where supported)
              69 chains × 36 DEX aggregators × 34 bridge protocols
              → returns wallet-signable transaction
 
@@ -248,11 +248,11 @@ PORT=20180 pnpm --filter @workspace/bsv-dex run dev
 
 ## Security
 
-- **Zero PII** — no names, emails, or government IDs; identity is purely cryptographic
-- **Non-custodial** — users retain private keys at all times; atomic contracts ensure trustless settlement
-- **SSRF protection** — all outbound HTTP calls validated against a private-IP blocklist
-- **XSS protection** — all user-generated HTML sanitized before rendering
-- **Audited dependencies** — all transitive dependencies pinned to patched versions
+- **Wallet and account data** — wallet addresses, order and withdrawal records, and administrative records may be stored or processed by the service
+- **Custody varies by feature** — direct wallet-signed on-chain routes differ from internal-ledger and server-managed settlement or payout routes
+- **Outbound requests** — paymail resolution validates and pins public HTTPS destinations; other integrations require their own review
+- **Output rendering** — known AI portfolio output is sanitized before insertion; this is not a claim that every user-generated value is safe
+- **Release checks** — run the project's security and dependency checks before each release
 
 ---
 

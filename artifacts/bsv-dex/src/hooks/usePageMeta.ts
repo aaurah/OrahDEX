@@ -10,11 +10,11 @@ const S = " | OrahDEX";
 
 const STATIC: Record<string, PageMeta> = {
   "/": {
-    title: "OrahDEX — Trade means DEX | Spot, Futures & P2P Crypto Exchange",
+    title: "OrahDEX — Trade Means DEX | Spot, Futures & P2P Crypto Exchange",
     description: "Multi-chain DEX: spot trading, perpetual futures, P2P markets, BSV on-chain settlement. 900+ markets across EVM, TRON and BSV networks.",
   },
   "/home": {
-    title: "OrahDEX — Trade means DEX | Spot, Futures & P2P Crypto Exchange",
+    title: "OrahDEX — Trade Means DEX | Spot, Futures & P2P Crypto Exchange",
     description: "Multi-chain DEX: spot trading, perpetual futures, P2P markets, BSV on-chain settlement. 900+ markets across EVM, TRON and BSV networks.",
   },
   "/markets": {

@@ -967,7 +967,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const handleShare = async () => {
     const url = `${window.location.origin}${import.meta.env.BASE_URL}trade/${rawSymbol}`;
-    const text = `Trade ${symbol} on OrahDEX — Trade means DEX`;
+    const text = `Trade ${symbol} on OrahDEX — Trade Means DEX`;
     if (navigator.share) {
       try { await navigator.share({ title: `OrahDEX — ${symbol}`, text, url }); } catch {}
       setShareCopied(false);
@@ -3046,11 +3046,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
       </div>
 
-      {/* ── NON-CUSTODIAL STRIP (EVM wallets only) ── */}
+      {/* ── Route-specific funding disclosure (EVM wallets only) ── */}
       {isSelfCustodyEvm && (
         <div className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-1 border-t border-blue-500/20 bg-blue-500/5 text-[10px] text-blue-300/80 font-medium leading-none">
           <svg className="w-3 h-3 shrink-0 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-          Non-custodial — funds stay in your wallet until on-chain settlement
+          Funding and custody depend on the selected settlement route. Review order details before signing.
         </div>
       )}
 

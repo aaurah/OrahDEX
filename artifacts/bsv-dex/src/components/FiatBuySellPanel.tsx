@@ -516,7 +516,7 @@ export function FiatBuySellPanel() {
 
       {/* ── Note on estimated rate ── */}
       <p className="text-[10px] text-muted-foreground/40 text-center px-2">
-        Estimate only · Final rate confirmed by provider · {mode === "buy" ? "Non-custodial" : "KYC may be required"}
+        Estimate only · Final rate confirmed by provider · Provider terms apply
       </p>
 
       {/* ── Featured provider selector ── */}

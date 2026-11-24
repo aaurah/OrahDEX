@@ -46,7 +46,7 @@ const DEFAULT_TICKER_MSGS = [
   { id: "1", text: "BSV — World's Fastest Settlement Chain", active: true },
   { id: "2", text: "Instant On-Chain Settlement · No Bridges · No L2s", active: true },
   { id: "3", text: "Every trade settled on BSV in seconds", active: true },
-  { id: "4", text: "OrahDEX — Trade means DEX", active: true },
+  { id: "4", text: "OrahDEX — Trade Means DEX", active: true },
 ];
 
 export function AdminAnnouncements() {

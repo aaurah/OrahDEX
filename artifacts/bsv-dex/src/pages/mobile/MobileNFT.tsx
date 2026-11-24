@@ -9,6 +9,7 @@ import {
   ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Link, ImageIcon, Trash2, AlertCircle, MessagesSquare, Bell, Tag, Send as SendIcon,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { walletRequestAuthHeaders } from "@/lib/walletRequestAuth";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
@@ -514,22 +515,6 @@ function CreatorProfileSheet({
   const hybrid = useHybridBalance(60_000);
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    const isSelf = currentUserAddress && currentUserAddress === creatorAddress;
-    if (!isSelf) { setUnreadCount(0); return; }
-    const LAST_SEEN_KEY = `nft_notif_seen_${currentUserAddress}`;
-    function poll() {
-      const lastSeen = parseInt(localStorage.getItem(LAST_SEEN_KEY) ?? "0", 10);
-      fetch(`${API}/social/notifications?address=${encodeURIComponent(currentUserAddress!)}&since=${lastSeen}`)
-        .then(r => r.ok ? r.json() : { notifications: [] })
-        .then(d => setUnreadCount((d.notifications ?? []).length))
-        .catch(() => {});
-    }
-    poll();
-    const id = setInterval(poll, 30_000);
-    return () => clearInterval(id);
-  }, [currentUserAddress, creatorAddress]);
 
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
@@ -1238,7 +1223,11 @@ function CreatorProfileSheet({
         </Portal>
       )}
       {notifOpen && currentUserAddress && (
-        <NotificationPanel address={currentUserAddress} onClose={() => setNotifOpen(false)} />
+        <NotificationPanel
+          address={currentUserAddress}
+          onClose={() => setNotifOpen(false)}
+          onLoaded={setUnreadCount}
+        />
       )}
     </div>
     </Portal>
@@ -3090,21 +3079,57 @@ function timeAgoShort(ts: number): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
-function NotificationPanel({ address, onClose }: { address: string; onClose: () => void }) {
+function NotificationPanel({ address, onClose, onLoaded }: {
+  address: string;
+  onClose: () => void;
+  onLoaded?: (count: number) => void;
+}) {
   const [notifs, setNotifs] = useState<SocialNotif[]>([]);
   const [loading, setLoading] = useState(true);
+  const { network, provider } = useWalletStore();
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    fetch(`${API}/social/notifications?address=${encodeURIComponent(address)}`)
-      .then(r => r.ok ? r.json() : { notifications: [] })
-      .then(d => { setNotifs(d.notifications ?? []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [address]);
+    (async () => {
+      try {
+        const since = parseInt(localStorage.getItem(`nft_notif_seen_${address}`) ?? "0", 10);
+        const headers = await walletRequestAuthHeaders({
+          address,
+          network: network ?? "evm",
+          provider: provider ?? undefined,
+          resource: "social-notifications",
+          method: "GET",
+        });
+        const r = await fetch(`${API}/social/notifications?address=${encodeURIComponent(address)}&since=${since}`, { headers });
+        const d = r.ok ? await r.json() : { notifications: [] };
+        if (!cancelled) {
+          const loaded = d.notifications ?? [];
+          setNotifs(loaded);
+          onLoaded?.(loaded.length);
+        }
+      } catch {
+        if (!cancelled) setNotifs([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [address, network, provider, onLoaded]);
 
-  function clearAll() {
-    fetch(`${API}/social/notifications?address=${encodeURIComponent(address)}`, { method: "DELETE" }).catch(() => {});
+  async function clearAll() {
+    try {
+      const headers = await walletRequestAuthHeaders({
+        address,
+        network: network ?? "evm",
+        provider: provider ?? undefined,
+        resource: "social-notifications",
+        method: "DELETE",
+      });
+      await fetch(`${API}/social/notifications?address=${encodeURIComponent(address)}`, { method: "DELETE", headers });
+    } catch { /* keep the visible list if wallet authorization fails */ }
     setNotifs([]);
+    onLoaded?.(0);
   }
 
   return (

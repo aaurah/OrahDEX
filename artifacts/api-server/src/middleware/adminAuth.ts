@@ -1,12 +1,14 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
-import { like, eq } from "drizzle-orm";
+import { like, eq, or, desc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 
-const TOKEN_PREFIX = "admin_session:";
+const TOKEN_PREFIX = "admin_session_hash:";
+const LEGACY_TOKEN_PREFIX = "admin_session:";
 const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_ADMIN_SESSIONS = 1_000;
 
 const adminTokens = new Set<string>();
 const adminTokenExpirations = new Map<string, number>();
@@ -15,6 +17,10 @@ function hasTokenExpired(token: string): boolean {
   const expiresAt = adminTokenExpirations.get(token);
   if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return true;
   return Date.now() > expiresAt;
+}
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function purgeExpiredToken(token: string): void {
@@ -33,38 +39,76 @@ export async function hydrateAdminTokens(): Promise<void> {
     const rows = await db
       .select()
       .from(platformSettingsTable)
-      .where(like(platformSettingsTable.key, `${TOKEN_PREFIX}%`));
+      .where(or(
+        like(platformSettingsTable.key, `${TOKEN_PREFIX}%`),
+        like(platformSettingsTable.key, `${LEGACY_TOKEN_PREFIX}%`),
+      ))
+      .orderBy(desc(platformSettingsTable.updatedAt));
     const now = Date.now();
     let expired = 0;
+    let overLimit = 0;
     for (const row of rows) {
       try {
-        const { token, expiresAt } = JSON.parse(row.value) as { token: string; expiresAt: number };
+        const parsed = JSON.parse(row.value) as { token?: string; tokenHash?: string; expiresAt: number };
+        const tokenHash = parsed.tokenHash ?? (parsed.token ? hashToken(parsed.token) : "");
+        const expiresAt = parsed.expiresAt;
+        if (!tokenHash) {
+          await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, row.key));
+          continue;
+        }
         if (expiresAt && now > expiresAt) {
           await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, row.key));
           expired++;
+        } else if (adminTokens.size >= MAX_ADMIN_SESSIONS) {
+          // Keep the newest sessions and revoke overflow rows deterministically.
+          await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, row.key));
+          overLimit++;
         } else {
-          adminTokens.add(token);
+          adminTokens.add(tokenHash);
           if (typeof expiresAt === "number" && Number.isFinite(expiresAt)) {
-            adminTokenExpirations.set(token, expiresAt);
+            adminTokenExpirations.set(tokenHash, expiresAt);
+          }
+          // Upgrade old plaintext sessions in place without invalidating them.
+          if (row.key.startsWith(LEGACY_TOKEN_PREFIX)) {
+            await db.insert(platformSettingsTable)
+              .values({
+                key: `${TOKEN_PREFIX}${tokenHash}`,
+                value: JSON.stringify({ tokenHash, expiresAt }),
+              })
+              .onConflictDoUpdate({
+                target: platformSettingsTable.key,
+                set: { value: JSON.stringify({ tokenHash, expiresAt }), updatedAt: new Date() },
+              });
+            await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, row.key));
           }
         }
       } catch (parseErr: any) {
         logger.warn({ key: row.key, err: parseErr?.message }, "adminAuth: malformed admin session row — skipping");
       }
     }
-    logger.info({ sessions: adminTokens.size, expired }, "adminAuth: hydrated admin sessions from DB");
+    logger.info({ sessions: adminTokens.size, expired, overLimit }, "adminAuth: hydrated admin sessions from DB");
   } catch (err: any) {
     logger.warn({ err: err?.message }, "adminAuth: could not hydrate tokens from DB");
   }
 }
 
 export async function generateAdminToken(): Promise<string> {
+  const now = Date.now();
+  for (const [hash, expiresAt] of adminTokenExpirations) {
+    if (expiresAt <= now) {
+      adminTokens.delete(hash);
+      adminTokenExpirations.delete(hash);
+    }
+  }
+  if (adminTokens.size >= MAX_ADMIN_SESSIONS) {
+    throw new Error("Maximum number of active admin sessions reached.");
+  }
+
   const token = randomBytes(32).toString("hex");
-  adminTokens.add(token);
-  const expiresAt = Date.now() + TOKEN_TTL_MS;
-  adminTokenExpirations.set(token, expiresAt);
-  const key = `${TOKEN_PREFIX}${token}`;
-  const value = JSON.stringify({ token, createdAt: Date.now(), expiresAt });
+  const tokenHash = hashToken(token);
+  const expiresAt = now + TOKEN_TTL_MS;
+  const key = `${TOKEN_PREFIX}${tokenHash}`;
+  const value = JSON.stringify({ tokenHash, createdAt: now, expiresAt });
   try {
     await db
       .insert(platformSettingsTable)
@@ -72,17 +116,21 @@ export async function generateAdminToken(): Promise<string> {
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
   } catch (err: any) {
     logger.warn({ err: err?.message }, "adminAuth: could not persist token to DB");
+    throw new Error("Unable to persist the admin session. Please retry.");
   }
+  adminTokens.add(tokenHash);
+  adminTokenExpirations.set(tokenHash, expiresAt);
   return token;
 }
 
 export async function revokeAdminToken(token: string): Promise<void> {
-  adminTokens.delete(token);
-  adminTokenExpirations.delete(token);
+  const tokenHash = hashToken(token);
+  adminTokens.delete(tokenHash);
+  adminTokenExpirations.delete(tokenHash);
   try {
     await db
       .delete(platformSettingsTable)
-      .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${token}`));
+      .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${tokenHash}`));
   } catch { /* best-effort */ }
 }
 
@@ -93,7 +141,10 @@ export async function revokeAllAdminTokens(): Promise<void> {
     const rows = await db
       .select()
       .from(platformSettingsTable)
-      .where(like(platformSettingsTable.key, `${TOKEN_PREFIX}%`));
+      .where(or(
+        like(platformSettingsTable.key, `${TOKEN_PREFIX}%`),
+        like(platformSettingsTable.key, `${LEGACY_TOKEN_PREFIX}%`),
+      ));
     for (const row of rows) {
       await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, row.key));
     }
@@ -101,7 +152,7 @@ export async function revokeAllAdminTokens(): Promise<void> {
 }
 
 function hasMatchingAdminToken(token: string): boolean {
-  const incoming = Buffer.from(token);
+  const incoming = Buffer.from(hashToken(token));
   // Dummy buffer used when lengths differ so timingSafeEqual always runs
   // (prevents early short-circuit that leaks token-length timing info).
   const dummy = Buffer.alloc(incoming.length);
@@ -128,8 +179,9 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
     res.status(401).json({ error: "Admin authentication required." });
     return;
   }
-  if (hasTokenExpired(token)) {
-    purgeExpiredToken(token);
+  const tokenHash = hashToken(token);
+  if (hasTokenExpired(tokenHash)) {
+    purgeExpiredToken(tokenHash);
     res.status(401).json({ error: "Admin session expired. Please log in again." });
     return;
   }
@@ -138,8 +190,9 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
 
 export function isValidAdminToken(token: unknown): boolean {
   if (typeof token !== "string" || token.length === 0 || !hasMatchingAdminToken(token)) return false;
-  if (hasTokenExpired(token)) {
-    purgeExpiredToken(token);
+  const tokenHash = hashToken(token);
+  if (hasTokenExpired(tokenHash)) {
+    purgeExpiredToken(tokenHash);
     return false;
   }
   return true;

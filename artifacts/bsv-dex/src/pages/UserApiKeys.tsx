@@ -36,7 +36,7 @@ export function UserApiKeys() {
 
   const { data: keys = [], isLoading } = useQuery({
     queryKey: ["user-api-keys", address],
-    queryFn: () => fetch(`${BASE}/api/user/api-keys?wallet=${address}`).then(r => r.json()),
+    queryFn: async () => [],
     enabled: !!address,
   });
 
@@ -140,10 +140,19 @@ export function UserApiKeys() {
               </p>
               <button
                 onClick={() => setShowAdd(true)}
+                disabled
+                title="Personal API keys are temporarily disabled for security."
                 className="flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-1.5 rounded-xl text-xs font-semibold"
               >
-                <Plus className="w-3.5 h-3.5" /> New Key
+                <Plus className="w-3.5 h-3.5" /> Temporarily disabled
               </button>
+            </div>
+
+            <div className="flex gap-3 p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground">
+                Personal API keys are disabled while signed wallet authorization and persistent key storage are implemented. The previous flow did not verify ownership and generated keys that the API did not authenticate.
+              </p>
             </div>
 
             {isLoading ? (
@@ -215,10 +224,7 @@ export function UserApiKeys() {
             <div className="bg-secondary/60 rounded-xl px-3 py-2.5">
               <code className="text-[11px] font-mono text-green-400">X-API-Key: your_key_here</code>
             </div>
-            <p className="text-xs text-muted-foreground">Or as a query parameter:</p>
-            <div className="bg-secondary/60 rounded-xl px-3 py-2.5">
-              <code className="text-[11px] font-mono text-green-400">/api/markets?apiKey=your_key_here</code>
-            </div>
+            <p className="text-xs text-muted-foreground">Never put API credentials in a URL or query parameter. This feature is temporarily disabled.</p>
           </div>
         )}
 

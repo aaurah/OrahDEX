@@ -162,6 +162,9 @@ export function WhitePaper() {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-8 pb-24">
+        <div role="alert" className="mb-6 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          This white paper is under security and accuracy review. Earlier statements that OrahDEX never holds or controls funds, collects no personal data, or requires no licenses are not reliable. Custody and data handling vary by feature; this document is not legal or financial advice.
+        </div>
         <div className="flex gap-8">
           <aside className="hidden lg:block w-52 shrink-0">
             <div className="sticky top-20 space-y-1">
@@ -197,7 +200,7 @@ export function WhitePaper() {
               </div>
               <div>
                 <h1 className="text-3xl font-black tracking-tight">OrahDEX White Paper</h1>
-                <p className="text-primary font-semibold mt-1 text-lg">Trade means DEX</p>
+                <p className="text-primary font-semibold mt-1 text-lg">Trade Means DEX</p>
                 <p className="text-sm text-muted-foreground mt-2">
                   By <span className="text-foreground font-semibold">{FOUNDER}</span>
                   <span className="text-muted-foreground/60 mx-1.5">·</span>
@@ -205,7 +208,7 @@ export function WhitePaper() {
                 </p>
               </div>
               <p className="text-sm text-muted-foreground max-w-lg mx-auto leading-relaxed px-4">
-                A sovereign, permissionless, multi-chain trading protocol with native Bitcoin SV on-chain settlement, cross-chain atomic swaps, Genesis Liquidity Engine (Virtual AMM), perpetual futures, on-chain CopyVault copy trading, AI intelligence (Ora), and zero PII collection — built to outlast any regulatory regime or competitive incumbent.
+                A multi-route digital-asset trading service. Wallet-signed transactions, server-managed settlement, data handling, and supported networks vary by feature and provider.
               </p>
               <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground flex-wrap px-4">
                 <span>Version {VERSION}</span>
@@ -219,32 +222,32 @@ export function WhitePaper() {
                 <a href="https://orahdex.com" className="text-primary hover:underline flex items-center gap-1">orahdex.com <ExternalLink className="w-2.5 h-2.5" /></a>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mx-4 sm:mx-8 pt-2">
-                <Metric value="2,023,154+" label="Trading Markets" sub="Spot · Bridge · VAMM · 20+ Chains" />
-                <Metric value="20+" label="Native Chains" sub="EVM · TRON · BSV · BTC · SOL+" />
-                <Metric value="56+" label="VAMM Markets" sub="Genesis Liquidity Engine" />
-                <Metric value="$0 PII" label="Identity Model" sub="Cryptographic-only, no KYC" />
+                <Metric value="Multi-route" label="Trading" sub="Wallet-signed and server-managed" />
+                <Metric value="Varies" label="Networks" sub="Depends on selected feature" />
+                <Metric value="Review first" label="Custody" sub="Check route-specific details" />
+                <Metric value="Under review" label="White paper" sub="Security and accuracy updates pending" />
               </div>
             </div>
 
             {/* ── ABSTRACT ── */}
             <Section id="abstract" title="Abstract" accent>
               <p>
-                OrahDEX is a <span className="text-foreground font-medium">sovereign, permissionless trading protocol</span> — not a company, not a product, not a financial intermediary. It is a set of cryptographic rules, smart contracts, and open-source mathematics that connect willing counterparties directly on-chain, with no intermediary, no custody, and no personally identifiable information collected at any layer of the system.
+                OrahDEX is a multi-route trading service combining wallet-signed on-chain transactions with server-managed exchange, internal-ledger, settlement, and payout paths. The custody, data handling, and operational dependencies differ by feature and provider.
               </p>
               <p>
-                The protocol unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) settlement, cross-chain atomic bridging, on-chain copy trading (CopyVault), an NFT marketplace with creator coins (OrahNFT), fiat on-ramp (6 providers), and AI-powered market intelligence (Ora) — across 20+ natively supported chains (and 200+ via the bridge aggregator), 2,023,154+ trading markets, and every major wallet type (Orah HD wallet, MetaMask, WalletConnect/Reown, ThirdWeb) — within a single sovereign interface that any human on earth with internet access can use without asking permission from anyone.
+                The product includes trading, swaps, bridge, wallet, and market-information features. Availability, supported assets, and settlement providers change over time and are not guaranteed by this document.
               </p>
               <p>
-                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its immutable settlement layer. BSV's UTXO-based architecture, unbounded block size, and sub-cent fee structure make it the only public blockchain capable of recording every trade as an on-chain OP_RETURN proof without economic friction. Hash Time-Locked Contract (HTLC) atomic swaps execute cross-chain settlements without trusting any third party. Ten EVM chains are natively supported with live on-chain balance tracking — <span className="text-foreground font-medium">Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, Linea, Scroll, and Mantle</span> — with native Web3 wallet integration and a 43-token ERC-20 registry that calls <code className="text-green-400 text-[10px]">balanceOf()</code> directly on-chain, requiring no backend price oracle or API key. TRON (TRX and TRC-20 USDT) is natively supported giving hundreds of millions of TRON-ecosystem users full access to OrahDEX without wrapping, bridging, or converting.
+                Settlement may use public blockchains, escrow contracts, internal ledgers, relayers, or third-party providers. The selected chain and funding route determine the signing, settlement, and recovery process; do not infer that any route is trustless or atomic without checking its deployed contracts and terms.
               </p>
               <p>
-                The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> is OrahDEX's proprietary Virtual AMM — a linear bonding curve mechanism that guarantees every listed asset is instantly tradeable before real liquidity exists, eliminating the cold-start problem that has plagued every new DEX in history.
+                Virtual liquidity or price estimates do not guarantee executable market depth, a fill, or a specific execution price.
               </p>
               <p>
-                The <span className="text-foreground font-medium">CopyVault system</span> is an on-chain copy trading protocol — followers deposit USDT into leader-managed vaults, automatically mirror proportional trades, and receive BSV OP_RETURN proofs for every mirrored execution — immutable, publicly auditable, trustless.
+                Copy-trading and vault features may involve on-chain contracts and server-managed order processing. Confirm the current implementation and custody details before use.
               </p>
               <p>
-                <span className="text-foreground font-medium">OrahNFT</span> is a social NFT marketplace inspired by Zora and Instagram, where every post is simultaneously a BSV inscription and a tradeable creator coin. Creators publish visual content — art, photography, generative media — and collectors mint, trade, and hold creator-specific tokens on a bonding curve. The creator economy is embedded directly into the exchange, not bolted on — creator coins are priced by the same VAMM engine that powers spot markets, ensuring always-on liquidity and instant price discovery for every creator.
+                NFT and creator features, when available, may rely on separate contracts and market providers. Availability and liquidity are not guaranteed.
               </p>
               <p>
                 This document presents the technical architecture, economic model, cryptographic foundations, security design, disruption analysis, adversarial resilience model, and strategic roadmap of OrahDEX as of version {VERSION}. It is written for regulators, engineers, institutional participants, and sovereign individuals equally — because the protocol is permissionless and globally accessible to all of them.
@@ -252,7 +255,7 @@ export function WhitePaper() {
               <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/10 to-violet-400/5 border border-primary/20 space-y-2">
                 <p className="text-sm font-black text-foreground">Core Thesis</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Centralised exchanges extract over $100 billion per year from traders through custody fees, spread capture, withdrawal friction, and information asymmetry — all of which require users to surrender control of their assets. OrahDEX makes every one of these extraction mechanisms technically impossible. The protocol is not disruptive in the startup sense. It is disruptive in the same way that email was disruptive to postal monopolies, or that Bitcoin was disruptive to correspondent banking — structurally, permanently, and without asking permission.
+                  OrahDEX offers multiple digital-asset routes with different fee, custody, execution, and operational characteristics. No route eliminates all intermediary, market, or technical risks.
                 </p>
               </div>
             </Section>
@@ -283,22 +286,22 @@ export function WhitePaper() {
                 ))}
               </div>
               <InfoBox title="The Structural Problem" color="amber">
-                <p>Every one of these failure modes shares a common root: <strong>intermediation</strong>. When a third party stands between a user and their assets, all forms of custody risk, identity extraction, and regulatory seizure become structurally possible. OrahDEX eliminates the intermediary. Not as a policy choice — as a mathematical constraint. The protocol cannot hold user funds because no contract or server possesses custody capability. It cannot collect identity because the architecture requests none. It cannot act as a regulatory choke point because no administrative key controls the deployed contracts.</p>
+                <p>Intermediation creates custody, account, and operational risks. OrahDEX supports direct wallet-signed on-chain routes, but some exchange, internal-ledger, and payout paths use server-managed keys or hot wallets. Those paths are not fully non-custodial, and this white paper should not be read as a claim that the service cannot control or hold funds.</p>
               </InfoBox>
             </Section>
 
             {/* ── 2. SOLUTION ── */}
             <Section id="solution" title="2. The OrahDEX Solution">
-              <p>OrahDEX is designed around a single architectural constraint: <span className="text-foreground font-medium">no user asset or identity should ever pass through OrahDEX control</span>. Every feature, every design decision, and every cryptographic mechanism flows from this constraint.</p>
+              <p>OrahDEX offers different settlement models. Review the route shown for each feature: direct wallet-signed transactions are distinct from internal-ledger and server-managed settlement.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
-                  { title: "Non-Custodial by Architecture", icon: "🔐", desc: "Users retain full control of their private keys and assets at all times. OrahDEX cannot hold, freeze, seize, or reverse user funds — not because of policy, but because the system is designed to make it mathematically impossible." },
+                  { title: "Route-Specific Custody", icon: "🔐", desc: "Direct on-chain routes use the connected wallet to sign transactions. Some exchange, internal-ledger, and payout paths use server-managed keys or hot wallets; those paths carry custody and operational risk." },
                   { title: "Multi-Chain Native", icon: "🌐", desc: "Native support for BSV (settlement), Ethereum + 12 EVM chains, and TRON (TRX/TRC-20 USDT). One sovereign interface — every major chain." },
                   { title: "Always-On Liquidity", icon: "⚡", desc: "Genesis Liquidity Engine (VAMM) provides permanent, simulation-based liquidity for all listed assets via a linear bonding curve. The cold-start liquidity problem is eliminated: every asset is tradeable from the moment it is listed, independent of real LP participation." },
                   { title: "Full Trading Spectrum", icon: "📊", desc: "Spot, futures (100x), VAMM, AMM, P2P, bridge, CopyVault, NFT marketplace, fiat on-ramp (6 providers) — every instrument in one interface with BSV settlement proofs across all." },
                   { title: "OrahNFT — Creator Economy", icon: "🎨", desc: "A Zora×Instagram-style social NFT marketplace where every post is a BSV inscription and a tradeable creator coin. Creators publish, collectors mint, and bonding curves ensure instant liquidity for every creator token." },
                   { title: "AI Intelligence Layer", icon: "🧠", desc: "Ora AI provides real-time market analysis, portfolio coaching, risk assessment, and trading education — embedded directly in the interface, democratising institutional-grade intelligence." },
-                  { title: "Zero Identity Collection", icon: "🛡️", desc: "No name. No email. No government ID. No IP address stored. User identity on OrahDEX is a cryptographic wallet address — generated by the user, controlled by the user, known only to the user." },
+                  { title: "Wallet-Based Accounts", icon: "🛡️", desc: "Wallet addresses identify many app accounts, while administrative and service records may also include email, network, transaction, and operational data." },
                 ].map(({ title, icon, desc }) => (
                   <div key={title} className="p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
                     <div className="text-2xl">{icon}</div>
@@ -314,17 +317,17 @@ export function WhitePaper() {
 
             {/* ── 3.0 DESIGN PRINCIPLES ── */}
             <Section id="principles" title="3.0 Design Principles">
-              <p>This section declares the eight immutable design axioms from which every OrahDEX architectural decision derives. These are not aspirations — they are structural constraints enforced at the cryptographic and protocol level.</p>
+              <p>These are product goals, not guarantees. Current custody and privacy properties vary by feature; direct wallet-signed routes differ from server-managed ledger, settlement, and payout services.</p>
               <div className="space-y-2">
                 {[
-                  { n: "I",    title: "Sovereignty",               body: "No user asset, identity, or decision passes through OrahDEX control at any point. The protocol is a set of open-source cryptographic rules, not a custodian." },
-                  { n: "II",   title: "Non-Custodial Architecture", body: "OrahDEX cannot hold, freeze, seize, or reverse user funds. This is not a policy — it is a mathematical constraint baked into the HTLC scripts at Layer 1." },
-                  { n: "III",  title: "Zero Identity",              body: "No name. No email. No government ID. No IP stored. User identity on OrahDEX is a cryptographic wallet address — generated by the user, controlled by the user, known only to the user." },
-                  { n: "IV",   title: "Zero Admin Keys",            body: "No administrator, founder, employee, or third party holds keys capable of altering, pausing, or redirecting protocol contracts. Deployed contracts are immutable." },
-                  { n: "V",    title: "Cryptographic Enforcement",  body: "All guarantees — settlement finality, fund safety, atomic swap atomicity, performance fee limits — are enforced by cryptographic primitives, not by trust, reputation, or legal contracts." },
-                  { n: "VI",   title: "Deterministic Execution",    body: "Given the same inputs, the protocol always produces the same outputs. No randomness, no discretion, no human judgement enters the settlement path." },
-                  { n: "VII",  title: "Open-Source Mathematics",    body: "Every formula, every script, every algorithm described in this document is published in open-source code. Security through obscurity is architecturally excluded." },
-                  { n: "VIII", title: "Permissionless Access",      body: "Any user, any wallet, any jurisdiction, any trade size. No KYC, no whitelist, no minimum, no approval process. Access is governed by cryptographic proof of wallet ownership only." },
+                  { n: "I",    title: "Route-Specific Control",    body: "Some routes are signed directly by a connected wallet; other exchange, ledger, and payout routes rely on server-managed services. Check the custody model shown for each feature." },
+                  { n: "II",   title: "Custody Varies by Feature", body: "OrahDEX operates internal-ledger and hot-wallet payout paths. Those paths are not fully non-custodial and have operational risks in addition to smart-contract risks." },
+                  { n: "III",  title: "Wallet-Based Accounts",     body: "Wallet addresses identify many accounts, but the service may also process network, transaction, support, administrative, and other operational data." },
+                  { n: "IV",   title: "Administrative Controls",   body: "The service uses administrator, relayer, and settlement credentials. Their privileges depend on the service path and deployed contract; review the current contract and controls." },
+                  { n: "V",    title: "Mixed Enforcement",         body: "Some settlement rules are enforced by on-chain contracts; other actions rely on server code, administrators, external providers, or the configured relayer." },
+                  { n: "VI",   title: "Operational Dependencies",  body: "Routing, monitoring, providers, and server availability affect execution. Outcomes are not guaranteed to be identical for every request." },
+                  { n: "VII",  title: "Code and Contract Review",  body: "Published source is available for review, but this document does not claim that every formula, service, or deployed contract has been independently audited." },
+                  { n: "VIII", title: "Access Depends on Route",   body: "Wallet support, availability, and verification requirements vary by feature, chain, provider, and jurisdiction. Check the route's current requirements before trading." },
                 ].map(({ n, title, body }) => (
                   <div key={n} className="flex gap-3 p-3 bg-secondary/30 border border-border rounded-xl">
                     <span className="text-primary font-mono font-bold text-sm shrink-0 w-10 text-right">{n}.</span>
@@ -1072,7 +1075,7 @@ Example:
             {/* ── 11. ORA AI ── */}
             <Section id="ora-ai" title="11. Ora — Integrated AI Trading Intelligence">
               <p>
-                <span className="text-foreground font-medium">Ora</span> is OrahDEX's embedded AI market intelligence layer — the first AI trading assistant to be natively integrated into a sovereign, non-custodial DEX. Ora contextually understands the user's active pair, position state, order book depth, and full OrahDEX product suite without any manual configuration.
+                <span className="text-foreground font-medium">Ora</span> is OrahDEX's embedded AI market intelligence layer, integrated into a multi-route trading platform. It can use the active pair and available market context to tailor responses.
               </p>
               <Sub title="11.1 Capability Matrix">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1236,10 +1239,10 @@ Futures Liquidation Penalty:
                     <p key={a} className="flex items-start gap-1"><span className="text-red-400 shrink-0">•</span>{a}</p>
                   ))}
                 </div>
-                <p className="mt-2 text-xs">The protocol is designed to remain sovereign, non-custodial, and operational under all of the above conditions simultaneously.</p>
+                <p className="mt-2 text-xs">These are risks to evaluate, not adversaries the service is guaranteed to resist. Custody, availability, and settlement depend on the selected route and its configured contracts and providers.</p>
               </InfoBox>
               <Sub title="13.1 Threat Surface Analysis">
-                <p>OrahDEX's non-custodial architecture eliminates the most dangerous class of attacks — those targeting a centralised fund custodian. The residual threat surface is:</p>
+                <p>OrahDEX includes both wallet-signed routes and server-managed ledger or payout paths. Threat review must include smart contracts, hot wallets, relayers, administrators, providers, and service availability.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
                     { threat: "Smart Contract Exploits", mitigation: "Independent audits by top-3 security firms. Formal verification of HTLC scripts. Immutable time-lock refund mechanisms ensure worst-case is fund delay, not loss." },
@@ -1252,7 +1255,7 @@ Futures Liquidation Penalty:
                     { threat: "CopyVault Withdrawal Timing", mitigation: "Follower withdraws immediately after profitable trade. This is permitted — it is not an attack. Vault share accounting (ERC4626) is resistant to withdrawal timing games by design; all share values and TVL are updated atomically per trade." },
                     { threat: "Sybil Attack (P2P)", mitigation: "BSV wallet staking requirement for P2P liquidity providers. On-chain reputation score based on settlement history. Arbitration panel with supermajority threshold." },
                     { threat: "UI Spoofing / Phishing", mitigation: "Wallet addresses are displayed directly from the connected wallet provider — no address substitution is possible at the OrahDEX layer. OrahDEX never requests seed phrases, private keys, or recovery words. Any interface that asks for these is fraudulent." },
-                    { threat: "API Server Compromise", mitigation: "A compromised server cannot steal funds: (1) all trades require user signatures; (2) server holds no private keys; (3) server holds no user assets; (4) server holds no identity; (5) settlement occurs on BSV, not the server. Compromise affects order book state only — state is fully reconstructible from BSV chain." },
+                    { threat: "API Server Compromise", mitigation: "A server compromise can affect server-managed wallet keys, hot-wallet payouts, internal-ledger records, and order processing. Direct wallet-signed routes and on-chain contracts have separate controls; assess each route independently." },
                     { threat: "Database Compromise", mitigation: "Database compromise cannot alter or fabricate trade records because settlement proofs are stored on-chain (BSV OP_RETURN) and are immutable. The on-chain record is the authoritative truth; the database is an indexed cache." },
                     { threat: "Bridge Censorship", mitigation: "No relayer can censor settlement because users can broadcast claim and refund transactions directly to both chains — no relayer coordination is required for the on-chain enforcement path. Censorship by relayers delays, but cannot block, fund recovery." },
                     { threat: "DDoS on Application Layer", mitigation: "Stateless servers with horizontal scaling — no single server is a point of failure. CDN + rate limiting + circuit breakers. BSV settlement layer is independent and continues operating during application downtime." },
@@ -1309,14 +1312,14 @@ OrahDEX never sees: private key, seed phrase, or decryption key.`}</Code>
                 <p className="font-semibold text-sm mt-4 mb-2">Self-Healing Worker Engine (v4.7)</p>
                 <p>All background workers — price updater (60 s), liquidity bot (120 s), BSV/EVM deposit watchers, futures funding (8 h) and liquidation engine (60 s) — run under <code className="text-green-400 text-[10px]">guardedInterval</code>, a timeout-aware replacement for the raw <code className="text-green-400 text-[10px]">setInterval + _busy</code> pattern. Key properties: (1) if a worker hangs beyond its configured timeout (typically 90–95% of interval), the lock is force-released and the next tick proceeds; (2) consecutive failures trigger exponential skip-backoff (up to 8 intervals skipped), preventing a persistently failing worker from hammering a degraded dependency; (3) each service is registered in a central health registry that feeds the <code className="text-green-400 text-[10px]">/api/health</code> endpoint with per-service <span className="text-foreground">healthy / degraded / stuck / dead</span> status — the endpoint returns HTTP 503 when any service is dead, enabling external monitors to auto-alert or auto-restart. An order reconciler runs every 5 minutes and auto-cancels any user order stuck <code className="text-green-400 text-[10px]">open</code> for more than 30 minutes, preventing indefinite capital lock-up. A withRetry utility wraps critical DB/network calls with exponential backoff and jitter. Together these mechanisms mean the exchange auto-recovers from worker hangs, transient DB outages, and network failures without manual restart.</p>
 
-                <InfoBox title="Regulatory Seizure Immunity" color="green">
-                  <p>OrahDEX cannot be seized because it holds:</p>
+                <InfoBox title="Custody and Operational Risk" color="amber">
+                  <p>OrahDEX service paths may involve the following controls and risks:</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1 text-xs text-muted-foreground">
-                    {["No user assets (non-custodial)", "No private keys", "No user identity (zero PII)", "No admin keys over protocol", "No custody of any funds", "No single point of shutdown"].map(p => (
+                    {["Wallet-signed routes are available", "Server-managed keys exist", "Account data is processed", "Admin and relayer keys exist", "Custody varies by feature", "Service availability matters"].map(p => (
                       <p key={p} className="flex items-start gap-1"><span className="text-green-400 shrink-0">✓</span>{p}</p>
                     ))}
                   </div>
-                  <p className="mt-2 text-xs">The protocol is a set of open-source cryptographic rules deployed on a public blockchain, not a company with seizable assets. A seizure order against OrahDEX is structurally equivalent to a seizure order against the rules of mathematics.</p>
+                  <p className="mt-2 text-xs">This product includes a company-operated service and server-managed settlement paths. This page does not make claims about legal process, regulatory status, or immunity from seizure.</p>
                 </InfoBox>
               </Sub>
             </Section>
@@ -1512,9 +1515,9 @@ It requires only: the Bitcoin SV blockchain + any EVM chain + mathematics.`}</Co
                       {[
                         ["Trading Fees",        "Maker/taker spread on every trade",                 "$30–45B",  "Direct competition: OrahDEX 0.00–0.20% vs CEX avg 0.20–0.50%"],
                         ["Withdrawal Fees",     "Flat fee on every withdrawal, often $5–25",         "$8–12B",   "Eliminated: BSV settlement costs $0.0001 per tx"],
-                        ["Interest on Custody", "CEX earns yield on user deposits they control",     "$15–25B",  "Eliminated: users hold their own keys, earn their own yield"],
-                        ["Spread Capture",      "Market making on own platform with information edge","$20–40B",  "Eliminated: Sovereign Price Engine removes CEX information advantage"],
-                        ["Data Monetisation",   "Selling user PII, trading patterns, order flow",    "$3–8B",    "Eliminated: OrahDEX collects zero PII and zero order flow"],
+                        ["Interest on Custody", "CEX earns yield on user deposits they control",     "$15–25B",  "Not applicable to all routes: some OrahDEX paths use server-managed settlement or payouts"],
+                        ["Spread Capture",      "Market making on own platform with information edge","$20–40B",  "Execution and pricing vary by route; no information advantage is ruled out"],
+                        ["Data Monetisation",   "Selling user PII, trading patterns, order flow",    "$3–8B",    "The service processes wallet, transaction, and operational data; see privacy disclosures"],
                       ].map(([source, mechanism, est, impact]) => (
                         <tr key={source as string} className="border-b border-border/40">
                           <td className="py-2 pr-4 font-semibold text-foreground">{source}</td>
@@ -1527,7 +1530,7 @@ It requires only: the Bitcoin SV blockchain + any EVM chain + mathematics.`}</Co
                   </table>
                 </div>
                 <p className="text-xs text-muted-foreground pt-1">
-                  Total estimated annual CEX revenue at stake: <span className="text-foreground font-bold">$76 billion to $130 billion</span>. This is not a market share competition. It is a structural revenue elimination — each category disappears completely as the custody model is replaced by self-sovereign on-chain settlement.
+                  These market-size estimates have not been independently verified. They do not describe OrahDEX revenue or guarantee that any fee, spread, custody, or data-related cost is eliminated.
                 </p>
               </Sub>
 
@@ -1550,12 +1553,12 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
 
               <Sub title="16.3 The Information Asymmetry Elimination">
                 <p>
-                  CEXs maintain a structural information advantage through two mechanisms: (1) they see every user's order before it hits the market (order flow data), and (2) they aggregate user trading patterns to front-run positions. OrahDEX's Sovereign Price Engine and on-chain settlement eliminate both:
+                  Order visibility and data processing depend on the trading route. API-backed order books receive order details, public-chain transactions are visible on-chain, and pricing may depend on external providers:
                 </p>
                 <ul className="list-disc list-inside space-y-1.5 ml-1">
-                  <li><span className="font-medium text-foreground">No centrally visible order flow:</span> Limit orders are signed locally and broadcast directly. The OrahDEX API server sees signed messages, not private order intent before signing.</li>
-                  <li><span className="font-medium text-foreground">No user pattern aggregation:</span> Zero PII collection means zero trading pattern linkage to real identity. Order history is linked only to a wallet address chosen by the user.</li>
-                  <li><span className="font-medium text-foreground">On-chain price discovery:</span> The Sovereign Price Engine cannot be privately manipulated — it is derived from on-chain transactions that are publicly visible to every participant simultaneously.</li>
+                  <li><span className="font-medium text-foreground">Order visibility:</span> Server-managed order-book paths process submitted order details; direct wallet routes expose transactions when broadcast.</li>
+                  <li><span className="font-medium text-foreground">Data handling:</span> Wallet addresses, order and transaction history, and operational records may be processed. Do not assume that activity cannot be linked to a person.</li>
+                  <li><span className="font-medium text-foreground">Pricing:</span> Prices may use exchange, oracle, or provider data and can be stale, incomplete, or manipulated.</li>
                 </ul>
               </Sub>
 
@@ -1611,7 +1614,7 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
                       scenario: "Competitive Liquidity War (CEX subsidises trading)",
                       cost: "Very High (billions/year)",
                       impact: "Medium",
-                      response: "A subsidised CEX still requires custody. Every user who prefers self-custody has a reason to use OrahDEX regardless of fee differential. The CopyVault on-chain proof model cannot be replicated without a non-custodial settlement layer.",
+                      response: "Different services have different custody, execution, fee, and risk models. Users should compare the specific route and its disclosures rather than assume one model is safer for everyone.",
                       color: "text-amber-400",
                       bg: "bg-amber-400/5 border-amber-400/10",
                     },
@@ -1784,6 +1787,11 @@ CopyVault network effect (additional layer):
 
             {/* ── 18. SOVEREIGN STATUS ── */}
             <Section id="compliance" title="20. Sovereign Status & Permissionless Design">
+              <div role="alert" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                The previous jurisdiction-by-jurisdiction licensing conclusions have been withdrawn. OrahDEX's legal and regulatory status has not been determined in this document; obtain qualified counsel for each relevant jurisdiction.
+              </div>
+              {false && (
+                <>
               <p>
                 OrahDEX's legal posture is not a compliance strategy — it is an architectural fact. This section documents the legal analysis of OrahDEX's regulatory status across eight major jurisdictions and explains why that status flows from the protocol's technical design, not from legal argumentation.
               </p>
@@ -1950,6 +1958,8 @@ If any authority requests user identity data:
                 </p>
                 <p className="text-xs font-semibold text-violet-300 border-t border-violet-400/20 pt-3">Your private key is your sovereignty. OrahDEX is the protocol that honours it.</p>
               </div>
+                </>
+              )}
             </Section>
 
             {/* ── 20. ROADMAP ── */}
@@ -2293,26 +2303,26 @@ If any authority requests user identity data:
                 The centralised exchange industry extracts an estimated $76–130 billion per year from traders through custody, spread capture, withdrawal friction, identity extraction, and information asymmetry. Every one of these extraction mechanisms depends on a single structural prerequisite: user custody. OrahDEX makes user custody architecturally impossible. Not as a policy decision — as a mathematical constraint baked into the protocol at the HTLC script level.
               </p>
               <p>
-                With <strong>2,023,154+ trading markets</strong> across <strong>200+ blockchain networks</strong>, <strong>56 VAMM-guaranteed liquidity markets</strong>, <strong>10 EVM chains</strong> with live on-chain balance tracking across a <strong>43-token ERC-20 registry</strong>, BSV on-chain settlement at <strong>{"< $0.001"} per trade</strong>, an <strong>on-chain copy trading protocol</strong> with cryptographic proof chains, institutional-grade <strong>Perpetual Futures</strong>, <strong>zero PII collection</strong> by architectural constraint, and an embedded AI intelligence layer (Ora) that democratises institutional-grade market intelligence — OrahDEX has achieved feature parity with centralised exchanges while maintaining full non-custodial sovereignty.
+                OrahDEX combines spot and other trading features with wallet-signed and server-managed routes. Pair counts, chain availability, settlement mechanics, fees, custody, and data handling vary by feature and may change; verify the current route and service disclosures before use.
               </p>
               <p>
-                The protocol is indestructible by design. Every adversarial scenario — regulatory, competitive, technical — resolves in the protocol's favour through the asymmetric resilience documented in Section 15. The game theory is unambiguous: for rational agents with access to transparent information, self-custody with DEX access is the dominant strategy. The network effects compound. The flywheels spin faster with every trade.
+                No service or protocol is indestructible. Smart-contract, server, key-management, provider, market, and regulatory risks remain and can affect users differently by route.
               </p>
               <p>
-                The question is no longer whether permissionless, non-custodial trading protocols will replace custodial exchanges. That transition is mathematically inevitable — as inevitable as TCP/IP replacing postal mail, or Bitcoin demonstrating that mathematical consensus can replace institutional trust. The question is who builds the best protocol, and when.
+                Wallet-signed execution can reduce some forms of intermediary risk, while server-managed routes introduce different operational and custody risks. Users should evaluate those trade-offs before trading.
               </p>
               <p>
                 OrahDEX is that protocol. This is its technical foundation. The rest is mathematics, code, and time.
               </p>
               <div className="mt-4 p-5 rounded-2xl bg-primary/5 border border-primary/20 space-y-1 text-center">
-                <p className="text-sm font-bold text-foreground">OrahDEX is not a company.</p>
-                <p className="text-sm font-bold text-foreground">OrahDEX is not an intermediary.</p>
-                <p className="text-sm text-muted-foreground mt-2">OrahDEX is a set of open-source, cryptographically enforced rules that enable sovereign, permissionless, non-custodial trading for every participant on earth — regardless of jurisdiction, identity, or capital size.</p>
+                <p className="text-sm font-bold text-foreground">OrahDEX is a company-operated service.</p>
+                <p className="text-sm font-bold text-foreground">Settlement and custody vary by route.</p>
+                <p className="text-sm text-muted-foreground mt-2">This document describes product concepts only. It does not establish custody, security, availability, or regulatory guarantees.</p>
               </div>
               <div className="flex items-center justify-center pt-4">
                 <OrahInline className="text-xl justify-center" />
               </div>
-              <p className="text-center text-primary font-semibold">Trade means DEX.</p>
+              <p className="text-center text-primary font-semibold">Trade Means DEX.</p>
               <p className="text-center text-xs text-muted-foreground">Mathematics does not negotiate. It computes.</p>
               <div className="flex flex-col items-center gap-1 pt-2">
                 <p className="text-xs text-muted-foreground/60">Conceived &amp; built by</p>
@@ -2331,23 +2341,23 @@ If any authority requests user identity data:
                 </p>
 
                 <div className="space-y-1">
-                  <p className="font-semibold text-amber-300">Protocol Nature — No Intermediary</p>
+                  <p className="font-semibold text-amber-300">Service and custody model</p>
                   <p>
-                    OrahDEX is a non-custodial, on-chain trading protocol. It is not a broker, custodian, bank, money transmitter, financial product issuer, or centralised exchange. OrahDEX does not hold, control, transmit, freeze, or take custody of user funds at any point in any jurisdiction. Users retain complete and sole custody of their private keys and assets at all times. The OrahDEX protocol cannot access, reverse, or move user funds under any circumstance. This is not a contractual promise — it is a mathematical and architectural fact enforced by the protocol's design.
+                    OrahDEX is a company-operated service with multiple settlement paths. Some transactions are signed by users' wallets; some features use internal ledgers, server-managed keys, relayers, or hot-wallet payouts. This page does not determine the legal classification of any feature or jurisdiction.
                   </p>
                 </div>
 
                 <div className="space-y-1">
-                  <p className="font-semibold text-amber-300">No License Required — Protocol Doctrine</p>
+                  <p className="font-semibold text-amber-300">Regulatory status</p>
                   <p>
-                    OrahDEX operates as a non-custodial protocol. Financial licensing frameworks — including exchange licences, custodian licences, MSB registrations, broker-dealer authorisations, and equivalent instruments in all jurisdictions analysed in Section 18 — apply to financial intermediaries that hold or transmit other people's assets. OrahDEX holds no assets and acts as no intermediary. The same legal principle that protects the Bitcoin network, the Uniswap protocol, the HTTP standard, and the TCP/IP internet stack from exchange licensing requirements applies to OrahDEX. No licence, certificate, or permission from any financial regulator is required for, or obtained by, OrahDEX to operate as a permissionless protocol.
+                    Regulatory requirements depend on the service, users, and jurisdiction. This document is not a legal opinion and does not claim that OrahDEX is exempt from licensing or registration. Obtain qualified legal advice before relying on any regulatory conclusion.
                   </p>
                 </div>
 
                 <div className="space-y-1">
-                  <p className="font-semibold text-amber-300">Identity Protection — Zero PII Collection</p>
+                  <p className="font-semibold text-amber-300">Data handling</p>
                   <p>
-                    OrahDEX does not collect, store, process, or share any personally identifiable information (PII). No name, email address, phone number, government-issued identification document, date of birth, residential address, IP address (not logged), or biometric data is requested or retained by the OrahDEX protocol or its infrastructure at any layer. User identity on OrahDEX is cryptographic — defined entirely by the user's self-custodied wallet address and private key. No third party, regulator, or authority can compel OrahDEX to produce user identity information because no such information exists within the system. This is an architectural constraint, not a policy choice.
+                    OrahDEX processes wallet addresses, transaction and withdrawal records, and operational data; some support, administrative, or verification flows may process additional information. Do not assume that no personal or network data is collected. Review the current privacy notice and feature-specific disclosures.
                   </p>
                 </div>
 

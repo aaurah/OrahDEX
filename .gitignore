@@ -62,3 +62,10 @@ Thumbs.db
 .env.production.local
 !.env.example
 .local/changelly-keys.txt
+
+# Database and local backup artifacts must never be committed.
+backups/
+*.sql
+*.sql.gz
+*.dump
+*.bak

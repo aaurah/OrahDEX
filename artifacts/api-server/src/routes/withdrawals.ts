@@ -17,6 +17,7 @@ import {
   issueSolWithdrawChallenge,
   verifySolWithdrawSignature,
 } from "../lib/walletAuth.js";
+import { verifyWalletRequestProof } from "../lib/walletRequestAuth.js";
 
 const router: IRouter = Router();
 
@@ -87,7 +88,7 @@ const EVM_NETWORKS = new Set([
   "SCROLL", "BLAST", "MODE", "TAIKO", "SEPOLIA", "BASE_SEP", "ARB_SEP", "EVM",
 ]);
 router.post("/withdrawals", async (req, res) => {
-  const { walletAddress, asset, amount, network, networkLabel, recipient, fee, signature, bsvSignerAddress } = req.body;
+  const { walletAddress, asset, amount, network, networkLabel, recipient, signature, bsvSignerAddress } = req.body;
   if (walletAddress && !checkWithdrawRateLimit(req, res, String(walletAddress).toLowerCase())) return;
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {
@@ -126,11 +127,9 @@ router.post("/withdrawals", async (req, res) => {
     return;
   }
 
-  const parsedFee = fee != null ? parseFloat(fee) : 0;
-  if (isNaN(parsedFee) || parsedFee < 0 || parsedFee >= parsed) {
-    res.status(400).json({ error: "Invalid fee: must be a non-negative number less than the withdrawal amount" });
-    return;
-  }
+  // The old endpoint accepted a client-controlled fee but never charged it.
+  // Do not trust or record client fee amounts; until a server-side fee schedule
+  // is configured, withdrawals have a zero platform fee and debit exactly amount.
 
   // Require wallet ownership proof for all external wallet types.
   if (walletAddress.startsWith("0x")) {
@@ -249,7 +248,7 @@ router.post("/withdrawals", async (req, res) => {
       `INSERT INTO withdrawal_requests
          (id, wallet_address, asset, amount, network, network_label, recipient, fee, status, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'processing', now())`,
-      [id, walletAddress, asset, parsed.toString(), network, networkLabel ?? network, recipient, fee ?? null],
+       [id, walletAddress, asset, parsed.toString(), network, networkLabel ?? network, recipient, "0"],
     );
 
     await client.query("COMMIT");
@@ -798,16 +797,30 @@ router.post("/admin/balance-adjust", requireAdminToken, async (req, res) => {
 
 // ── GET /withdrawals/:walletAddress ──────────────────────────────────────────
 // Returns the full withdrawal history for a wallet.
-// Requires either a valid admin token or the X-Wallet-Address header matching
-// the URL param (so only the wallet owner or admins can see history).
+// Requires an admin session or a single-use signature bound to this exact GET.
 router.get("/withdrawals/:walletAddress", async (req, res) => {
-  const adminToken = req.headers["x-admin-token"] as string | undefined;
-  const callerHeader = (req.headers["x-wallet-address"] as string | undefined)?.toLowerCase();
+  const cookieToken = (req.cookies as Record<string, string> | undefined)?.admin_session;
+  const headerToken = req.headers["x-admin-token"] as string | undefined;
   const paramWallet = req.params.walletAddress?.toLowerCase();
-  const isAdmin = !!adminToken && isValidAdminToken(adminToken);
-  const isSelf = callerHeader && callerHeader === paramWallet;
-  if (!isAdmin && !isSelf) {
-    res.status(401).json({ error: "Authentication required. Include X-Wallet-Address header matching the requested wallet, or a valid admin token." });
+  const isAdmin = isValidAdminToken(cookieToken || headerToken);
+  if (!isAdmin) {
+    try {
+      await verifyWalletRequestProof({
+        walletAddress: paramWallet ?? "",
+        resource: "withdrawal-history",
+        method: "GET",
+        challengeId: req.header("x-wallet-auth-challenge"),
+        signature: req.header("x-wallet-auth-signature"),
+      });
+    } catch (err: any) {
+      res.status(401).json({
+        error: err?.message ?? "Wallet authorization is required to view this history.",
+      });
+      return;
+    }
+  }
+  if (!paramWallet) {
+    res.status(400).json({ error: "walletAddress is required" });
     return;
   }
   try {
@@ -824,6 +837,7 @@ router.get("/withdrawals/:walletAddress", async (req, res) => {
       .orderBy(desc(withdrawalRequestsTable.createdAt))
       .limit(100);
 
+    res.setHeader("Cache-Control", "no-store");
     res.json(rows.map(r => ({
       id:           r.id,
       asset:        r.asset,

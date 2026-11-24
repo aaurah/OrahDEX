@@ -17,7 +17,7 @@
  *
  * Cross-device recovery options:
  * 1. Automatic: Server cloud backup (same OS ecosystem — iCloud ↔ iCloud, etc.)
- * 2. Transfer Code: 8-char code valid for 10 min — works across OS ecosystems
+ * 2. Transfer Code: 12-char one-time code valid for 2 min — works across OS ecosystems
  */
 
 import { generateMnemonic, deriveAllAddresses } from "./seedPhrase";
@@ -434,8 +434,8 @@ export async function loginWithPasskey(opts?: { hybrid?: boolean }): Promise<Log
 // ─── Transfer Code (cross-OS-ecosystem recovery) ─────────────────────────────
 
 /**
- * Generate an 8-char transfer code for the given wallet.
- * The code is valid for 10 minutes and can be used ONCE on the new device.
+ * Generate a 12-char transfer code for the given wallet.
+ * The code is valid for 2 minutes and can be used ONCE on the new device.
  * Use this when automatic cloud backup doesn't apply (e.g. iPhone → Android).
  */
 /**
@@ -495,7 +495,11 @@ export async function restoreFromTransferCode(
   code: string,
   rawId: ArrayBuffer
 ): Promise<PasskeyWallet> {
-  const res = await fetch(`${API_BASE}/passkey/transfer/${encodeURIComponent(code.toUpperCase())}`);
+  const res = await fetch(`${API_BASE}/passkey/transfer/redeem`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: code.toUpperCase() }),
+  });
   if (!res.ok) {
     const err = await res.json() as { error: string };
     throw new Error(err.error ?? "Transfer code lookup failed");

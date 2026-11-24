@@ -18,7 +18,6 @@ import { logger } from "../lib/logger.js";
 import { FALLBACK_PRICES, COINGECKO_IDS } from "../lib/priceUpdater.js";
 import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
-import { arcBroadcast } from "../lib/arcBroadcaster.js";
 
 const router = Router();
 const LEGACY_BRIDGE_DISABLED_ERROR =
@@ -592,46 +591,10 @@ router.post("/swap/simulate", async (req, res) => {
   }
 });
 
-// ── POST /v1/tx/broadcast ─────────────────────────────────────────────────────
-// Broadcast a signed EVM transaction hex via public RPC, or relay to BSV.
-router.post("/tx/broadcast", async (req, res) => {
-  try {
-    const { chainId = 1, rawTx, network = "evm" } = req.body as {
-      chainId?: number;
-      rawTx?: string;
-      network?: "evm" | "bsv";
-    };
-
-    if (!rawTx) {
-      res.status(400).json({ error: "rawTx is required" });
-      return;
-    }
-
-    if (network === "bsv") {
-      const result = await arcBroadcast(rawTx);
-      if (result.txid) {
-        res.json({ txHash: result.txid, txid: result.txid, status: "broadcast", arcStatus: result.arcStatus, network: "bsv", explorerUrl: `${BSV_NET.explorer}/tx/${result.txid}` });
-      } else {
-        res.status(400).json({ error: result.error ?? "Broadcast failed" });
-      }
-      return;
-    }
-
-    // For EVM: return a structured response (actual broadcast happens client-side via wallet)
-    // In Phase 2, this would relay via a private RPC node
-    const mockHash = "0x" + Buffer.from(rawTx.slice(2, 66)).toString("hex").slice(0, 64);
-    res.json({
-      txHash:  mockHash,
-      status:  "submitted",
-      chainId,
-      network: "evm",
-      note:    "EVM transactions are broadcast directly from the user's wallet. This endpoint logs the intent for BSV settlement generation.",
-      explorerUrl: `https://etherscan.io/tx/${mockHash}`,
-    });
-  } catch (err: any) {
-    logger.error({ err: err?.message }, "POST /v1/tx/broadcast failed");
-    res.status(500).json({ error: "Broadcast failed" });
-  }
+// Public transaction-relay endpoint is disabled: BSV broadcast used platform
+// credentials, while the EVM branch returned a synthetic hash as if submitted.
+router.post("/tx/broadcast", (_req, res) => {
+  res.status(410).json({ error: "Public transaction relay is disabled. Broadcast through the connected wallet provider." });
 });
 
 // ── GET /v1/keeper/:address ───────────────────────────────────────────────────

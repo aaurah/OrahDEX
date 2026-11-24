@@ -8,7 +8,7 @@ export async function adminFetch(path: string, init: RequestInit = {}): Promise<
     ...(init.headers as Record<string, string> ?? {}),
     ...getAdminHeaders(),
   };
-  const res = await fetch(url, { ...init, headers });
+  const res = await fetch(url, { ...init, headers, credentials: "include" });
   if (res.status === 401) {
     useAdminAuthStore.getState().logout();
     window.location.href = `${BASE}/admin/login`;

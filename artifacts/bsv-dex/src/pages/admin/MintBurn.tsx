@@ -1,7 +1,6 @@
 import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
-import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { Printer, Flame, Search, RefreshCw, CheckCircle2, XCircle, Clock, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,8 +36,7 @@ function shortAddr(a: string) {
 }
 
 export function AdminMintBurn() {
-  const { token } = useAdminAuthStore();
-  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const headers = { "Content-Type": "application/json" };
 
   const [action, setAction] = useState<"mint" | "burn">("mint");
   const [asset, setAsset] = useState("USDT");

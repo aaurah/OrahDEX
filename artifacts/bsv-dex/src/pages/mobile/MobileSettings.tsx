@@ -392,10 +392,10 @@ export function MobileSettings() {
       <div className="flex flex-col items-center py-10 px-4 gap-1.5">
         <BrandLogo textSize="text-2xl" tooltip={false} />
         <p className="text-xs font-semibold text-green-400 tracking-widest uppercase mt-0.5">
-          Trade means DEX
+          Trade Means DEX
         </p>
         <p className="text-[11px] text-muted-foreground mt-1 tracking-wide">
-          Non-custodial · On-chain settlement · BSV
+          BSV settlement · Route-specific custody
         </p>
         <SocialBar iconSize="sm" className="mt-3 max-w-xs" />
         <div className="flex items-center gap-1 mt-3">

@@ -27,6 +27,7 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import * as ed from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha2.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
+import { BoundedMap } from "./boundedMap.js";
 
 // @noble/ed25519 v2 requires a synchronous SHA-512 implementation to be
 // provided via the utils hook before any sign/verify call.
@@ -108,7 +109,7 @@ interface WithdrawNonce {
   expiresAt: number;
 }
 
-const withdrawNonces = new Map<string, WithdrawNonce>();
+const withdrawNonces = new BoundedMap<string, WithdrawNonce>(10_000);
 
 const WITHDRAW_NONCE_TTL_MS  = 5 * 60 * 1_000;  // 5 minutes
 const WITHDRAW_NONCE_SWEEP   = 5 * 60 * 1_000;  // sweep interval
@@ -272,7 +273,7 @@ export function verifyBsvDepositSignature(
  * Signature is base64-encoded (compact 65-byte format: 1 byte header + r + s).
  * The signed message uses the Bitcoin Signed Message prefix.
  */
-function verifyBsvMessageSignature(
+export function verifyBsvMessageSignature(
   address: string,
   message: string,
   signatureBase64: string,
@@ -416,7 +417,7 @@ export function verifySolWithdrawSignature(
  * `publicKeyBase58` is the wallet address (Solana pubkey in base58).
  * `signatureHexOrBase64` is the 64-byte signature in hex or base64.
  */
-function verifySolanaSignature(
+export function verifySolanaSignature(
   publicKeyBase58: string,
   message: string,
   signatureHexOrBase64: string,
@@ -444,6 +445,31 @@ function verifySolanaSignature(
   }
 }
 
+/**
+ * Verify a detached wallet message for a supported public wallet address.
+ * Used for read-only account access where a withdrawal-specific challenge
+ * would be misleading. The challenge itself must bind the exact method/path.
+ */
+export function verifyWalletMessageSignature(
+  walletAddress: string,
+  message: string,
+  signature: string,
+): void {
+  if (/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+    verifyEvmSignature(walletAddress, message, signature);
+    return;
+  }
+  if (BSV_NET.addressRegex.test(walletAddress)) {
+    verifyBsvMessageSignature(walletAddress, message, signature);
+    return;
+  }
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
+    verifySolanaSignature(walletAddress, message, signature);
+    return;
+  }
+  throw new Error("Unsupported wallet address for signed access.");
+}
+
 function base58Decode(str: string): Buffer {
   let n = 0n;
   for (const c of str) {
@@ -468,7 +494,7 @@ interface ExchangeNonce {
   expiresAt: number;
 }
 
-const exchangeNonces = new Map<string, ExchangeNonce>();
+const exchangeNonces = new BoundedMap<string, ExchangeNonce>(10_000);
 
 const EXCHANGE_NONCE_TTL_MS = 5 * 60 * 1_000;  // 5 minutes
 const EXCHANGE_NONCE_SWEEP  = 5 * 60 * 1_000;
@@ -571,7 +597,7 @@ interface LiquidityNonce {
   expiresAt: number;
 }
 
-const liquidityNonces = new Map<string, LiquidityNonce>();
+const liquidityNonces = new BoundedMap<string, LiquidityNonce>(10_000);
 
 const LP_NONCE_TTL_MS = 5 * 60 * 1_000;
 const LP_NONCE_SWEEP  = 5 * 60 * 1_000;
@@ -708,7 +734,7 @@ interface P2PNonce {
   expiresAt: number;
 }
 
-const p2pNonces = new Map<string, P2PNonce>();
+const p2pNonces = new BoundedMap<string, P2PNonce>(10_000);
 
 const P2P_NONCE_TTL_MS = 5 * 60 * 1_000;
 const P2P_NONCE_SWEEP  = 5 * 60 * 1_000;
@@ -803,7 +829,7 @@ interface TradeNonce {
   expiresAt: number;
 }
 
-const tradeNonces = new Map<string, TradeNonce>();
+const tradeNonces = new BoundedMap<string, TradeNonce>(10_000);
 const TRADE_NONCE_TTL_MS = 5 * 60 * 1_000;
 
 setInterval(() => {
@@ -878,7 +904,7 @@ interface ConsumedNonce {
   expiresAt: number;
 }
 
-const consumedOrderNonces = new Map<string, ConsumedNonce[]>();
+const consumedOrderNonces = new BoundedMap<string, ConsumedNonce[]>(10_000);
 
 const ORDER_NONCE_SWEEP = 5 * 60 * 1_000;
 
@@ -989,7 +1015,7 @@ interface BsvOrderNonce {
   expiresAt: number;
 }
 
-const bsvOrderNonces = new Map<string, BsvOrderNonce>();
+const bsvOrderNonces = new BoundedMap<string, BsvOrderNonce>(10_000);
 const BSV_ORDER_NONCE_TTL_MS = 5 * 60 * 1_000;
 
 setInterval(() => {
@@ -1095,7 +1121,7 @@ interface SolOrderNonce {
   expiresAt: number;
 }
 
-const solOrderNonces = new Map<string, SolOrderNonce>();
+const solOrderNonces = new BoundedMap<string, SolOrderNonce>(10_000);
 const SOL_ORDER_NONCE_TTL_MS = 5 * 60 * 1_000;
 
 setInterval(() => {
@@ -1218,7 +1244,7 @@ interface StakeNonce {
   expiresAt: number;
 }
 
-const stakeNonces = new Map<string, StakeNonce>();
+const stakeNonces = new BoundedMap<string, StakeNonce>(10_000);
 
 const STAKE_NONCE_TTL_MS = 5 * 60 * 1_000;
 const STAKE_NONCE_SWEEP  = 5 * 60 * 1_000;

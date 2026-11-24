@@ -71,6 +71,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useAddressBookStore, WALLET_TYPE_META } from "@/store/useAddressBookStore";
 import { useWalletStore } from "@/store/useWalletStore";
+import { walletRequestAuthHeaders } from "@/lib/walletRequestAuth";
 import { useHandCashStore } from "@/store/useHandCashStore";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { QRCodeCanvas } from "qrcode.react";
@@ -399,7 +400,7 @@ export function WithdrawSheet({
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
-  const { isHardwareWallet, hardwareWalletType } = useWalletStore();
+  const { isHardwareWallet, hardwareWalletType, provider: connectedProvider, network: connectedNetwork } = useWalletStore();
   const reownEvmAccount = useAppKitAccount({ namespace: "eip155" });
   const reownEvmNetwork = useAppKitNetworkCore();
   const reownWalletAddress = reownEvmAccount.address ?? "";
@@ -772,12 +773,19 @@ export function WithdrawSheet({
     queryKey: ["withdrawal-history", walletAddress],
     queryFn: async () => {
       if (!walletAddress) return [];
-      const r = await fetch(`${API_BASE}/withdrawals/${encodeURIComponent(walletAddress)}`);
+      const headers = await walletRequestAuthHeaders({
+        address: walletAddress,
+        network: connectedNetwork ?? network.toLowerCase(),
+        provider: connectedProvider ?? undefined,
+        resource: "withdrawal-history",
+        method: "GET",
+      });
+      const r = await fetch(`${API_BASE}/withdrawals/${encodeURIComponent(walletAddress)}`, { headers });
       if (!r.ok) return [];
       return r.json();
     },
     enabled: !!walletAddress && open,
-    refetchInterval: 30_000,
+    refetchOnWindowFocus: false,
     staleTime: 2_000,
   });
 

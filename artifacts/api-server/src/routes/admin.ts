@@ -1,5 +1,6 @@
 import { Router } from "express";
 import crypto from "node:crypto";
+import { BoundedMap } from "../lib/boundedMap.js";
 import { db, pool } from "@workspace/db";
 import { getWatcherState, getWatcherSummary } from "../lib/errorWatcher.js";
 
@@ -97,8 +98,8 @@ function recoverEthAddress(message: string, sigHex: string): string {
 
 /* ─── WALLET AUTH NONCES (in-memory) ─────────────────────────────────────── */
 
-const pendingNonces = new Map<string, { nonce: string; message: string; expiresAt: number }>();
-const pendingTotpChallenges = new Map<string, { expiresAt: number }>();
+const pendingNonces = new BoundedMap<string, { nonce: string; message: string; expiresAt: number }>(10_000);
+const pendingTotpChallenges = new BoundedMap<string, { expiresAt: number }>(10_000);
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of pendingNonces.entries()) {
@@ -115,11 +116,13 @@ setInterval(() => {
 // allowed; exceeding that blocks the IP for AUTH_COOLDOWN_MS.
 
 const AUTH_MAX_FAILURES  = 5;
+const AUTH_ACCOUNT_MAX_FAILURES = 20;
 const AUTH_WINDOW_MS     = 60 * 1_000;       // 1-minute sliding window
 const AUTH_COOLDOWN_MS   = 15 * 60 * 1_000;  // 15-minute block on excessive failures
+const ADMIN_ACCOUNT_BUCKET = "__admin_account__";
 
 interface AuthBucket { count: number; windowStart: number; blockedUntil: number; }
-const authBuckets = new Map<string, AuthBucket>();
+const authBuckets = new BoundedMap<string, AuthBucket>(10_000);
 
 setInterval(() => {
   const now = Date.now();
@@ -130,15 +133,26 @@ setInterval(() => {
 }, 5 * 60 * 1_000);
 
 function getClientIp(req: import("express").Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (forwarded) return (Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0]).trim();
-  return req.socket?.remoteAddress ?? "unknown";
+  // Express has already applied the configured single trusted-proxy hop.
+  // Never select the leftmost client-supplied X-Forwarded-For value.
+  return req.ip || req.socket?.remoteAddress || "unknown";
 }
 
 /** Returns true if the request should proceed; sends 429 and returns false if blocked. */
 function checkAuthRateLimit(req: import("express").Request, res: import("express").Response): boolean {
   const ip  = getClientIp(req);
   const now = Date.now();
+  let accountBucket = authBuckets.get(ADMIN_ACCOUNT_BUCKET);
+  if (!accountBucket || now - accountBucket.windowStart > AUTH_WINDOW_MS) {
+    accountBucket = { count: 0, windowStart: now, blockedUntil: 0 };
+  }
+  authBuckets.set(ADMIN_ACCOUNT_BUCKET, accountBucket);
+  if (accountBucket.blockedUntil > now) {
+    const secs = Math.ceil((accountBucket.blockedUntil - now) / 1000);
+    res.status(429).json({ error: `Admin sign-in is temporarily rate limited. Try again in ${secs} seconds.` });
+    return false;
+  }
+
   let   bkt = authBuckets.get(ip);
 
   if (bkt?.blockedUntil && bkt.blockedUntil > now) {
@@ -150,6 +164,10 @@ function checkAuthRateLimit(req: import("express").Request, res: import("express
   // Reset window if expired
   if (!bkt || now - bkt.windowStart > AUTH_WINDOW_MS) {
     bkt = { count: 0, windowStart: now, blockedUntil: 0 };
+    if (authBuckets.size >= 10_000 && !authBuckets.has(ip)) {
+      res.status(429).json({ error: "Admin sign-in is temporarily rate limited. Try again shortly." });
+      return false;
+    }
     authBuckets.set(ip, bkt);
   }
   return true;
@@ -169,6 +187,16 @@ function recordAuthFailure(req: import("express").Request): void {
     bkt.blockedUntil = now + AUTH_COOLDOWN_MS;
   }
   authBuckets.set(ip, bkt);
+
+  let accountBucket = authBuckets.get(ADMIN_ACCOUNT_BUCKET) ?? { count: 0, windowStart: now, blockedUntil: 0 };
+  if (now - accountBucket.windowStart > AUTH_WINDOW_MS) {
+    accountBucket = { count: 0, windowStart: now, blockedUntil: 0 };
+  }
+  accountBucket.count++;
+  if (accountBucket.count >= AUTH_ACCOUNT_MAX_FAILURES) {
+    accountBucket.blockedUntil = now + AUTH_COOLDOWN_MS;
+  }
+  authBuckets.set(ADMIN_ACCOUNT_BUCKET, accountBucket);
 }
 
 /* ─── SERVER-SIDE TOTP (RFC 6238) ─────────────────────────────────────────── */
@@ -241,6 +269,15 @@ async function setAdminTotpEnabled(enabled: boolean): Promise<void> {
 
 /* ─── ADMIN AUTH ENDPOINTS ────────────────────────────────────────────────── */
 
+async function tryGenerateAdminToken(res: import("express").Response): Promise<string | null> {
+  try {
+    return await generateAdminToken();
+  } catch {
+    res.status(503).json({ error: "Could not create a secure admin session. Retry shortly." });
+    return null;
+  }
+}
+
 /**
  * POST /admin/auth
  * Validates email + password against ADMIN_EMAIL / ADMIN_PASSWORD env secrets.
@@ -281,7 +318,8 @@ router.post("/auth", async (req, res) => {
     res.json({ success: true, requiresTotp: true, twoFaEnabled: true, challengeId });
     return;
   }
-  const token = await generateAdminToken();
+  const token = await tryGenerateAdminToken(res);
+  if (!token) return;
   // Set HttpOnly cookie (works for same-origin / non-proxied environments).
   // Also return token in body so the x-admin-token header path works in
   // reverse-proxy environments (e.g. Replit) where SameSite=Strict cookies
@@ -323,7 +361,8 @@ router.post("/auth/totp", async (req, res) => {
   const ok = await verifyTOTPServer(code, secret);
   if (ok) {
     pendingTotpChallenges.delete(challengeId!);
-    const token = await generateAdminToken();
+    const token = await tryGenerateAdminToken(res);
+    if (!token) return;
     res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
     res.setHeader("Cache-Control", "no-store");
     res.json({ success: true, token });
@@ -463,7 +502,8 @@ router.post("/auth/wallet", async (req, res) => {
     return;
   }
   pendingNonces.delete(address.toLowerCase());
-  const token = await generateAdminToken();
+  const token = await tryGenerateAdminToken(res);
+  if (!token) return;
   res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
   res.json({ success: true, token, address });
 });
@@ -493,12 +533,40 @@ router.get("/wallet-whitelist", requireAdminToken, async (_req, res) => {
 
 router.put("/wallet-whitelist", requireAdminToken, async (req, res) => {
   try {
-    const { addresses } = req.body as { addresses: string[] };
-    const normalised = (addresses ?? []).map((a: string) => a.toLowerCase().trim()).filter(Boolean);
+    const { addresses, password, totpCode } = req.body as {
+      addresses?: string[];
+      password?: string;
+      totpCode?: string;
+    };
+    const expectedPassword = process.env.ADMIN_PASSWORD;
+    const passwordOk = typeof password === "string" && !!expectedPassword &&
+      crypto.timingSafeEqual(
+        crypto.createHash("sha256").update(password).digest(),
+        crypto.createHash("sha256").update(expectedPassword).digest(),
+      );
+    if (!passwordOk) {
+      res.status(401).json({ error: "Re-enter the admin password to change wallet sign-in access." });
+      return;
+    }
+    if (await isAdminTotpEnabled()) {
+      const totpSecret = process.env.ADMIN_TOTP_SECRET;
+      if (!totpSecret || typeof totpCode !== "string" || !/^\d{6}$/.test(totpCode) ||
+          !await verifyTOTPServer(totpCode, totpSecret)) {
+        res.status(401).json({ error: "A current authenticator code is required to change wallet sign-in access." });
+        return;
+      }
+    }
+    if (!Array.isArray(addresses) || addresses.length > 100 ||
+        addresses.some((a) => typeof a !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(a.trim()))) {
+      res.status(400).json({ error: "Provide at most 100 valid EVM wallet addresses." });
+      return;
+    }
+    const normalised = [...new Set(addresses.map((a) => a.toLowerCase().trim()))];
     const value = JSON.stringify(normalised);
     await db.insert(platformSettingsTable)
       .values({ key: "admin_wallet_whitelist", value })
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+    logger.info({ count: normalised.length }, "Admin wallet login whitelist updated after re-authentication");
     res.json({ addresses: normalised });
   } catch { res.status(500).json({ error: "Failed to save whitelist" }); }
 });
@@ -522,29 +590,19 @@ router.get("/security-vault", async (_req, res) => {
 });
 
 router.post("/security-vault/regenerate-bsv", async (_req, res) => {
-  try {
-    const privKey = crypto.randomBytes(32);
-    const wif     = privKeyToWif(privKey);
-    const address = privKeyToAddress(privKey);
-    const pubKeyHex = privKeyToPubKey(privKey).toString("hex");
-    await db.insert(platformSettingsTable)
-      .values({ key: "bsv_settlement_wif", value: wif })
-      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: wif, updatedAt: new Date() } });
-    await db.insert(platformSettingsTable)
-      .values({ key: "bsv_settlement_address", value: address })
-      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: address, updatedAt: new Date() } });
-    // Clear any custom address override since we have a fresh wallet
-    await db.delete(platformSettingsTable)
-      .where(eq(platformSettingsTable.key, "bsv_settlement_address_override"));
-    res.json({ address, pubKeyHex });
-  } catch { res.status(500).json({ error: "Failed to regenerate BSV wallet" }); }
+  // Replacing the settlement key without proving its on-chain balance is zero
+  // can strand customer funds. Rotation is intentionally disabled until there
+  // is a reviewed migration that inventories UTXOs and pending settlements.
+  res.status(409).json({
+    error: "Settlement wallet rotation is disabled until funds and pending transactions can be safely migrated.",
+  });
 });
 
 /* ── In-memory user metadata (status, country, provider, verified, balance override) ─ */
 /* Indexed by walletAddress.toLowerCase() */
 const userMeta: Map<string, {
   status: string; country: string; provider: string; verified: boolean; balanceOverride?: number;
-}> = new Map();
+}> = new BoundedMap(20_000);
 
 function getUserMeta(addr: string) {
   return userMeta.get(addr.toLowerCase()) ?? {
@@ -2541,7 +2599,7 @@ const SITE_DEFAULTS: Record<string, string> = {
   canonical_url: "https://orahdex.com",
   maker_fee: "0.001",
   taker_fee: "0.001",
-  seo_title: "OrahDEX — Trade means DEX | BSV Settlement Exchange",
+  seo_title: "OrahDEX — Trade Means DEX | BSV Settlement Exchange",
   seo_description: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, and cross-chain settlement.",
   seo_keywords: "BSV DEX, Bitcoin SV, decentralized exchange, crypto trading, spot futures",
   twitter_site: "@orahdex",

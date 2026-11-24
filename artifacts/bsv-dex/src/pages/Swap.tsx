@@ -3,7 +3,7 @@
  *
  * MODE 1: "On-Chain DEX" — wallet signs real Uniswap V3 / PancakeSwap V3 swaps.
  *   - Real quotes via QuoterV2 (static simulation, no gas)
- *   - Real execution via SwapRouter02 (wallet signs, non-custodial)
+ *   - Real execution via SwapRouter02 (the connected wallet signs this route)
  *   - Chains: Ethereum, Base, BSC, Arbitrum, Optimism, Polygon, Avalanche
  *
  * MODE 2: "Exchange" — custodial internal order matching (existing system).
@@ -2217,7 +2217,7 @@ function BuyCryptoPanel({
       )}
 
       <p className="text-[11px] text-muted-foreground/50 text-center">
-        {isLE ? "Cross-chain · Non-custodial · Best rate routing" : "Instant settlement · 0.3% fee · Uses OrahDEX balance"}
+        {isLE ? "Cross-chain · Provider routes · Best-rate routing" : "Instant settlement · 0.3% fee · Uses OrahDEX balance"}
       </p>
     </div>
   );
@@ -2510,7 +2510,7 @@ export function Swap() {
           <h1 className="text-2xl font-black tracking-tight text-foreground">
             Buy · Swap · Bridge · DEX
           </h1>
-          <p className="text-xs text-muted-foreground">Secure · Non-custodial · Best rates · 6,000+ coins</p>
+          <p className="text-xs text-muted-foreground">Secure · Multiple route types · Best rates · 6,000+ coins</p>
         </div>
 
         {/* ─── Tab bar — LetsExchange segment-control style ─── */}
@@ -2850,7 +2850,7 @@ export function Swap() {
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground">
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
-                <b className="text-foreground">On-Chain DEX:</b> Swaps execute on {chainConfig.name}.{isOrahWallet ? " Your passkey signs the transaction — OrahDEX never holds your funds or keys." : " Your wallet signs the transaction directly — OrahDEX never holds your funds."}
+                <b className="text-foreground">On-Chain DEX:</b> Swaps execute on {chainConfig.name}. {isOrahWallet ? "Your passkey signs this transaction from the connected wallet." : "Your connected wallet signs this transaction directly."} Review the displayed contract and route before signing.
               </span>
             </div>
           </>

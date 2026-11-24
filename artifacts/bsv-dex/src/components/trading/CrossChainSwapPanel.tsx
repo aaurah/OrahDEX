@@ -692,7 +692,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
             <Shield size={16} /> BSV ↔ EVM Atomic Swap
           </DialogTitle>
           <DialogDescription className="text-zinc-400 text-xs leading-relaxed">
-            Trustless cross-chain swap via HTLC. Non-custodial — only you can claim or refund.
+            Cross-chain swap via HTLC. Review the lock contracts, recipients, and timeouts before signing.
           </DialogDescription>
         </DialogHeader>
 

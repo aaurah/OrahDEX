@@ -95,7 +95,7 @@ export function useSEO({
     }
 
     return () => {
-      document.title = `${SITE_NAME} — Trade means DEX`;
+      document.title = `${SITE_NAME} — Trade Means DEX`;
     };
   }, [title, description, keywords, image, url, type, jsonLd]);
 }

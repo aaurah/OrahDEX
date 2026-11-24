@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Bot, Sparkles, TrendingUp, TrendingDown, Minus, Shield, AlertTriangle, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import DOMPurify from "dompurify";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -167,7 +168,7 @@ export function AiPortfolioAnalysis({ holdings, totalValueUSD }: Props) {
                       <span className="text-green-400 mt-0.5 shrink-0 text-[11px]">·</span>
                       <p
                         className="text-[12px] text-muted-foreground leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: parseMarkdown(b) }}
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parseMarkdown(b)) }}
                       />
                     </div>
                   ))}

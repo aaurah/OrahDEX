@@ -118,7 +118,7 @@ export function ExchangeAddressesCard({ walletAddress, defaultOpen = false }: Pr
       {expanded && (
         <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-3">
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Non-custodial wallet addresses used for direct wallet-to-wallet settlement.
+            Settlement addresses are route-specific. Confirm the displayed network and custody details before sending funds.
           </p>
 
           {loading ? (

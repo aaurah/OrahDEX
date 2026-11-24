@@ -3,6 +3,7 @@ import { db, pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { pushNotification, getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { getCachedLEPrices, fetchLECoinPriceUSD } from "../lib/lePriceCache.js";
+import { verifyWalletRequestProof } from "../lib/walletRequestAuth.js";
 
 const router: IRouter = Router();
 const ADDRESS_LIKE_RE = /^0x[0-9a-f]+$/i;
@@ -492,17 +493,41 @@ async function tryFetchLiveZora(): Promise<any[]> {
 }
 
 /* ── GET /social/notifications ───────────────────────────────────────────── */
-router.get("/social/notifications", (req, res) => {
+router.get("/social/notifications", async (req, res) => {
   const { address, since } = req.query as Record<string, string>;
   if (!address) { res.status(400).json({ error: "address required" }); return; }
+  try {
+    await verifyWalletRequestProof({
+      walletAddress: address,
+      resource: "social-notifications",
+      method: "GET",
+      challengeId: req.header("x-wallet-auth-challenge"),
+      signature: req.header("x-wallet-auth-signature"),
+    });
+  } catch (err: any) {
+    res.status(401).json({ error: err?.message ?? "Wallet authorization failed." });
+    return;
+  }
   const sinceTs = since ? parseInt(since, 10) : 0;
   res.json({ notifications: getNotifications(address, sinceTs) });
 });
 
 /* ── DELETE /social/notifications ────────────────────────────────────────── */
-router.delete("/social/notifications", (req, res) => {
+router.delete("/social/notifications", async (req, res) => {
   const { address } = req.query as Record<string, string>;
   if (!address) { res.status(400).json({ error: "address required" }); return; }
+  try {
+    await verifyWalletRequestProof({
+      walletAddress: address,
+      resource: "social-notifications",
+      method: "DELETE",
+      challengeId: req.header("x-wallet-auth-challenge"),
+      signature: req.header("x-wallet-auth-signature"),
+    });
+  } catch (err: any) {
+    res.status(401).json({ error: err?.message ?? "Wallet authorization failed." });
+    return;
+  }
   clearNotifications(address);
   res.json({ success: true });
 });
