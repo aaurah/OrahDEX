@@ -711,38 +711,58 @@ process.on("unhandledRejection", (reason) => {
 });
 
 // ── Heap watchdog ────────────────────────────────────────────────────────────
-// Logs heap usage every 5 minutes. Thresholds are calibrated for this
-// container (~300–400 MB RSS). Triggers GC when heap exceeds 65% of total
-// so we reclaim memory before the container OOM-kills the process.
+// Sample once a minute so short-lived memory spikes are visible in production
+// logs; the previous five-minute interval could miss the entire ramp to OOM.
 {
   const HEAP_GC_PCT   = 0.75;  // trigger GC above this fraction of heapTotal
+  const HEAP_GC_ABSOLUTE_MB = 320;
   const HEAP_WARN_MB  = 280;   // log warn  (server typically idles at ~200 MB)
   const HEAP_ALERT_MB = 420;   // log error (container RSS limit ~700 MB)
   setInterval(() => {
-    const { heapUsed, heapTotal, rss } = process.memoryUsage();
-    const usedMB  = Math.round(heapUsed  / 1024 / 1024);
-    const totalMB = Math.round(heapTotal / 1024 / 1024);
-    const rssMB   = Math.round(rss       / 1024 / 1024);
+    const beforeGc = process.memoryUsage();
+    const beforeGcMB = Math.round(beforeGc.heapUsed / 1024 / 1024);
+    let heapUsed = beforeGc.heapUsed;
+    const totalMB = Math.round(beforeGc.heapTotal / 1024 / 1024);
+    const rssMB = Math.round(beforeGc.rss / 1024 / 1024);
+    const externalMB = Math.round(beforeGc.external / 1024 / 1024);
+    const arrayBuffersMB = Math.round(beforeGc.arrayBuffers / 1024 / 1024);
     const uptimeH = (process.uptime() / 3600).toFixed(2);
 
-    // Proactive GC — reclaim memory before the OOM killer strikes
-    if (heapUsed / heapTotal > HEAP_GC_PCT && typeof (global as any).gc === "function") {
+    // Proactive GC — reclaim unreachable objects before the OOM killer strikes.
+    if (
+      (heapUsed / beforeGc.heapTotal > HEAP_GC_PCT || beforeGcMB >= HEAP_GC_ABSOLUTE_MB) &&
+      typeof (global as any).gc === "function"
+    ) {
       (global as any).gc();
-      logger.info({ heapUsedMB: usedMB, heapTotalMB: totalMB },
-        "Heap watchdog: triggered GC (heap >65%)");
+      heapUsed = process.memoryUsage().heapUsed;
+      logger.info({
+        heapBeforeGcMB: beforeGcMB,
+        heapAfterGcMB: Math.round(heapUsed / 1024 / 1024),
+        heapTotalMB: totalMB,
+        rssMB,
+        externalMB,
+        arrayBuffersMB,
+      }, "Heap watchdog triggered garbage collection");
     }
 
+    const usedMB = Math.round(heapUsed / 1024 / 1024);
+    const report = {
+      heapUsedMB: usedMB,
+      heapBeforeGcMB: beforeGcMB,
+      heapTotalMB: totalMB,
+      rssMB,
+      externalMB,
+      arrayBuffersMB,
+      uptimeH,
+    };
     if (usedMB >= HEAP_ALERT_MB) {
-      logger.error({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
-        "HEAP CRITICAL — approaching OOM; restart may be imminent");
+      logger.error(report, "HEAP CRITICAL — approaching OOM; restart may be imminent");
     } else if (usedMB >= HEAP_WARN_MB) {
-      logger.warn({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
-        "Heap usage elevated — possible memory leak");
+      logger.warn(report, "Heap usage elevated — possible memory leak");
     } else {
-      logger.info({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
-        "Heap report");
+      logger.info(report, "Heap report");
     }
-  }, 5 * 60 * 1000).unref();
+  }, 60_000).unref();
 }
 
 _s(    0, startHlWebSocket,            "startHlWebSocket");

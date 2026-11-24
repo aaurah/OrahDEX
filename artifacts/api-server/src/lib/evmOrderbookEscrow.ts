@@ -46,6 +46,10 @@ const ORDER_OPENED_TOPIC = keccak256(stringToHex(
   "OrderOpened(bytes32,address,uint8,address,address,uint256,uint256,uint256,uint64)",
 ));
 const ORDER_CANCELLED_TOPIC = keccak256(stringToHex("OrderCancelled(bytes32,address,uint256)"));
+const RECOVERY_RECENT_SCAN_BLOCKS = 1_000n;
+const RECOVERY_HISTORICAL_SCAN_BLOCKS = 1_000n;
+const RECOVERY_LOG_CHUNK_BLOCKS = 10n;
+const RECOVERY_MAX_KNOWN_LOCK_TXS = 10;
 const cancellationLookupCache = new Map<string, {
   checkedAt: number;
   result: { txHash: Hex; refundAmount: bigint } | null;
@@ -515,37 +519,62 @@ export async function findActiveEvmOrderbookOrders(
   walletAddress: string,
   knownLockTxHashes: string[] = [],
   chainId = ETHEREUM_MAINNET,
-): Promise<Array<{
-  orderKey: Hex;
-  lockTxHash: Hex;
-  escrowAddress: Address;
-  side: "buy" | "sell";
-  baseToken: Address;
-  quoteToken: Address;
-  originalBaseAmountRaw: string;
-  remainingBaseAmountRaw: string;
-  limitPriceX18: string;
-  expiresAt: number;
-}>> {
+  historicalCursorBlock?: bigint,
+): Promise<{
+  orders: Array<{
+    orderKey: Hex;
+    lockTxHash: Hex;
+    escrowAddress: Address;
+    side: "buy" | "sell";
+    baseToken: Address;
+    quoteToken: Address;
+    originalBaseAmountRaw: string;
+    remainingBaseAmountRaw: string;
+    limitPriceX18: string;
+    expiresAt: number;
+  }>;
+  nextHistoricalCursorBlock: string | null;
+  historicalScanHasMore: boolean;
+}> {
   if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
     throw new Error("A valid Ethereum wallet address is required");
   }
-  if (!ORDERBOOK_CHAIN_IDS.has(chainId)) return [];
+  if (!ORDERBOOK_CHAIN_IDS.has(chainId)) {
+    return { orders: [], nextHistoricalCursorBlock: null, historicalScanHasMore: false };
+  }
   const config = await getDeployedOrderbookEscrowConfig(chainId, false);
   const deploymentBlock = getDeploymentBlock(chainId);
-  if (!config.available || deploymentBlock == null) return [];
+  if (!config.available || deploymentBlock == null) {
+    return { orders: [], nextHistoricalCursorBlock: null, historicalScanHasMore: false };
+  }
 
   const client = publicClient(chainId);
   const latestBlock = await client.getBlockNumber();
-  const recentScanFloor = latestBlock > 999n ? latestBlock - 999n : 0n;
-  let scanFromBlock = deploymentBlock > recentScanFloor ? deploymentBlock : recentScanFloor;
+  const recentScanFloor = latestBlock + 1n > RECOVERY_RECENT_SCAN_BLOCKS
+    ? latestBlock - RECOVERY_RECENT_SCAN_BLOCKS + 1n
+    : 0n;
+  // Walk forward from the deployment block in fixed historical slices.
+  // The recent window covers any overlap and keeps newly opened orders visible.
+  const historicalFromBlock = historicalCursorBlock == null || historicalCursorBlock < deploymentBlock
+    ? deploymentBlock
+    : historicalCursorBlock;
+  const historicalToBlock = historicalFromBlock <= latestBlock
+    ? (historicalFromBlock + RECOVERY_HISTORICAL_SCAN_BLOCKS - 1n < latestBlock
+      ? historicalFromBlock + RECOVERY_HISTORICAL_SCAN_BLOCKS - 1n
+      : latestBlock)
+    : null;
+  let nextHistoricalCursorBlock = historicalToBlock == null
+    ? historicalFromBlock
+    : historicalToBlock + 1n;
   const logs: Array<{ blockNumber: string; transactionHash: Hex }> = [];
-  for (const txHash of knownLockTxHashes) {
-    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) continue;
+  const uniqueKnownLockTxHashes = [...new Set(knownLockTxHashes
+    .filter((txHash) => /^0x[0-9a-fA-F]{64}$/.test(txHash))
+    .map((txHash) => txHash.toLowerCase()))]
+    .slice(0, RECOVERY_MAX_KNOWN_LOCK_TXS);
+  for (const txHash of uniqueKnownLockTxHashes) {
     try {
       const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
       if (receipt.status !== "success") continue;
-      if (receipt.blockNumber > scanFromBlock) scanFromBlock = receipt.blockNumber;
       if (latestBlock - receipt.blockNumber + 1n >= MIN_CONFIRMATIONS) {
         logs.push({
           blockNumber: `0x${receipt.blockNumber.toString(16)}`,
@@ -558,21 +587,47 @@ export async function findActiveEvmOrderbookOrders(
   }
   const makerTopic = encodeAbiParameters(parseAbiParameters("address"), [walletAddress as Address]);
 
-  // Respect RPC plans that cap eth_getLogs at ten blocks per request.
-  for (let fromBlock = scanFromBlock; fromBlock <= latestBlock;) {
-    const toBlock = fromBlock + 9n < latestBlock ? fromBlock + 9n : latestBlock;
-    const chunk = await client.request({
-      method: "eth_getLogs",
-      params: [{
-        address: config.address,
-        fromBlock: `0x${fromBlock.toString(16)}`,
-        toBlock: `0x${toBlock.toString(16)}`,
-        topics: [ORDER_OPENED_TOPIC, null, makerTopic],
-      }],
-    } as any) as Array<{ blockNumber: string; transactionHash: Hex }>;
-    logs.push(...chunk);
-    fromBlock = toBlock + 1n;
-    if (fromBlock <= latestBlock) await new Promise((resolve) => setTimeout(resolve, 75));
+  const scanRange = async (fromBlock: bigint, toBlock: bigint) => {
+    for (let chunkFromBlock = fromBlock; chunkFromBlock <= toBlock;) {
+      const chunkToBlock = chunkFromBlock + RECOVERY_LOG_CHUNK_BLOCKS - 1n < toBlock
+        ? chunkFromBlock + RECOVERY_LOG_CHUNK_BLOCKS - 1n
+        : toBlock;
+      const chunk = await client.request({
+        method: "eth_getLogs",
+        params: [{
+          address: config.address,
+          fromBlock: `0x${chunkFromBlock.toString(16)}`,
+          toBlock: `0x${chunkToBlock.toString(16)}`,
+          topics: [ORDER_OPENED_TOPIC, null, makerTopic],
+        }],
+      } as any) as Array<{ blockNumber: string; transactionHash: Hex }>;
+      logs.push(...chunk);
+      chunkFromBlock = chunkToBlock + 1n;
+      if (chunkFromBlock <= toBlock) await new Promise((resolve) => setTimeout(resolve, 75));
+    }
+  };
+
+  // The recent scan is fixed-size. Older history advances in small,
+  // wallet-scoped slices so each request remains bounded.
+  if (recentScanFloor <= latestBlock) {
+    await scanRange(deploymentBlock > recentScanFloor ? deploymentBlock : recentScanFloor, latestBlock);
+  }
+  if (historicalToBlock != null && historicalFromBlock <= historicalToBlock) {
+    if (historicalFromBlock < recentScanFloor) {
+      await scanRange(
+        historicalFromBlock,
+        historicalToBlock < recentScanFloor ? historicalToBlock : recentScanFloor - 1n,
+      );
+      if (historicalToBlock >= recentScanFloor) {
+        // Historical logs covered everything before the recent window; the
+        // regular scan covered the rest through the current head.
+        nextHistoricalCursorBlock = latestBlock + 1n;
+      }
+    } else {
+      // Every block from this cursor through the current head was already
+      // covered by the fixed recent scan.
+      nextHistoricalCursorBlock = latestBlock + 1n;
+    }
   }
 
   const recovered = new Map<string, {
@@ -619,6 +674,8 @@ export async function findActiveEvmOrderbookOrders(
           order[1].toLowerCase() !== args.baseToken.toLowerCase() ||
           order[2].toLowerCase() !== args.quoteToken.toLowerCase() ||
           order[3] !== args.baseAmount ||
+          order[4] <= 0n ||
+          order[5] <= 0n ||
           order[6] !== args.limitPriceX18 ||
           order[7] !== args.expiresAt ||
           order[8] !== args.side
@@ -641,7 +698,11 @@ export async function findActiveEvmOrderbookOrders(
       }
     }
   }
-  return [...recovered.values()];
+  return {
+    orders: [...recovered.values()],
+    nextHistoricalCursorBlock: nextHistoricalCursorBlock.toString(),
+    historicalScanHasMore: BigInt(nextHistoricalCursorBlock) <= latestBlock,
+  };
 }
 
 function getRelayerAccount(chainId = ETHEREUM_MAINNET) {
