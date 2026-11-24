@@ -1,15 +1,17 @@
 import { Router } from "express";
 import { logger } from "../lib/logger.js";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const router = Router();
 const GT_BASE = "https://api.geckoterminal.com/api/v2";
 const GT_HEADERS = { Accept: "application/json;version=20230302", "User-Agent": "OrahDEX/1.0" };
 
 /* ── In-memory cache ─────────────────────────────────────────────────────── */
-const cache = new Map<string, { data: unknown; ts: number }>();
+const cache = new BoundedMap<string, { data: unknown; ts: number }>(100);
 function cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.ts < ttlMs) return Promise.resolve(hit.data as T);
+  if (hit) cache.delete(key);
   return fetcher().then(data => { cache.set(key, { data, ts: Date.now() }); return data; });
 }
 

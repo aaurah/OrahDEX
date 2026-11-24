@@ -1,6 +1,7 @@
 // External aggregated market depth (display-only, NOT executable).
 // GET /api/external-depth?symbol=BSV/USDT
 import { Router } from "express";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const router = Router();
 
@@ -27,7 +28,7 @@ const VENUES = [
 ];
 
 const CACHE_TTL_MS = 3000;
-const cache = new Map<string, { at: number; data: any }>();
+const cache = new BoundedMap<string, { at: number; data: any }>(200);
 
 async function fetchVenue(v: (typeof VENUES)[number], symbol: string) {
   const res = await fetch(v.url(v.mapSymbol(symbol)), {
@@ -44,6 +45,7 @@ router.get("/external-depth", async (req, res) => {
   }
   const hit = cache.get(symbol);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return res.json(hit.data);
+  if (hit) cache.delete(symbol);
 
   const results = await Promise.allSettled(VENUES.map((v) => fetchVenue(v, symbol)));
   const venues = results.filter((r) => r.status === "fulfilled").map((r: any) => r.value);

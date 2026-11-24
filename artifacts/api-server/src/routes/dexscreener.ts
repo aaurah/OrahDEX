@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { logger } from "../lib/logger.js";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const router = Router();
 
@@ -28,13 +29,14 @@ interface DexPair {
 }
 
 /* ── Simple in-memory cache ───────────────────────────────────────────────── */
-const cache = new Map<string, { data: DexPair[]; ts: number }>();
+const cache = new BoundedMap<string, { data: DexPair[]; ts: number }>(100);
 const CACHE_TTL = 30_000; // 30 s
 
 async function fetchDexScreener(query: string): Promise<DexPair[]> {
   const cacheKey = query.toLowerCase();
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.ts < CACHE_TTL) return hit.data;
+  if (hit) cache.delete(cacheKey);
 
   const url = `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`;
   const ctrl = new AbortController();
@@ -60,6 +62,7 @@ async function fetchDexScreenerByAddresses(addresses: string): Promise<DexPair[]
   const cacheKey = `addr:${addresses}`;
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.ts < CACHE_TTL) return hit.data;
+  if (hit) cache.delete(cacheKey);
 
   const url = `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(addresses)}`;
   const ctrl = new AbortController();

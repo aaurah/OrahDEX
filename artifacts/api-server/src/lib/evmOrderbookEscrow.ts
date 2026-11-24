@@ -18,6 +18,7 @@ import {
 import { mainnet } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
+import { BoundedMap } from "./boundedMap.js";
 
 const CHAIN_ID = 1;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
@@ -41,10 +42,10 @@ const ORDER_OPENED_TOPIC = keccak256(stringToHex(
   "OrderOpened(bytes32,address,uint8,address,address,uint256,uint256,uint256,uint64)",
 ));
 const ORDER_CANCELLED_TOPIC = keccak256(stringToHex("OrderCancelled(bytes32,address,uint256)"));
-const cancellationLookupCache = new Map<string, {
+const cancellationLookupCache = new BoundedMap<string, {
   checkedAt: number;
   result: { txHash: Hex; refundAmount: bigint } | null;
-}>();
+}>(2_000);
 const CANCELLATION_LOOKUP_TTL_MS = 3_000;
 
 export interface OnchainOrderLockParams {
@@ -339,6 +340,7 @@ export async function findConfirmedEvmOrderbookCancellation(params: {
   const cacheKey = `${params.escrowAddress.toLowerCase()}:${params.orderKey.toLowerCase()}:${params.walletAddress.toLowerCase()}:${params.lockTxHash.toLowerCase()}`;
   const cached = cancellationLookupCache.get(cacheKey);
   if (cached && Date.now() - cached.checkedAt < CANCELLATION_LOOKUP_TTL_MS) return cached.result;
+  if (cached) cancellationLookupCache.delete(cacheKey);
 
   const client = publicClient();
   const lockReceipt = await client.getTransactionReceipt({ hash: params.lockTxHash as Hex });
@@ -438,20 +440,38 @@ export async function findActiveEvmOrderbookOrders(
   const client = publicClient();
   const latestBlock = await client.getBlockNumber();
   const recentScanFloor = latestBlock > 999n ? latestBlock - 999n : 0n;
-  let scanFromBlock = deploymentBlock > recentScanFloor ? deploymentBlock : recentScanFloor;
+  const scanFromBlock = deploymentBlock > recentScanFloor ? deploymentBlock : recentScanFloor;
+  const logsByTx = new Map<string, { blockNumber: string; transactionHash: Hex }>();
   for (const txHash of knownLockTxHashes) {
     if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) continue;
     try {
       const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
-      if (receipt.status === "success" && receipt.blockNumber > scanFromBlock) {
-        scanFromBlock = receipt.blockNumber;
+      if (receipt.status !== "success") continue;
+      const hasMatchingOrder = receipt.logs.some((entry) => {
+        if (entry.address.toLowerCase() !== config.address.toLowerCase()) return false;
+        try {
+          const decoded = decodeEventLog({
+            abi: ORDERBOOK_ESCROW_ABI,
+            eventName: "OrderOpened",
+            data: entry.data,
+            topics: entry.topics,
+          });
+          return decoded.args.maker.toLowerCase() === walletAddress.toLowerCase();
+        } catch {
+          return false;
+        }
+      });
+      if (hasMatchingOrder) {
+        logsByTx.set(txHash.toLowerCase(), {
+          blockNumber: receipt.blockNumber.toString(),
+          transactionHash: txHash as Hex,
+        });
       }
     } catch {
-      // A stale stored reference must not prevent recovery of other orders.
+      // An invalid or stale supplied reference must not block the normal scan.
     }
   }
   const makerTopic = encodeAbiParameters(parseAbiParameters("address"), [walletAddress as Address]);
-  const logs: Array<{ blockNumber: string; transactionHash: Hex }> = [];
 
   // Respect RPC plans that cap eth_getLogs at ten blocks per request.
   for (let fromBlock = scanFromBlock; fromBlock <= latestBlock;) {
@@ -465,7 +485,7 @@ export async function findActiveEvmOrderbookOrders(
         topics: [ORDER_OPENED_TOPIC, null, makerTopic],
       }],
     } as any) as Array<{ blockNumber: string; transactionHash: Hex }>;
-    logs.push(...chunk);
+    for (const log of chunk) logsByTx.set(log.transactionHash.toLowerCase(), log);
     fromBlock = toBlock + 1n;
     if (fromBlock <= latestBlock) await new Promise((resolve) => setTimeout(resolve, 75));
   }
@@ -482,7 +502,7 @@ export async function findActiveEvmOrderbookOrders(
     limitPriceX18: string;
     expiresAt: number;
   }>();
-  for (const log of logs) {
+  for (const log of logsByTx.values()) {
     const blockNumber = BigInt(log.blockNumber);
     if (latestBlock - blockNumber + 1n < MIN_CONFIRMATIONS) continue;
     const receipt = await client.getTransactionReceipt({ hash: log.transactionHash });

@@ -3,13 +3,14 @@ import type { IBridgeProvider } from "../bridges/IBridgeProvider.js";
 import { SocketBridgeProvider } from "../bridges/SocketBridgeProvider.js";
 import { scoreQuotes, DEFAULT_SCORING_CONFIG, type ScoringConfig } from "./routeScoring.js";
 import { logger } from "../lib/logger.js";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const PROVIDERS: IBridgeProvider[] = [
   new SocketBridgeProvider(),
 ];
 
 interface CacheEntry { quotes: BridgeQuoteWithScore[]; ts: number }
-const CACHE     = new Map<string, CacheEntry>();
+const CACHE     = new BoundedMap<string, CacheEntry>(500);
 const CACHE_TTL = 30_000;
 
 function cacheKey(p: BridgeQuoteParams): string {
@@ -26,6 +27,7 @@ export async function getQuotesAcrossProviders(
     logger.info({ key }, "bridge-agg: cache hit");
     return { quotes: cached.quotes, bestQuote: cached.quotes[0] ?? null };
   }
+  if (cached) CACHE.delete(key);
 
   const results = await Promise.allSettled(
     PROVIDERS.map(p => p.getQuotes(params)),

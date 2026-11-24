@@ -7,6 +7,7 @@ import { useThemeStore } from "@/store/useThemeStore";
 import { SocialBar } from "@/components/SocialBar";
 import { API_BASE } from "@/lib/api";
 import { useSEO } from "@/hooks/useSEO";
+import { CAPABILITY_STATUS } from "@/lib/capabilityStatus";
 
 /* ── Theme cycle helpers ─────────────────────────────────────────────────── */
 const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
@@ -135,15 +136,6 @@ function GridBackground() {
 }
 
 /* ── Live terminal card (right side of hero) ────────────────────────────── */
-const HERO_FALLBACK_MKTS = [
-  { symbol: "BSV/USDT",  baseAsset: "BSV",  quoteAsset: "USDT", lastPrice: 45.20,    priceChangePercent24h:  2.41, volume24h: 9e6 },
-  { symbol: "BTC/USDT",  baseAsset: "BTC",  quoteAsset: "USDT", lastPrice: 67200,    priceChangePercent24h:  1.18, volume24h: 8e9 },
-  { symbol: "ETH/USDT",  baseAsset: "ETH",  quoteAsset: "USDT", lastPrice: 3421,     priceChangePercent24h: -0.55, volume24h: 3e9 },
-  { symbol: "BNB/USDT",  baseAsset: "BNB",  quoteAsset: "USDT", lastPrice: 421,      priceChangePercent24h:  0.89, volume24h: 6e8 },
-  { symbol: "SOL/USDT",  baseAsset: "SOL",  quoteAsset: "USDT", lastPrice: 172,      priceChangePercent24h:  3.21, volume24h: 5e8 },
-  { symbol: "XRP/USDT",  baseAsset: "XRP",  quoteAsset: "USDT", lastPrice: 0.6120,   priceChangePercent24h: -1.02, volume24h: 2e8 },
-];
-
 function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boolean }) {
   const fmtPrice = (p: number) => {
     if (p >= 10000) return "$" + p.toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -169,7 +161,7 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
         return true;
       })
       .slice(0, 6);
-    return live.length >= 4 ? live : HERO_FALLBACK_MKTS;
+    return live;
   }, [markets]);
 
   return (
@@ -193,11 +185,13 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
               <div className="w-2.5 h-2.5 rounded-full bg-amber-400/70" />
               <div className="w-2.5 h-2.5 rounded-full bg-green-400/70" />
             </div>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">LIVE MARKETS</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">MARKET DATA</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full bg-green-400 ${animated ? "animate-pulse" : ""}`} />
-            <span className="text-[10px] font-black text-green-400 uppercase tracking-widest">Online</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${rows.length ? "bg-green-400" : "bg-amber-400"} ${animated && rows.length ? "animate-pulse" : ""}`} />
+            <span className={`text-[10px] font-black uppercase tracking-widest ${rows.length ? "text-green-400" : "text-amber-400"}`}>
+              {rows.length ? "Data available" : "Unavailable"}
+            </span>
           </div>
         </div>
 
@@ -210,7 +204,11 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
 
         {/* Market rows */}
         <div>
-          {rows.map((m, i) => {
+          {rows.length === 0 ? (
+            <p className="px-5 py-8 text-center text-xs text-muted-foreground">
+              Live market data is unavailable. Sample prices are not shown.
+            </p>
+          ) : rows.map((m, i) => {
             const up = (m.priceChangePercent24h ?? 0) >= 0;
             return (
               <Link
@@ -254,9 +252,9 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
   );
 }
 
-/* ── Keeper tier card ────────────────────────────────────────────────────── */
-function KeeperCard({ tier, icon, desc, fee, color }: {
-  tier: string; icon: string; desc: string; fee: string; color: string;
+/* ── Current feature scope card ──────────────────────────────────────────── */
+function AvailabilityCard({ title, icon, desc, status, color }: {
+  title: string; icon: string; desc: string; status: string; color: string;
 }) {
   return (
     <div
@@ -275,48 +273,14 @@ function KeeperCard({ tier, icon, desc, fee, color }: {
         </div>
         {/* Content */}
         <div className="relative z-10 flex-1">
-          <p className="font-black text-lg leading-tight" style={{ color }}>{tier}</p>
+          <p className="font-black text-lg leading-tight" style={{ color }}>{title}</p>
           <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{desc}</p>
         </div>
         {/* Fee */}
         <div className="relative z-10 pt-3 mt-auto" style={{ borderTop: `1px solid ${color}20` }}>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-0.5">Maker fee</p>
-          <p className="text-xl font-black" style={{ color }}>{fee}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-0.5">Current scope</p>
+          <p className="text-sm font-black" style={{ color }}>{status}</p>
         </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── Architecture phase card ────────────────────────────────────────────── */
-function PhaseCard({ phase, title, desc, icon: Icon, active }: {
-  phase: number; title: string; desc: string;
-  icon: typeof Zap; active?: boolean;
-}) {
-  return (
-    <div className={`relative flex flex-col gap-4 rounded-2xl border p-6 transition-all hover:scale-[1.01] hover:-translate-y-0.5 overflow-hidden group ${
-      active
-        ? "border-green-500/30 bg-card"
-        : "border-border/50 bg-card/30 opacity-60"
-    }`}>
-      {active && (
-        <>
-          <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ background: "radial-gradient(ellipse at 20% 20%, rgba(74,222,128,0.04) 0%, transparent 60%)" }} />
-          <span className="absolute top-4 right-4 text-[9px] font-black px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/25 uppercase tracking-widest">
-            Live
-          </span>
-        </>
-      )}
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center relative z-10 ${
-        active ? "bg-green-500/12" : "bg-foreground/5"
-      }`} style={active ? { border: "1px solid rgba(74,222,128,0.2)" } : {}}>
-        <Icon className={`w-5 h-5 ${active ? "text-green-400" : "text-muted-foreground/40"}`} />
-      </div>
-      <div className="relative z-10">
-        <span className="text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.2em]">Phase {phase}</span>
-        <p className={`font-black text-base mt-1 ${active ? "text-foreground" : "text-muted-foreground/60"}`}>{title}</p>
-        <p className="text-sm text-muted-foreground/60 mt-2 leading-relaxed">{desc}</p>
       </div>
     </div>
   );
@@ -363,19 +327,12 @@ function OraAiSection() {
   const [insights, setInsights] = useState<{ id: number; content: string; sentiment?: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Static fallback shown immediately if the AI call takes too long or fails
-  const FALLBACK_INSIGHTS = [
-    { id: 1, content: "BSV settlement gives OrahDEX sub-cent fees — ideal for high-frequency strategies that bleed out on Ethereum gas.", sentiment: "bullish" },
-    { id: 2, content: "Layer-2 volumes continue rising as users chase cheaper execution; watch ARB and BASE for breakout pairs this month.", sentiment: "neutral" },
-    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
-  ];
-
   useEffect(() => {
     let cancelled = false;
 
-    // 8-second timeout — show fallback if AI is too slow
+    // Stop showing a loading state if the service does not answer; never invent insights.
     const timer = setTimeout(() => {
-      if (!cancelled) { setInsights(FALLBACK_INSIGHTS); setLoading(false); }
+      if (!cancelled) { setInsights([]); setLoading(false); }
     }, 8000);
 
     const controller = new AbortController();
@@ -397,12 +354,12 @@ function OraAiSection() {
           });
           setInsights(mapped);
         } else {
-          setInsights(FALLBACK_INSIGHTS);
+          setInsights([]);
         }
         setLoading(false);
       })
       .catch(() => {
-        if (!cancelled) { clearTimeout(timer); setInsights(FALLBACK_INSIGHTS); setLoading(false); }
+        if (!cancelled) { clearTimeout(timer); setInsights([]); setLoading(false); }
       });
 
     return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
@@ -439,18 +396,18 @@ function OraAiSection() {
             Meet <span className="text-green-400">Ora</span>
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Your AI co-pilot for every trade. Ora monitors markets in real-time,
-            generates trade signals, spots emerging patterns, and answers your questions
-            instantly — all powered by sovereign intelligence.
+            Ora can summarize market information and answer questions when its inference
+            service is available. Responses may be incomplete or inaccurate and are not
+            investment advice.
           </p>
         </div>
 
         {/* Capabilities row */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
           {[
-            { icon: Brain, label: "Market Intelligence", desc: "Real-time analysis across every pair. Ora spots breakouts, volume surges, and sentiment shifts before they happen.", color: "#4ade80" },
-            { icon: TrendingUp, label: "Trade Signals", desc: "Buy, sell, or hold signals for every major pair — with confidence scores and Ora's reasoning behind each call.", color: "#F5A623" },
-            { icon: MessageSquare, label: "Always Available", desc: "Ask Ora anything: price targets, portfolio breakdowns, chart explanations, or what a BSV settlement actually means.", color: "#60a5fa" },
+            { icon: Brain, label: "Market context", desc: "When data sources are available, Ora can summarize market information. It does not guarantee forecasts.", color: "#4ade80" },
+            { icon: TrendingUp, label: "Research assistance", desc: "Use responses as a starting point and verify any prices, calculations, or claims independently.", color: "#F5A623" },
+            { icon: MessageSquare, label: "Service-dependent", desc: "Replies require a configured inference service and may be delayed or unavailable.", color: "#60a5fa" },
           ].map(({ icon: Icon, label, desc, color }) => (
             <div key={label} className="flex flex-col gap-3 p-5 rounded-2xl border border-border bg-card/60 hover:bg-card transition-colors">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
@@ -468,8 +425,8 @@ function OraAiSection() {
         <div className="rounded-2xl border border-green-500/15 bg-green-500/4 p-6 mb-8">
           <div className="flex items-center gap-2 mb-5">
             <Sparkles className="w-4 h-4 text-green-400" />
-            <span className="text-sm font-black text-foreground">Live Market Insights</span>
-            <span className="ml-auto text-[10px] text-green-500/60 font-bold uppercase tracking-wider">Powered by Ora</span>
+            <span className="text-sm font-black text-foreground">Ora Market Insights</span>
+            <span className="ml-auto text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider">Service status varies</span>
           </div>
 
           {loading ? (
@@ -490,7 +447,7 @@ function OraAiSection() {
           ) : (
             <div className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card/50">
               <Sparkles className="w-4 h-4 text-green-400 shrink-0" />
-              <p className="text-sm text-muted-foreground">Ora is analysing the markets. Insights will appear shortly.</p>
+              <p className="text-sm text-muted-foreground">No insights are available right now. Only responses from Ora are shown here; sample insights are not substituted.</p>
             </div>
           )}
         </div>
@@ -510,7 +467,7 @@ function OraAiSection() {
             href="/trade/BSV-USDT"
             className="flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-foreground border border-border hover:bg-card transition-all text-sm"
           >
-            View Trade Signals <ArrowRight className="w-4 h-4" />
+            Open Markets <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
       </div>
@@ -601,7 +558,7 @@ function TickerStrip({ markets, animated = true }: { markets: any[]; animated?: 
     <div
       className={`w-full border-b border-border/30 bg-card/40 ${animated ? "overflow-hidden backdrop-blur-sm" : "overflow-x-auto"}`}
       role="region"
-      aria-label="Live market ticker"
+      aria-label="Market price ticker"
       tabIndex={0}
       onKeyDown={handleTickerKeyDown}
       style={{ height: 38 }}
@@ -643,7 +600,7 @@ const MKT_TABS: { id: MktTab; label: string }[] = [
   { id: "BSV",  label: "BSV" },
 ];
 
-function FeaturedMarkets({ markets, totalCount }: { markets: any[]; totalCount: number }) {
+function FeaturedMarkets({ markets }: { markets: any[] }) {
   const [tab, setTab] = useState<MktTab>("ALL");
 
   const filtered = useMemo(() => {
@@ -695,11 +652,10 @@ function FeaturedMarkets({ markets, totalCount }: { markets: any[]; totalCount: 
         {/* Header */}
         <div className="flex items-start sm:items-center justify-between gap-4 mb-8 flex-col sm:flex-row">
           <div>
-            <span className="text-xs font-black text-green-400 uppercase tracking-[0.3em] mb-1.5 block">Live Markets</span>
+            <span className="text-xs font-black text-green-400 uppercase tracking-[0.3em] mb-1.5 block">Market data</span>
             <h2 className="text-2xl sm:text-3xl font-black text-foreground">
               Top Trading Pairs
               <span className="ml-3 text-sm font-bold text-muted-foreground/50 align-middle">
-                {totalCount.toLocaleString()}+ total
               </span>
             </h2>
           </div>
@@ -730,7 +686,11 @@ function FeaturedMarkets({ markets, totalCount }: { markets: any[]; totalCount: 
 
         {/* Cards grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-          {filtered.map(m => {
+          {filtered.length === 0 ? (
+            <div className="col-span-full rounded-2xl border border-border bg-card/30 px-5 py-10 text-center text-sm text-muted-foreground">
+              {markets.length ? "No pairs are available in this filter." : "Market data is unavailable. No sample prices are shown."}
+            </div>
+          ) : filtered.map(m => {
             const up = m.priceChangePercent24h >= 0;
             return (
               <Link
@@ -767,7 +727,7 @@ function FeaturedMarkets({ markets, totalCount }: { markets: any[]; totalCount: 
             href="/markets"
             className="flex items-center gap-2 px-8 py-3.5 rounded-2xl font-black text-sm border border-green-500/30 text-green-400 hover:bg-green-500/8 hover:border-green-500/60 transition-all"
           >
-            View All {totalCount.toLocaleString()}+ Markets <ArrowRight className="w-4 h-4" />
+            Browse supported markets <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
       </div>
@@ -780,20 +740,19 @@ export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { theme, setTheme } = useThemeStore();
   const lowMotionMode = useLowMotionLandingMode();
-  const MARKET_COUNT_PLACEHOLDER = 1000; // startup placeholder until live total is fetched
-  const MARKETS_PREVIEW_LIMIT = 200; // fetch more so preferred-quote pairs (USDT/BTC/BSV) are included
+  const MARKETS_PREVIEW_LIMIT = 200;
 
   useSEO({
     title: "OrahDEX — Trade Means DEX | Spot, Futures & P2P Crypto Exchange",
-    description: "OrahDEX is a sovereign multi-chain DEX with spot trading, perpetual futures, P2P markets, copy trading, and on-chain BSV settlement. Trade 900+ markets across EVM, TRON and BSV networks.",
-    keywords: "OrahDEX, DEX, decentralized exchange, crypto trading, BSV, spot trading, perpetual futures, P2P, copy trading, DeFi, multi-chain, EVM, AMM, liquidity pools",
+    description: "OrahDEX provides route-specific digital-asset trading and market data. Supported assets, networks, custody, fees, and execution depend on the selected feature and provider.",
+    keywords: "OrahDEX, DEX, crypto trading, BSV, spot trading, market data, wallet trading, swaps",
     url: "https://orahdex.com/",
     type: "website",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
       "name": "OrahDEX — Trade Means DEX",
-      "description": "Sovereign multi-chain decentralized exchange featuring spot trading, perpetual futures, P2P markets, copy trading, and on-chain BSV settlement.",
+      "description": "Digital-asset trading and market-data features with route-specific networks, providers, custody, and settlement.",
       "url": "https://orahdex.com/",
       "isPartOf": { "@type": "WebSite", "name": "OrahDEX", "url": "https://orahdex.com" }
     },
@@ -820,31 +779,22 @@ export function LandingPage() {
   });
 
   const { data: marketsData } = useQuery({
-    queryKey: ["market-count-v2"],
+    queryKey: ["landing-markets-v1"],
     queryFn: async () => {
-      const [leCountRes, countRes, marketsRes] = await Promise.allSettled([
-        fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" }),
-        fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
-        fetch(`${API_BASE}/markets?type=spot&quoteAssets=USDT,USDC,TUSD,USDD,BTC,ETH,BSV&limit=${MARKETS_PREVIEW_LIMIT}`, { cache: "no-store" }),
-      ]);
-      if (leCountRes.status !== "fulfilled") console.warn("Landing market count fetch: LetsExchange count failed", leCountRes.reason);
-      if (countRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets count failed", countRes.reason);
-      if (marketsRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets preview failed", marketsRes.reason);
-      const leCountPayload = leCountRes.status === "fulfilled" && leCountRes.value.ok ? await leCountRes.value.json() : {};
-      const countPayload = countRes.status === "fulfilled" && countRes.value.ok ? await countRes.value.json() : {};
-      const arr = marketsRes.status === "fulfilled" && marketsRes.value.ok ? await marketsRes.value.json() : [];
-      const leCount = Number((leCountPayload as any)?.count ?? 0);
-      const marketCount = Number((countPayload as any)?.count ?? 0);
-      // /letsexchange/pairs/count already returns merged external+native symbol count.
-      // Fall back to /markets/count only when that endpoint is unavailable.
-      const totalCount = leCount > 0 ? leCount : marketCount;
-      return { count: totalCount, markets: Array.isArray(arr) ? arr : [] };
+      const response = await fetch(
+        `${API_BASE}/markets?type=spot&quoteAssets=USDT,USDC,TUSD,USDD,BTC,ETH,BSV&limit=${MARKETS_PREVIEW_LIMIT}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        console.warn("Landing market preview fetch failed", response.status);
+        return { markets: [] };
+      }
+      const rows = await response.json();
+      return { markets: Array.isArray(rows) ? rows : [] };
     },
     staleTime: 60_000,
-    placeholderData: { count: MARKET_COUNT_PLACEHOLDER, markets: [] as any[] },
   });
 
-  const marketCount = (marketsData?.count && marketsData.count > 0) ? marketsData.count : MARKET_COUNT_PLACEHOLDER;
   const markets     = marketsData?.markets ?? [];
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
@@ -917,7 +867,7 @@ export function LandingPage() {
                 <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em]"
                   style={{ border: "1px solid rgba(245,166,35,0.5)", color: "#F5A623", background: "rgba(245,166,35,0.07)" }}>
                   <span className={`w-1.5 h-1.5 rounded-full ${lowMotionMode ? "" : "animate-pulse"}`} style={{ background: "#F5A623" }} />
-                  Sovereign Decentralized Exchange
+                  Multi-route Digital Asset Exchange
                 </span>
               </div>
 
@@ -935,8 +885,8 @@ export function LandingPage() {
                   }}>DEX.</span>
                 </h1>
                 <p className="mt-5 text-lg sm:text-xl font-semibold text-muted-foreground max-w-md leading-relaxed mx-auto lg:mx-0">
-                  Trade as a <span className="text-amber-400 font-black">Keeper</span>, not a customer.
-                  <span className="text-muted-foreground/60"> Spot · Futures · P2P · Copy · Predict.</span>
+                  Review the route before you <span className="text-amber-400 font-black">trade</span>.
+                  <span className="text-muted-foreground/60"> Availability varies by feature.</span>
                 </p>
               </div>
 
@@ -962,18 +912,14 @@ export function LandingPage() {
                   className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-bold text-sm text-muted-foreground border border-border/60 hover:text-foreground transition-all w-full sm:w-auto"
                   style={{ background: "rgba(255,255,255,0.03)" }}>
                   View All Markets
-                  <span className="text-xs font-black text-green-400 px-2 py-0.5 rounded-full"
-                    style={{ background: "rgba(74,222,128,0.12)", border: "1px solid rgba(74,222,128,0.2)" }}>
-                    {marketCount.toLocaleString()}
-                  </span>
                 </Link>
               </div>
 
               {/* Live stats bar */}
               <div className="flex flex-wrap justify-center lg:justify-start gap-2.5">
-                <StatPill label="Markets" value={marketCount.toLocaleString()} />
-                <StatPill label="Chains" value="20+" color="text-amber-400" />
-                <StatPill label="Settlement" value="BSV" color="text-blue-400" />
+                <StatPill label="Market data" value={markets.length ? "Available" : "Unavailable"} />
+                <StatPill label="Networks" value="Per route" color="text-amber-400" />
+                <StatPill label="Settlement" value="Route-specific" color="text-blue-400" />
                 <BsvBlockPill blockHeight={bsvBlock} blockHash={bsvBlockHash} />
               </div>
             </div>
@@ -1020,72 +966,39 @@ export function LandingPage() {
             <div className="h-px w-full" style={{ background: "linear-gradient(90deg, transparent 0%, rgba(74,222,128,0.6) 30%, rgba(245,166,35,0.4) 70%, transparent 100%)" }} />
             <div className="flex items-center justify-between px-5 py-3 border-b border-border/40">
               <span className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-[0.2em]">Protocol Snapshot</span>
-              <div className="flex items-center gap-1.5 text-[10px] font-black text-green-400 uppercase tracking-widest">
-                <span className={`w-1.5 h-1.5 rounded-full bg-green-400 ${lowMotionMode ? "" : "animate-pulse"}`} />
-                All Systems Online
+              <div className="flex items-center gap-1.5 text-[10px] font-black text-amber-400 uppercase tracking-widest">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                Route availability varies
               </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-              {[
-                { label: "Settlement", value: "BSV + OP_RETURN", color: "#4ade80" },
-                { label: "Liquidity", value: "AMM + VAMM + OB", color: "#F5A623" },
-                { label: "Bridge", value: "HTLC, no custody", color: "#60a5fa" },
-                { label: "NFT + Creator", value: "OrahNFT × BSV", color: "#f472b6" },
-                { label: "Copy Trading", value: "CopyVault ERC4626", color: "#c084fc" },
-                { label: "Fiat On-Ramp", value: "6 providers", color: "#34d399" },
-              ].map(({ label, value, color }, i, arr) => (
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
+              {CAPABILITY_STATUS.map(({ area: label, status: value }, i, arr) => {
+                const color = ["#4ade80", "#F5A623", "#60a5fa", "#f472b6", "#c084fc", "#34d399", "#38bdf8", "#f97316"][i]!;
+                return (
                 <div key={label}
                   className="flex flex-col gap-1.5 px-4 py-4"
                   style={{ borderRight: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
                   <span className="text-[9px] font-black uppercase tracking-[0.18em]" style={{ color: `${color}70` }}>{label}</span>
                   <span className="text-xs font-black text-foreground/90">{value}</span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
       </section>
 
       {/* ── FEATURED MARKETS ──────────────────────────────────────────────── */}
-      <FeaturedMarkets markets={markets ?? []} totalCount={marketCount} />
+          <FeaturedMarkets markets={markets ?? []} />
 
       {/* ── FEATURE STRIP ─────────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-12 py-10">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-            {[
-              {
-                label: "Settlement",
-                pill: "BSV proofs",
-                pillColor: "#4ade80",
-                desc: "Every trade anchored to BSV as an OP_RETURN settlement proof — immutable, verifiable, independent.",
-              },
-              {
-                label: "Liquidity",
-                pill: "Genesis engine",
-                pillColor: "#F5A623",
-                desc: "Hybrid AMM + VAMM + orderbook routing. Every listed asset is always tradeable — even at launch.",
-              },
-              {
-                label: "OrahNFT",
-                pill: "Creator coins",
-                pillColor: "#f472b6",
-                desc: "Every post is a BSV inscription and a tradeable creator coin. Mint on bonding curves, all inside the DEX.",
-              },
-              {
-                label: "CopyVault",
-                pill: "Leaders & followers",
-                pillColor: "#c084fc",
-                desc: "ERC4626 vaults mirror leader trades on-chain. BSV proof chains. High-water-mark fees. No custody.",
-              },
-              {
-                label: "Prediction",
-                pill: "Live now",
-                pillColor: "#38bdf8",
-                desc: "Binary UP/DOWN markets, 5-minute rounds, 1×–100× leverage, parimutuel payouts. Live price feeds.",
-              },
-            ].map(({ label, pill, pillColor, desc }) => (
-              <div key={label}
+            {CAPABILITY_STATUS.slice(0, 5).map(({ id, area: label, status: pill, summary: desc }, i) => {
+              const pillColor = ["#4ade80", "#F5A623", "#60a5fa", "#f472b6", "#c084fc"][i]!;
+              return (
+              <div key={id}
                 className="group relative rounded-2xl p-px overflow-hidden transition-all hover:scale-[1.02] hover:-translate-y-0.5"
                 style={{ background: `linear-gradient(135deg, ${pillColor}20 0%, transparent 60%)` }}>
                 <div className="rounded-[15px] h-full flex flex-col gap-3 p-4 transition-colors"
@@ -1100,85 +1013,67 @@ export function LandingPage() {
                   <p className="text-xs text-muted-foreground/70 leading-relaxed">{desc}</p>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* ── KEEPERS ───────────────────────────────────────────────────────── */}
+      {/* ── FEATURE AVAILABILITY ──────────────────────────────────────────── */}
       <section ref={scrollRef} className="relative px-6 lg:px-10 py-24">
         <div className="max-w-6xl mx-auto">
           {/* Section header */}
           <div className="text-center mb-14">
             <span className="text-xs font-black text-amber-400 uppercase tracking-[0.3em] mb-3 block">
-              Identity System
+              Current implementation
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-foreground mb-4">
-              The Keeper Protocol
+              Check each route before trading
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              OrahDEX runs on identity-aware execution. Keepers are sovereign participants
-              who gain privileges, reduced fees, and priority routing in exchange for
-              staking and contribution. Your identity is your engine.
+              Wallet, network, liquidity, fees, and settlement differ by feature. The app
+              and this page describe the same route limits; review the live order or quote
+              before signing.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KeeperCard
-              tier="Initiate"
-              icon="◎"
-              desc="New Keepers enter the registry. Basic trading access, standard fee schedule, open to all wallets."
-              fee="0.20%"
-              color="#9ca3af"
-            />
-            <KeeperCard
-              tier="Sentinel"
-              icon="⬡"
-              desc="Proven participants with 30-day history. Enhanced order routing, reduced maker rebate, P2P access."
-              fee="0.12%"
-              color="#60a5fa"
-            />
-            <KeeperCard
-              tier="Archon"
-              icon="◈"
-              desc="High-volume Keepers with staked collateral. Identity-aware routing, priority fills, BSV settlement rewards."
-              fee="0.06%"
-              color="#c084fc"
-            />
-            <KeeperCard
-              tier="Sovereign"
-              icon="∞"
-              desc="Elite Keepers. Access to AMM liquidity pools, bridge priority, governance votes, and zero maker fees."
-              fee="0.00%"
-              color="#F5A623"
-            />
+            {CAPABILITY_STATUS.slice(0, 4).map(({ id, area: title, status, summary: desc }, i) => (
+              <AvailabilityCard
+                key={id}
+                title={title}
+                icon={["◈", "◎", "↗", "⌁"][i]!}
+                desc={desc}
+                status={status}
+                color={["#9ca3af", "#60a5fa", "#c084fc", "#F5A623"][i]!}
+              />
+            ))}
           </div>
 
           <div className="mt-8 p-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 flex items-center gap-4">
             <Shield className="w-5 h-5 text-amber-400 shrink-0" />
             <p className="text-sm text-muted-foreground leading-relaxed">
-              <span className="text-amber-400 font-bold">Keeper Registry</span> — A permissionless on-chain registry
-              tracks all Keeper tiers. Tier upgrades are automatic, based on volume, stake, and time-in-protocol.
-              No whitelist. No gatekeepers. Sovereignty earned, not granted.
+              <span className="text-amber-400 font-bold">Before signing</span> — Confirm the selected wallet,
+              network, asset, displayed fee, and whether the action is an on-chain transaction or a
+              provider-managed route.
             </p>
           </div>
         </div>
       </section>
 
-      {/* ── GENESIS LIQUIDITY ENGINE ──────────────────────────────────────── */}
+      {/* ── LIQUIDITY AND EXECUTION ───────────────────────────────────────── */}
       <section className="relative px-6 lg:px-10 py-24" style={{ background: "linear-gradient(180deg, rgba(245,166,35,0.03) 0%, rgba(74,222,128,0.03) 100%)" }}>
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
             <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.3em] mb-4" style={{ color: "#F5A623" }}>
-              <Zap className="w-3.5 h-3.5" /> Genesis Liquidity Engine
+              <Zap className="w-3.5 h-3.5" /> Liquidity and execution
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-foreground mb-4">
-              Every Coin. Always Tradeable.
+              A displayed price is not a guaranteed fill.
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              OrahDEX's Virtual AMM (VAMM) ensures no asset ever has zero liquidity.
-              A linear bonding curve provides instant price discovery and trade execution
-              for 56+ major assets — embedded directly in the Market Hub.
+              Order-book depth depends on active orders. Reference prices, virtual liquidity,
+              and external provider quotes have different execution and settlement rules.
             </p>
           </div>
 
@@ -1186,26 +1081,26 @@ export function LandingPage() {
             {[
               {
                 icon: Activity,
-                title: "Instant Price Discovery",
-                desc: "A linear bonding curve prices every asset the moment it's listed. No pools to seed. No makers to recruit.",
+                title: "Order-book depth",
+                desc: "The order book reflects available active orders for that pair; it can be empty or change before an order is matched.",
                 color: "#4ade80",
               },
               {
                 icon: FlaskConical,
-                title: "Simulated Execution",
-                desc: "Trade against the virtual treasury at the bonding curve price. Receipts include Trade ID, timestamp, fee, and curve price.",
+                title: "Reference prices",
+                desc: "Chart and indicative prices may come from data providers and do not guarantee that an order can execute at that price.",
                 color: "#F5A623",
               },
               {
                 icon: Layers,
-                title: "Built into the Exchange",
-                desc: "The VAMM ⚡ button appears on every coin row in the Market Hub. No separate page, no navigation — trade from where you discover.",
+                title: "External quotes",
+                desc: "A quote is not a completed trade. Check the selected provider, wallet transaction, and final settlement status.",
                 color: "#60a5fa",
               },
               {
                 icon: Wallet,
-                title: "EVM + TRON + BSV",
-                desc: "Connect any wallet — 20+ EVM networks, TRON (TRX/TRC-20 USDT), or native Bitcoin SV — and access every feature instantly.",
+                title: "Virtual liquidity",
+                desc: "Where simulated liquidity is shown, it is not escrowed user liquidity and is not a guaranteed executable fill.",
                 color: "#c084fc",
               },
             ].map(({ icon: Icon, title, desc, color }) => (
@@ -1226,25 +1121,24 @@ export function LandingPage() {
             ))}
           </div>
 
-          {/* Bonding curve callout */}
+          {/* Route guidance */}
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6 flex flex-col sm:flex-row items-center gap-6">
             <div className="shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "rgba(245,166,35,0.15)", border: "1px solid rgba(245,166,35,0.3)" }}>
               <Zap className="w-6 h-6 text-amber-400" />
             </div>
             <div className="flex-1 text-center sm:text-left">
-              <p className="font-black text-foreground text-sm mb-1">Linear Bonding Curve — Virtual AMM Mathematics</p>
+              <p className="font-black text-foreground text-sm mb-1">Check the execution route</p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Price(supply) = spotPrice + slope × supply, where slope = 0.01 × spotPrice² ÷ 8,500.
-                Every $8,500 of simulated buy pressure moves the curve price by ~1%. The virtual treasury
-                is pre-funded at 3× depth so sell orders always find a bid. Buying $100 of BTC at curve price
-                generates a receipt with Trade ID, fee breakdown, and a "where did tokens go?" explanation.
+                Before signing, confirm whether the action uses an order book, a wallet-signed contract,
+                or a provider-managed quote. The displayed price, fee, and settlement path are specific
+                to that route.
               </p>
             </div>
             <Link
               href="/markets"
               className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-amber-300 border border-amber-500/30 hover:border-amber-400/60 bg-amber-500/10 hover:bg-amber-500/20 transition-all whitespace-nowrap"
             >
-              Try VAMM <ArrowRight className="w-3.5 h-3.5" />
+              Browse markets <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </div>
@@ -1253,59 +1147,48 @@ export function LandingPage() {
       {/* ── ORA AI ───────────────────────────────────────────────────────── */}
       <OraAiSection />
 
-      {/* ── ARCHITECTURE ──────────────────────────────────────────────────── */}
+      {/* ── EXECUTION ROUTES ──────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-10 py-24" style={{ background: "rgba(255,255,255,0.01)" }}>
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
             <span className="text-xs font-black text-green-400 uppercase tracking-[0.3em] mb-3 block">
-              Hybrid Architecture
+              Execution routes
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-foreground mb-4">
-              Three Phases of Sovereignty
+              Different paths, different settlement
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              OrahDEX is not a simple DEX. It is a progressive architecture — 
-              starting with deep CEX-backed liquidity and Virtual AMM price discovery,
-              evolving to full on-chain AMM pools, and culminating in a sovereign BSV↔EVM bridge.
+              A connected wallet, the OrahDEX API, an escrow contract, or an external
+              provider may take part depending on the feature. Check the route shown
+              before authorizing a transaction.
             </p>
           </div>
 
-          {/* Phase cards */}
+          {/* Capability cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
-            <PhaseCard
-              phase={1}
-              title="CEX-Backed + VAMM Liquidity"
-              desc="Deep order books powered by connected CEX venues plus Genesis VAMM bonding curves for instant guaranteed liquidity on 56+ assets."
-              icon={Globe}
-              active
-            />
-            <PhaseCard
-              phase={2}
-              title="On-Chain AMM Pools"
-              desc="Keeper-governed automated market makers. Permissionless pool creation. Identity-aware routing for optimal fills."
-              icon={Zap}
-              active
-            />
-            <PhaseCard
-              phase={3}
-              title="BSV↔EVM Bridge"
-              desc="Native bridge between Bitcoin SV and EVM chains. All settlements finalize on BSV — fastest, cheapest, permanent."
-              icon={Shield}
-              active
-            />
+            {CAPABILITY_STATUS.slice(0, 3).map(({ id, area: title, status, summary: desc }, i) => (
+              <AvailabilityCard
+                key={id}
+                title={title}
+                icon={["◈", "◎", "↗"][i]!}
+                desc={desc}
+                status={status}
+                color={["#4ade80", "#F5A623", "#60a5fa"][i]!}
+              />
+            ))}
           </div>
 
           {/* Architecture flow diagram */}
           <div className="rounded-2xl border border-border bg-card/40 p-6 overflow-x-auto">
             <div className="flex items-center justify-center gap-2 min-w-[480px] text-xs font-bold">
               {[
-                { label: "Your Wallet", sub: "EVM · TRON · BSV", color: "#4ade80" },
+                { label: "Connected wallet", sub: "Selected account + network", color: "#4ade80" },
                 null,
-                { label: "OrahDEX Engine", sub: "Keeper routing + VAMM", color: "#F5A623" },
+                { label: "OrahDEX app", sub: "Order and route handling", color: "#F5A623" },
                 null,
-                { label: "CEX Venues", sub: "Binance / OKX / Bybit", color: "#60a5fa" },
+                { label: "Contract or provider", sub: "Depends on the feature", color: "#60a5fa" },
                 null,
-                { label: "BSV Chain", sub: "Final settlement", color: "#4ade80" },
+                { label: "Execution result", sub: "Check chain/provider status", color: "#4ade80" },
               ].map((item, i) =>
                 item === null ? (
                   <div key={i} className="flex-1 max-w-[60px] flex items-center">
@@ -1358,9 +1241,8 @@ export function LandingPage() {
               }}>We build thresholds.</span>"
             </blockquote>
             <p className="text-muted-foreground/70 max-w-lg mx-auto leading-relaxed text-base mt-2">
-              OrahDEX is a sovereign exchange where every participant is a Keeper,
-              every trade is an act of financial sovereignty, and settlement lives
-              permanently on Bitcoin SV.
+              OrahDEX combines wallet-signed and provider-managed routes. Wallet custody,
+              execution, fees, and settlement depend on the feature and network selected.
             </p>
           </div>
 
@@ -1370,13 +1252,13 @@ export function LandingPage() {
               className="group flex items-center gap-3 px-10 py-4 rounded-2xl font-black text-base text-black transition-all hover:scale-[1.03]"
               style={{ background: "linear-gradient(135deg, #4ade80, #22c55e)", boxShadow: "0 0 80px rgba(74,222,128,0.3), 0 4px 32px rgba(74,222,128,0.2)" }}
             >
-              Enter the Sovereign Exchange
+              Open the Exchange
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
-            <Link href="/keeper"
+            <Link href="/whitepaper"
               className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-amber-400 border transition-all hover:scale-[1.02]"
               style={{ borderColor: "rgba(245,166,35,0.3)", background: "rgba(245,166,35,0.06)" }}>
-              Become a Keeper
+              Read the Whitepaper
             </Link>
           </div>
 

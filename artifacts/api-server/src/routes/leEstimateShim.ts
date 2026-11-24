@@ -3,8 +3,9 @@
 // Proxies internally to the working multi-quote (SimpleSwap/ChangeNow).
 // Also warms venue connections on server start so first user request is fast.
 import { Router } from "express";
+import { BoundedMap } from "../lib/boundedMap.js";
 const router = Router();
-const cache = new Map<string, { at: number; data: any }>();
+const cache = new BoundedMap<string, { at: number; data: any }>(200);
 const PORT = process.env.PORT || 8080;
 
 async function quotePair(from: string, to: string) {
@@ -36,6 +37,7 @@ router.get("/letsexchange/estimate", async (req, res) => {
   const key = `${from}/${to}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < 5000) return res.json(hit.data);
+  if (hit) cache.delete(key);
   try {
     const best = await quotePair(from, to);
     if (!best) return res.status(404).json({ error: "no route" });

@@ -14,14 +14,17 @@ import { midpointFromOrderbook, recordOrderbookQuoteCandle } from "../lib/orderb
 import { logger } from "../lib/logger.js";
 import { getVirtualCatalogPage } from "../lib/universalMarkets.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const router: IRouter = Router();
 
 // ─── Simple in-memory TTL cache ──────────────────────────────────────────────
 interface CacheEntry<T> { data: T; ts: number }
 class TtlCache<T> {
-  private store = new Map<string, CacheEntry<T>>();
-  constructor(private ttlMs: number) {}
+  private store: BoundedMap<string, CacheEntry<T>>;
+  constructor(private ttlMs: number, maxEntries = 100) {
+    this.store = new BoundedMap<string, CacheEntry<T>>(maxEntries);
+  }
   get(key: string): T | null {
     const e = this.store.get(key);
     if (!e) return null;
@@ -31,17 +34,17 @@ class TtlCache<T> {
   set(key: string, data: T) { this.store.set(key, { data, ts: Date.now() }); }
 }
 
-const marketsCache    = new TtlCache<any[]>(60_000);   // 60 s — matches price-updater interval
-const orderbookCache  = new TtlCache<any>(2_000);      //  2 s
-const tradesCache     = new TtlCache<any[]>(5_000);    //  5 s
-const tickerCache     = new TtlCache<any>(5_000);      //  5 s
+const marketsCache    = new TtlCache<any[]>(60_000, 20);   // 60 s — matches price-updater interval
+const orderbookCache  = new TtlCache<any>(2_000, 200);     //  2 s
+const tradesCache     = new TtlCache<any[]>(5_000, 200);   //  5 s
+const tickerCache     = new TtlCache<any>(5_000, 20);      //  5 s
 const swapReferenceCache = new TtlCache<{
   lastPrice: number; high24h: number; low24h: number;
   priceChange24h: number; priceChangePercent24h: number;
-}>(30_000);
+}>(30_000, 100);
 
 // ETag store for markets — maps cacheKey → weak ETag string
-const marketsETag = new Map<string, string>();
+const marketsETag = new BoundedMap<string, string>(100);
 function makeETag(data: any[]): string {
   // Fast hash: XOR of length + spot-check a few records
   let h = data.length * 2654435761;
