@@ -5,6 +5,7 @@ import { conversations, messages } from "@workspace/db/schema";
 import {
   openai,
   createDevaiOllamaStream,
+  devaiModel,
   getDevaiOllamaStatus,
   isDevaiOllamaEnabled,
 } from "@workspace/integrations-openai-ai-server";
@@ -16,7 +17,28 @@ import { BoundedMap } from "../lib/boundedMap.js";
 
 const router = Router();
 
-// ── Safety middleware: hard 25-second deadline on every AI route ──────────────
+/* ── Provider selection ──────────────────────────────────────────────────────
+ * Orah AI runs on the hosted OpenAI integration when one is provisioned.  On a
+ * VM that only has a local Ollama model, the same endpoints are served through
+ * Ollama's OpenAI-compatible API (DEVAI_OLLAMA_ENABLED / DEVAI_MODEL).  Both
+ * paths use the same `openai` client below — only the model name, token field
+ * and timeouts differ.
+ */
+const oraLocalModelEnabled = (): boolean => isDevaiOllamaEnabled();
+// Local models need longer budgets: a 1.5B model on CPU generates tokens far
+// slower than a hosted provider, so 15 s would abort almost every completion.
+const aiTimeoutMs = (): number => (oraLocalModelEnabled() ? 90_000 : 15_000);
+// ORA_AI_MODEL lets the trading assistant use a chat-tuned local model (e.g.
+// llama3.2:3b) while DevAI keeps its code-tuned DEVAI_MODEL.
+const aiModel = (): string => oraLocalModelEnabled()
+  ? (process.env.ORA_AI_MODEL || devaiModel)
+  : (process.env.AI_INTEGRATIONS_OPENAI_MODEL || "gpt-4o-mini");
+// Ollama honours `max_tokens`; the hosted provider uses `max_completion_tokens`.
+const aiTokenLimit = (maxTokens: number): Record<string, number> =>
+  oraLocalModelEnabled() ? { max_tokens: maxTokens } : { max_completion_tokens: maxTokens };
+
+// ── Safety middleware: hard deadline on every AI route (120 s when a local
+// model is serving, 25 s for the hosted provider) ────────────────────────────
 // If a handler hangs (e.g. SSE stream never closes, OpenAI call stalls without
 // triggering AbortSignal), this ensures the response is always eventually sent.
 router.use((_req: Request, res: Response, next: NextFunction) => {
@@ -24,7 +46,7 @@ router.use((_req: Request, res: Response, next: NextFunction) => {
     if (!res.headersSent) {
       res.status(503).json({ error: "AI service timeout — please retry" });
     }
-  }, 25_000);
+  }, oraLocalModelEnabled() ? 120_000 : 25_000);
   res.on("finish", () => clearTimeout(deadline));
   res.on("close",  () => clearTimeout(deadline));
   next();
@@ -68,7 +90,9 @@ let aiUnavailableUntil = 0;
 let aiUnavailableCode: "AI_PROVIDER_NOT_CONFIGURED" | "AI_PROVIDER_UNAVAILABLE" | null = null;
 let consecutiveTimeouts = 0;
 let aiProviderState: "starting" | "healthy" | "degraded" =
-  process.env.AI_INTEGRATIONS_OPENAI_API_KEY ? "starting" : "degraded";
+  process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.DEVAI_OLLAMA_ENABLED === "true"
+    ? "starting"
+    : "degraded";
 let aiProviderLastRunAt: Date | null = null;
 let aiProviderLastSuccessAt: Date | null = null;
 let aiProviderConsecutiveFails = 0;
@@ -97,7 +121,7 @@ function isProviderConfigurationError(err: unknown): boolean {
 }
 
 function isAiAvailable(): boolean {
-  if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) return false;
+  if (!oraLocalModelEnabled() && !process.env.AI_INTEGRATIONS_OPENAI_API_KEY) return false;
   if (aiUnavailable && Date.now() < aiUnavailableUntil) return false;
   if (Date.now() >= aiUnavailableUntil) {
     aiUnavailable = false;
@@ -146,7 +170,7 @@ function tripCircuitBreaker(err: unknown) {
 }
 
 export function getAiProviderHealth() {
-  const configured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const configured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY || isDevaiOllamaEnabled();
   // An unconfigured provider is not a monitored component — reporting it as
   // "degraded" dragged the whole platform status (and the public status page)
   // down on deployments that simply do not use the AI features.
@@ -214,7 +238,7 @@ function normalizeAiSymbol(value: unknown): string | null {
 }
 
 function unavailableAiResponse(): { error: string; code: string; available: false } {
-  const configured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const configured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY || oraLocalModelEnabled();
   return {
     error: configured
       ? "The AI provider is unavailable or not configured correctly."
@@ -312,7 +336,7 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
     const streamResult: unknown = useLocalOllama
       ? await createDevaiOllamaStream(chatMessages, 2048)
       : await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: aiModel(),
           max_completion_tokens: 8192,
           messages: chatMessages,
           stream: true,
@@ -385,13 +409,13 @@ router.get("/ai/market-analysis", async (req, res) => {
 Keep it under 200 words. Use plain markdown. No financial advice disclaimer needed — just direct analysis.`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_completion_tokens: 512,
+      model: aiModel(),
+      ...aiTokenLimit(512),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    }, { signal: AbortSignal.timeout(15_000) });
+    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
 
     const content = response.choices[0]?.message?.content || fallbackAnalysis(symbol);
     analysisCache.set(symbol, { content, ts: Date.now() });
@@ -453,8 +477,8 @@ router.get("/ai/insights", async (_req, res) => {
     }).catch(() => "");
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_completion_tokens: 512,
+      model: aiModel(),
+      ...aiTokenLimit(512),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -462,7 +486,7 @@ router.get("/ai/insights", async (_req, res) => {
           content: `Give 3 brief, sharp market insights for crypto traders right now. Each insight should be 1-2 sentences. Format as a JSON array of strings. Focus on actionable trends across DeFi, L2s, and BSV ecosystem. Return only valid JSON, no markdown wrapping.${hlContext}`
         },
       ],
-    }, { signal: AbortSignal.timeout(15_000) });  // 15s — insights are lightweight
+    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
 
     const raw = response.choices[0]?.message?.content || "[]";
     let parsed: string[];
@@ -528,13 +552,13 @@ router.get("/ai/trade-signal", async (req, res) => {
       : `Give a 1-sentence directional signal for ${symbol} as of March 2026: bullish, bearish, or neutral, and why. Be extremely concise.`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_completion_tokens: 256,
+      model: aiModel(),
+      ...aiTokenLimit(256),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    }, { signal: AbortSignal.timeout(15_000) });
+    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
 
     const signal = response.choices[0]?.message?.content || fallbackSignal(symbol).signal;
     const sentiment = signal.toLowerCase().includes("bullish") ? "bullish"
@@ -653,13 +677,13 @@ Return ONLY a JSON object (no markdown, no backticks) with these exact fields:
 Consider: diversification, concentration risk, exposure to volatile vs stable assets, sector balance.`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_completion_tokens: 512,
+      model: aiModel(),
+      ...aiTokenLimit(512),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    }, { signal: AbortSignal.timeout(15_000) });
+    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
 
     const raw2 = response.choices[0]?.message?.content ?? "";
     const jsonMatch = raw2.match(/\{[\s\S]*\}/);
@@ -723,13 +747,13 @@ Return ONLY a JSON object (no markdown, no backticks):
 Be specific to ${symbol}'s actual situation. Focus on: ecosystem developments, institutional flows, technical levels, macro factors. Keep each narrative under 20 words.`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_completion_tokens: 512,
+      model: aiModel(),
+      ...aiTokenLimit(512),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    }, { signal: AbortSignal.timeout(15_000) });
+    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
 
     const raw2 = response.choices[0]?.message?.content ?? "";
     const jsonMatch = raw2.match(/\{[\s\S]*\}/);
