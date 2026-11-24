@@ -40,12 +40,43 @@ test("order-lock references preserve chain identity for verification and cancell
 
 test("EVM order recovery is read-only and stores only active verified escrow orders", async () => {
   const orders = await read("artifacts/api-server/src/routes/orders.ts");
+  const escrow = await read("artifacts/api-server/src/lib/evmOrderbookEscrow.ts");
   assert.match(orders, /router\.post\("\/orders\/recover-evm"/);
-  assert.match(orders, /findActiveEvmOrderbookOrders\(walletAddress, knownLockTxHashes, chainId\)/);
+  assert.match(orders, /findActiveEvmOrderbookOrders\(\s*walletAddress,\s*knownLockTxHashes,\s*chainId,\s*previousCursorBlock/);
   assert.match(orders, /supportsEvmOrderbookPair\(chainId, base, quote\)/);
   assert.match(orders, /evm-order:\$\{chainId\}:/);
   assert.match(orders, /onConflictDoNothing\(\)\.returning/);
   assert.match(orders, /never sends/);
+  assert.match(escrow, /RECOVERY_RECENT_SCAN_BLOCKS = 1_000n/);
+  assert.match(escrow, /RECOVERY_HISTORICAL_SCAN_BLOCKS = 1_000n/);
+  assert.match(escrow, /RECOVERY_LOG_CHUNK_BLOCKS = 10n/);
+  assert.match(escrow, /historicalCursorBlock == null \|\| historicalCursorBlock < deploymentBlock/);
+  assert.match(escrow, /historicalToBlock \+ 1n/);
+  assert.match(escrow, /historicalFromBlock < recentScanFloor/);
+  assert.match(escrow, /topics: \[ORDER_OPENED_TOPIC, null, makerTopic\]/);
+  assert.match(orders, /PRIMARY KEY \(wallet_address, chain_id\)/);
+  assert.match(orders, /AND next_block = \$4/);
+  const mobile = await read("artifacts/bsv-dex/src/pages/mobile/MobileTrade.tsx");
+  assert.match(mobile, /historicalScanHasMore/);
+  assert.match(mobile, /Run recovery again to continue farther back/);
+});
+
+test("EVM recovery ignores duplicate, unconfirmed, cancelled, and settled locks", async () => {
+  const escrow = await read("artifacts/api-server/src/lib/evmOrderbookEscrow.ts");
+  const orders = await read("artifacts/api-server/src/routes/orders.ts");
+  const contract = await read("artifacts/orahdex-contracts/contracts/OrahDEXOrderbookEscrow.sol");
+  assert.match(escrow, /latestBlock - blockNumber \+ 1n < MIN_CONFIRMATIONS/);
+  assert.match(escrow, /receipt\.status !== "success"/);
+  assert.match(escrow, /!order\[9\]/);
+  assert.match(escrow, /order\[4\] <= 0n/);
+  assert.match(escrow, /order\[5\] <= 0n/);
+  assert.match(orders, /where\(eq\(ordersTable\.fundingRef, fundingRef\)\)/);
+  assert.match(orders, /onConflictDoNothing\(\)\.returning/);
+  assert.match(contract, /buy\.active = false/);
+  assert.match(contract, /sell\.active = false/);
+  assert.match(contract, /order\.active = false/);
+  const schema = await read("lib/db/src/schema/orders.ts");
+  assert.match(schema, /uniqueIndex\("orders_wallet_nonce_uidx"\)\.on\(sql`lower\(\$\{t\.walletAddress\}\)`, t\.nonce\)/);
 });
 
 test("escrow-backed order expiry matches the on-chain order lifetime", async () => {
