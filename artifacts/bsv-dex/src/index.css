@@ -101,17 +101,17 @@ html.light {
 html.amoled {
   --background: 0 0% 0%;
   --foreground: 210 20% 96%;
-  --card: 0 0% 2%;
+  --card: 0 0% 0%;
   --card-foreground: 210 20% 92%;
-  --popover: 0 0% 4%;
+  --popover: 0 0% 0%;
   --popover-foreground: 210 20% 92%;
   --primary: 142 82% 66%;
   --primary-foreground: 0 0% 0%;
-  --secondary: 0 0% 6%;
+  --secondary: 0 0% 4%;
   --secondary-foreground: 210 20% 92%;
-  --muted: 0 0% 6%;
+  --muted: 0 0% 4%;
   --muted-foreground: 215 18% 72%;
-  --accent: 0 0% 6%;
+  --accent: 0 0% 4%;
   --accent-foreground: 210 20% 92%;
   --destructive: 348 88% 56%;
   --destructive-foreground: 0 0% 100%;
@@ -122,6 +122,11 @@ html.amoled {
   --sell: 348 88% 56%;
   --buy-muted: 142 78% 53% / 0.20;
   --sell-muted: 348 88% 56% / 0.20;
+}
+
+html.amoled {
+  background-color: #000;
+  color-scheme: dark;
 }
 
 @layer base {

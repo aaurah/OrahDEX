@@ -654,6 +654,10 @@ router.post("/orders", async (req, res) => {
           amount:          lockAmount,
           signature:       body.evmSignature ?? body.signedTx,
           chainId,
+          // External EVM wallets may only use existing exchange-ledger funds
+          // unless the order is backed by the verified Ethereum escrow above.
+          // Never turn a wallet balance check into an unfunded order-book credit.
+          ledgerOnly:      walletSource === "external" && networkType === "evm",
           reportedBalance: body.reportedBalance != null ? parseFloat(body.reportedBalance) : undefined,
         });
         if (!fundingVerif.valid) {

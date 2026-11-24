@@ -74,6 +74,7 @@ test("funding verifier fails closed for unverifiable external EVM funding", asyn
   assert.match(src, /code:\s+"CHAIN_ID_REQUIRED"/);
   assert.match(src, /code:\s+"UNSUPPORTED_ASSET"/);
   assert.match(src, /code:\s+"BALANCE_VERIFICATION_UNAVAILABLE"/);
+  assert.match(src, /if \(params\.ledgerOnly\)[\s\S]*?Wallet-to-wallet order settlement is paused/);
   assert.doesNotMatch(src, /on-chain RPC balance check failed — falling through/);
 });
 
@@ -208,6 +209,7 @@ test("Ethereum orderbook orders require confirmed escrow proof and settlement pa
   assert.match(ordersSrc, /router\.get\("\/orders\/evm-settlement\/config"/);
   assert.match(ordersSrc, /verifyEvmOrderLock\(\{/);
   assert.match(ordersSrc, /ORDERBOOK_LOCK_REQUIRED/);
+  assert.match(ordersSrc, /ledgerOnly:\s*walletSource\s*===\s*"external"\s*&&\s*networkType\s*===\s*"evm"/);
   assert.match(ordersSrc, /candidateClaimsOrderbookEscrow !== Boolean\(incomingOrderbookFunding\)/);
   assert.match(ordersSrc, /settleEvmOrderFill\(\{/);
   assert.match(ordersSrc, /verifyEvmOrderbookCancelTx\(\{/);

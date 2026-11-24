@@ -36,7 +36,10 @@ export const useThemeStore = create<ThemeState>()(
 
 export function applyStoredTheme() {
   const raw = localStorage.getItem('aura-dex-theme');
-  if (!raw) return;
+  if (!raw) {
+    applyTheme('amoled');
+    return;
+  }
   try {
     const { state } = JSON.parse(raw);
     applyTheme(state?.theme ?? 'amoled');

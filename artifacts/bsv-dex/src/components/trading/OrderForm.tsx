@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useExternalSwap } from "@/hooks/useExternalSwap";
 import { ExternalSwapStatus } from "@/components/trading/ExternalSwapStatus";
 import { useAccount, useSignMessage } from "wagmi";
@@ -32,10 +33,27 @@ import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
 } from "@/lib/crossChain";
-import { CHAIN_TOKEN_ADDRESSES } from "@/lib/onChainLiquidity";
+import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
+import { cancelOrderbookOrder, lockOrderbookOrder } from "@/lib/escrow";
+import { keccak256, toBytes } from "viem";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
+type PendingOrderbookTx = {
+  hash: string;
+  explorerUrl: string;
+  kind: "approval" | "lock";
+  nonce?: string;
+  escrowAddress?: string;
+  canCancelOrphan?: boolean;
+};
+
+function supportsEthereumWalletOrderbookAsset(symbol: string): boolean {
+  const normalized = symbol.toUpperCase();
+  if (normalized === "ETH") return true;
+  return Boolean(CHAIN_TOKEN_ADDRESSES[1]?.[normalized]) &&
+    (TOKEN_DECIMALS[normalized] ?? 18) === 18;
+}
 
 // ── Mobile QR connect panel ────────────────────────────────────────────────────
 type QRState = "idle" | "loading" | "showing" | "connected" | "expired" | "error";
@@ -403,13 +421,13 @@ export function OrderForm({
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
-  // Only the separate external-swap flow uses wallet-held funds. Order-book
-  // matching currently requires an already funded exchange ledger reservation.
-  const usesApiBalance = !(externalSwapMode && type === "market");
   const [price, setPrice]     = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
   const [stopPrice, setStopPrice] = useState<string>("");
   const [amount, setAmount]   = useState<string>("");
   const [autoBorrow, setAutoBorrow] = useState(false);
+  const [escrowStage, setEscrowStage] = useState("");
+  const [submittedOrderbookTx, setSubmittedOrderbookTx] = useState<PendingOrderbookTx | null>(null);
+  const submittedOrderbookTxRef = useRef<PendingOrderbookTx | null>(null);
 
   const [filledFromBook, setFilledFromBook] = useState(false);
   // When the user clicks a row in the Order Book, fill price + amount here
@@ -468,6 +486,54 @@ export function OrderForm({
 
   const parts = symbol.split("/");
   const [base, quote = "USDT"] = parts;
+  const ethereumOrderbookPair =
+    supportsEthereumWalletOrderbookAsset(base) &&
+    supportsEthereumWalletOrderbookAsset(quote);
+  const shouldUseEthereumOrderbookEscrow =
+    !!address && isEvm && !externalSwapMode && ethereumOrderbookPair;
+  const evmOrderbookConfigQuery = useQuery({
+    queryKey: ["evm-orderbook-settlement-config", walletChainId],
+    queryFn: async () => {
+      const response = await fetch(`${API_BASE}/orders/evm-settlement/config`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Ethereum order escrow status could not be checked");
+      return await response.json() as {
+        available: boolean;
+        chainId?: number;
+        address?: string;
+        supportedPairs?: string[];
+      };
+    },
+    enabled: shouldUseEthereumOrderbookEscrow,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+  const walletOrderbookNetworkPending =
+    shouldUseEthereumOrderbookEscrow && walletChainId == null;
+  const walletOrderbookWrongChain =
+    shouldUseEthereumOrderbookEscrow && walletChainId != null && walletChainId !== 1;
+  const walletOrderbookConfigPending =
+    shouldUseEthereumOrderbookEscrow &&
+    walletChainId === 1 &&
+    evmOrderbookConfigQuery.isLoading;
+  const walletOrderbookAvailable =
+    shouldUseEthereumOrderbookEscrow &&
+    walletChainId === 1 &&
+    evmOrderbookConfigQuery.data?.available === true &&
+    evmOrderbookConfigQuery.data?.chainId === 1 &&
+    !!evmOrderbookConfigQuery.data?.address &&
+    (!Array.isArray(evmOrderbookConfigQuery.data.supportedPairs) ||
+      evmOrderbookConfigQuery.data.supportedPairs.includes(`${base}/${quote}`.toUpperCase()));
+  const walletOrderbookUnavailable =
+    shouldUseEthereumOrderbookEscrow &&
+    walletChainId === 1 &&
+    !walletOrderbookConfigPending &&
+    !walletOrderbookAvailable;
+  const usesApiBalance =
+    !(externalSwapMode && type === "market") && !walletOrderbookAvailable;
+
+  useEffect(() => {
+    if (walletOrderbookAvailable && type !== "limit") setType("limit");
+  }, [walletOrderbookAvailable, type]);
 
   // Cross-chain derived values (must come after `base` is declared)
   const baseChain = getAssetNativeChain(base);
@@ -526,12 +592,16 @@ export function OrderForm({
   const isNativeQuote = quote.toUpperCase() === nativeSymbol.toUpperCase();
   // For OrahWallet (non-EVM): merge on-chain native balance so BSV shows correctly
   // even when no funds have been deposited to the internal ledger yet.
-  const baseAvailable  = usesApiBalance
-    ? internalBase
-    : Math.max(walletBase, internalBase);
-  const quoteAvailable = usesApiBalance
-    ? internalQuote
-    : Math.max(walletQuote, internalQuote);
+  const baseAvailable = walletOrderbookAvailable
+    ? walletBase
+    : usesApiBalance
+      ? internalBase
+      : Math.max(walletBase, internalBase);
+  const quoteAvailable = walletOrderbookAvailable
+    ? walletQuote
+    : usesApiBalance
+      ? internalQuote
+      : Math.max(walletQuote, internalQuote);
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
 
@@ -596,6 +666,9 @@ export function OrderForm({
   const placeOrder = usePlaceOrder({
     mutation: {
       onSuccess: (data: any) => {
+        setEscrowStage("");
+        submittedOrderbookTxRef.current = null;
+        setSubmittedOrderbookTx(null);
         const matched  = data?.matched ?? false;
         const txid     = data?.settlementTxid ?? data?.txid ?? null;
         const url      = data?.explorerUrl ?? null;
@@ -681,6 +754,7 @@ export function OrderForm({
         setTimeout(() => onOrderPlaced?.(), 500);
       },
       onError: (err: any) => {
+        setEscrowStage("");
         const errData     = err?.response?.data ?? err?.data ?? {};
         const code        = errData?.code ?? err?.data?.code ?? err?.code;
         const serverMsg   = errData?.error ?? errData?.message ?? err?.data?.error ?? err?.data?.message ?? err?.message;
@@ -747,6 +821,26 @@ export function OrderForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address || !amount || parseFloat(amount) <= 0) return;
+    if (walletOrderbookNetworkPending) {
+      toast({
+        title: "Wallet network not detected",
+        description: "Reconnect your wallet and wait for Ethereum to be confirmed before placing this order.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (walletOrderbookConfigPending) {
+      toast({ title: "Checking Ethereum escrow", description: "Wait for the escrow status check to finish, then try again." });
+      return;
+    }
+    if (submittedOrderbookTxRef.current) {
+      toast({
+        title: "Check the previous wallet transaction",
+        description: "A wallet transaction was submitted. Check its status and your orders before trying again.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     // ── External swap intercept (market orders on zero-liquidity pairs) ────────
     if (externalSwapMode && type === "market") {
@@ -875,6 +969,8 @@ export function OrderForm({
     let evmSignature: string | undefined;
     let orderNonce:   string | undefined;
     let orderExpiry:  string | undefined;
+    let orderbookLockTxHash: string | undefined;
+    let orderbookExpiresAt: number | undefined;
     if (isEvm && address) {
       // Generate a random nonce and a 5-minute expiry
       const nonceBytes = new Uint8Array(16);
@@ -969,9 +1065,73 @@ export function OrderForm({
       }
     }
 
+    if (walletOrderbookAvailable) {
+      const escrowAddress = evmOrderbookConfigQuery.data?.address;
+      if (!escrowAddress || !orderNonce || !price || walletChainId !== 1) {
+        toast({
+          title: "Ethereum escrow is not ready",
+          description: "The wallet network, limit price, or escrow configuration is missing. No order was submitted.",
+          variant: "destructive",
+        });
+        return;
+      }
+      orderbookExpiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+      try {
+        setEscrowStage("Preparing Ethereum escrow lock…");
+        const lock = await lockOrderbookOrder({
+          escrowAddress,
+          nonce: orderNonce,
+          side,
+          base,
+          quote,
+          quantity: amount,
+          price,
+          expiresAt: orderbookExpiresAt,
+          from: address,
+          chainId: 1,
+          isOrahWallet,
+          onStage: setEscrowStage,
+          onSubmitted: (transaction) => {
+            const pending: PendingOrderbookTx = {
+              ...transaction,
+              nonce: orderNonce,
+              escrowAddress,
+            };
+            submittedOrderbookTxRef.current = pending;
+            setSubmittedOrderbookTx(pending);
+          },
+        });
+        orderbookLockTxHash = lock.txHash;
+        const pending: PendingOrderbookTx = {
+          hash: lock.txHash,
+          explorerUrl: lock.explorerUrl,
+          kind: "lock",
+          nonce: orderNonce,
+          escrowAddress,
+        };
+        submittedOrderbookTxRef.current = pending;
+        setSubmittedOrderbookTx(pending);
+        setEscrowStage("Submitting the escrow-backed order…");
+      } catch (lockError: any) {
+        setEscrowStage("");
+        const pending = submittedOrderbookTxRef.current;
+        if (pending?.kind === "lock") {
+          const recoverable = { ...pending, canCancelOrphan: true };
+          submittedOrderbookTxRef.current = recoverable;
+          setSubmittedOrderbookTx(recoverable);
+        }
+        toast({
+          title: "Could not complete Ethereum escrow",
+          description: String(lockError?.message ?? "Check the wallet transaction before retrying."),
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     // ── Place the order ────────────────────────────────────────────────────────
-    placeOrder.mutate(
-      {
+    try {
+      await placeOrder.mutateAsync({
         data: {
           symbol,
           walletAddress: address,
@@ -992,17 +1152,92 @@ export function OrderForm({
           nonce:  orderNonce,
           expiry: orderExpiry,
           chainId: isEvm ? chainId : undefined,
+          orderbookLockTxHash,
+          orderbookExpiresAt,
         } as any,
-      },
-    );
+      });
+    } catch (submissionError: any) {
+      const status = Number(submissionError?.status ?? submissionError?.response?.status);
+      if (
+        orderbookLockTxHash &&
+        orderbookExpiresAt &&
+        Number.isFinite(status) &&
+        status >= 400 &&
+        evmOrderbookConfigQuery.data?.address &&
+        orderNonce
+      ) {
+        let orderCheckSucceeded = false;
+        let serverHasOrder = false;
+        for (let attempt = 0; attempt < 2 && !serverHasOrder; attempt += 1) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+          try {
+            const response = await fetch(
+              `${API_BASE}/orders?walletAddress=${encodeURIComponent(address)}`,
+              { cache: "no-store" },
+            );
+            if (!response.ok) continue;
+            const rows = await response.json();
+            orderCheckSucceeded = true;
+            serverHasOrder =
+              Array.isArray(rows) &&
+              rows.some((order: any) => String(order.nonce) === String(orderNonce));
+          } catch {
+            // Keep funds locked unless the API confirms no matching order exists.
+          }
+        }
+
+        if (orderCheckSucceeded && serverHasOrder) {
+          submittedOrderbookTxRef.current = null;
+          setSubmittedOrderbookTx(null);
+        } else if (orderCheckSucceeded && !serverHasOrder) {
+          try {
+            await cancelOrderbookOrder({
+              escrowAddress: evmOrderbookConfigQuery.data.address,
+              orderKey: keccak256(toBytes(orderNonce)),
+              from: address,
+              chainId: 1,
+              isOrahWallet,
+            });
+            submittedOrderbookTxRef.current = null;
+            setSubmittedOrderbookTx(null);
+            toast({
+              title: "Unlisted escrow lock canceled",
+              description: "The API confirmed the order was not created and the escrow cancellation succeeded.",
+            });
+          } catch {
+            const pending = submittedOrderbookTxRef.current;
+            if (pending) {
+              const recoverable = { ...pending, canCancelOrphan: true };
+              submittedOrderbookTxRef.current = recoverable;
+              setSubmittedOrderbookTx(recoverable);
+            }
+            toast({
+              title: "Order was rejected; funds may remain escrowed",
+              description: "Keep this wallet connected and retry the orphaned escrow cancellation below.",
+              variant: "destructive",
+            });
+          }
+        }
+      }
+    } finally {
+      setEscrowStage("");
+    }
   };
 
   if (!address) return <WalletPrompt base={base} quote={quote} />;
 
-  const isPending = placeOrder.isPending || signingOrder;
+  const isPending = placeOrder.isPending || signingOrder || !!escrowStage;
   const priceValid = type === "market" || (!!price && parseFloat(price) > 0);
   const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
-  const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
+  const canSubmit  =
+    !isPending &&
+    !walletOrderbookNetworkPending &&
+    !walletOrderbookConfigPending &&
+    !submittedOrderbookTx &&
+    !!amount &&
+    parseFloat(amount) > 0 &&
+    priceValid &&
+    stopValid;
 
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
@@ -1092,7 +1327,7 @@ export function OrderForm({
       <div className="p-3 flex-1 flex flex-col gap-3 overflow-y-auto">
         {/* Order type */}
         <div className="flex gap-0 text-xs font-medium bg-secondary p-0.5 rounded-lg">
-          {(["limit", "market"] as OrderType[]).map((t) => (
+          {(walletOrderbookAvailable ? ["limit"] as OrderType[] : ["limit", "market"] as OrderType[]).map((t) => (
             <button key={t}
               data-testid={`order-type-${t}`}
               className={cn("flex-1 py-1.5 rounded-md transition-colors capitalize",
@@ -1103,6 +1338,87 @@ export function OrderForm({
             </button>
           ))}
         </div>
+        {walletOrderbookAvailable && (
+          <div className="flex items-start gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-2 text-[11px] leading-relaxed text-emerald-300">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>Ethereum wallet-funded limit trading is enabled for this pair. Review the order, sign it, then confirm the separate escrow transaction.</span>
+          </div>
+        )}
+        {walletOrderbookNetworkPending && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300" role="status">
+            Waiting for the wallet to confirm its Ethereum network. No order or escrow transaction will be submitted yet.
+          </div>
+        )}
+        {walletOrderbookWrongChain && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300" role="status">
+            Wallet-funded order-book trading for this pair is verified on Ethereum mainnet only. Switch networks or use an already-funded trading balance.
+          </div>
+        )}
+        {walletOrderbookUnavailable && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300" role="status">
+            Ethereum wallet escrow is currently unavailable. This order can use only an already-funded trading balance; wallet-held funds will not be credited to the order book.
+          </div>
+        )}
+        {submittedOrderbookTx && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300" role="status">
+            <div>
+              {submittedOrderbookTx.kind === "approval"
+                ? "A token approval transaction was submitted. Check its status before trying again."
+                : "An escrow transaction was submitted. Check My Orders and the transaction before retrying."}
+            </div>
+            <a className="mt-1 inline-block underline underline-offset-2" href={submittedOrderbookTx.explorerUrl} target="_blank" rel="noreferrer">
+              View wallet transaction
+            </a>
+            {submittedOrderbookTx.kind === "approval" && (
+              <button
+                type="button"
+                className="ml-3 underline underline-offset-2"
+                onClick={() => {
+                  if (!window.confirm("Clear this approval notice after checking its transaction status? Token approval alone does not lock order funds.")) return;
+                  submittedOrderbookTxRef.current = null;
+                  setSubmittedOrderbookTx(null);
+                }}
+              >
+                I checked the approval
+              </button>
+            )}
+            {submittedOrderbookTx.canCancelOrphan &&
+              submittedOrderbookTx.kind === "lock" &&
+              submittedOrderbookTx.nonce &&
+              submittedOrderbookTx.escrowAddress && (
+                <button
+                  type="button"
+                  className="ml-3 underline underline-offset-2"
+                  onClick={async () => {
+                    if (!window.confirm("Cancel this escrow lock? Only do this after confirming the order is not listed in My Orders.")) return;
+                    try {
+                      setEscrowStage("Canceling the orphaned escrow lock…");
+                      await cancelOrderbookOrder({
+                        escrowAddress: submittedOrderbookTx.escrowAddress!,
+                        orderKey: keccak256(toBytes(submittedOrderbookTx.nonce!)),
+                        from: address,
+                        chainId: 1,
+                        isOrahWallet,
+                      });
+                      submittedOrderbookTxRef.current = null;
+                      setSubmittedOrderbookTx(null);
+                      toast({ title: "Escrow lock canceled", description: "The unlisted order's locked funds have been returned to your wallet." });
+                    } catch (error: any) {
+                      toast({
+                        title: "Escrow cancellation failed",
+                        description: String(error?.message ?? "Check the order and wallet transaction, then try again."),
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setEscrowStage("");
+                    }
+                  }}
+                >
+                  Retry orphaned escrow cancellation
+                </button>
+              )}
+          </div>
+        )}
 
         {/* Balance row */}
         <div className="flex items-center justify-between text-xs px-0.5">
@@ -1131,7 +1447,7 @@ export function OrderForm({
         </div>
 
         {/* Non-custodial mode disclosure */}
-        {isEvm && !!address && (
+        {isEvm && !!address && !walletOrderbookAvailable && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-primary/8 border border-primary/20">
             <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
             <span className="text-primary/80 font-medium">Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds.</span>
@@ -1142,7 +1458,7 @@ export function OrderForm({
         {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-amber-500/8 border border-amber-500/20">
             <span className="text-amber-400/80">
-              No {availableSym} in wallet — bridge from any chain below, or{" "}
+              No {availableSym} in {usesApiBalance ? "trading balance" : "wallet"} — bridge from any chain below, or{" "}
               <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold hover:text-cyan-300">
                 swap
               </a>
@@ -1675,6 +1991,8 @@ export function OrderForm({
             {isPending ? (
               signingOrder
                 ? <><PenLine className="w-4 h-4 animate-pulse" /> Sign in wallet…</>
+                : escrowStage
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> {escrowStage}</>
                 : <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
             ) : type !== "market" ? (
               `Review ${side === "buy" ? "Buy" : "Sell"} Order`

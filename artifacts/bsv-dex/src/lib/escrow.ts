@@ -604,6 +604,7 @@ async function sendOrderbookWalletTx(params: {
   isOrahWallet: boolean;
   confirmations?: number;
   onStage?: (stage: string) => void;
+  onSubmitted?: (hash: `0x${string}`) => void;
 }): Promise<`0x${string}`> {
   let txHash: `0x${string}`;
   params.onStage?.("Preparing wallet transaction…");
@@ -634,6 +635,7 @@ async function sendOrderbookWalletTx(params: {
     }) as `0x${string}`;
   }
 
+  params.onSubmitted?.(txHash);
   params.onStage?.("Waiting for Ethereum confirmation…");
   const receipt = await getPublicClient(params.chainId).waitForTransactionReceipt({
     hash: txHash,
@@ -657,6 +659,11 @@ export async function lockOrderbookOrder(params: {
   chainId: number;
   isOrahWallet: boolean;
   onStage?: (stage: string) => void;
+  onSubmitted?: (transaction: {
+    hash: `0x${string}`;
+    explorerUrl: string;
+    kind: "approval" | "lock";
+  }) => void;
 }): Promise<{ orderKey: `0x${string}`; txHash: `0x${string}`; explorerUrl: string }> {
   if (params.chainId !== 1) throw new Error("Wallet-funded order settlement is currently available on Ethereum mainnet only");
   if (!/^0x[0-9a-fA-F]{40}$/.test(params.escrowAddress)) throw new Error("Ethereum order escrow is not configured");
@@ -694,6 +701,11 @@ export async function lockOrderbookOrder(params: {
         from, to: escrowToken.address, data: approveData,
         chainId: params.chainId, isOrahWallet: params.isOrahWallet,
         onStage: params.onStage,
+        onSubmitted: (hash) => params.onSubmitted?.({
+          hash,
+          explorerUrl: explorerTxUrl(params.chainId, hash),
+          kind: "approval",
+        }),
       });
     }
   }
@@ -723,11 +735,16 @@ export async function lockOrderbookOrder(params: {
     isOrahWallet: params.isOrahWallet,
     confirmations: 3,
     onStage: params.onStage,
+    onSubmitted: (hash) => params.onSubmitted?.({
+      hash,
+      explorerUrl: explorerTxUrl(params.chainId, hash),
+      kind: "lock",
+    }),
   });
   return {
     orderKey,
     txHash,
-    explorerUrl: `https://etherscan.io/tx/${txHash}`,
+    explorerUrl: explorerTxUrl(params.chainId, txHash),
   };
 }
 
