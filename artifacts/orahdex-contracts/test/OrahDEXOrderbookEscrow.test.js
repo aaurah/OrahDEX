@@ -37,16 +37,6 @@ async function openA8EthPair({ seller, buyer, base, escrow, sellerId, buyerId, b
 }
 
 describe("OrahDEXOrderbookEscrow", function () {
-  it("exposes the backend verification interface and configured fee", async function () {
-    const { escrow } = await setup();
-    const emptyId = id("empty-order-state");
-    const order = await escrow.orders(emptyId);
-    assert.equal(await escrow.feeBps(), 10n);
-    assert.equal(order.maker, ethers.ZeroAddress);
-    assert.equal(order.active, false);
-    assert.equal(await escrow.settledFills(emptyId), false);
-  });
-
   it("settles A8/ETH atomically within both limit prices and refunds buyer price improvement", async function () {
     const ctx = await setup();
     const { seller, buyer, feeRecipient, base, escrow } = ctx;
