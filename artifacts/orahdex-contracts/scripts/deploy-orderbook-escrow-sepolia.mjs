@@ -1,14 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  ContractFactory,
-  Interface,
-  Wallet,
-  formatEther,
-  isAddress,
-  ZeroAddress,
-} from "ethers";
+import { ContractFactory, JsonRpcProvider, Wallet, formatEther, isAddress, ZeroAddress } from "ethers";
 
 const CHAIN_ID = 11155111;
 const FEE_BPS = 10;
@@ -20,130 +13,89 @@ const artifactPath = path.join(
   "OrahDEXOrderbookEscrow.json",
 );
 const outputPath = path.join(__dirname, "..", "deployments", "orderbook-11155111.json");
-const rpcUrl = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
-let rpcId = 0;
-
-async function rpc(method, params = []) {
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
-  });
-  if (!response.ok) throw new Error(`Sepolia RPC HTTP ${response.status}`);
-  const body = await response.json();
-  if (body.error) throw new Error(`Sepolia RPC ${method}: ${body.error.message ?? "request failed"}`);
-  return body.result;
-}
-
-async function waitForConfirmations(txHash, confirmations = 3) {
-  let receipt = null;
-  for (let attempt = 0; attempt < 180; attempt += 1) {
-    receipt = await rpc("eth_getTransactionReceipt", [txHash]);
-    if (receipt) break;
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
-  }
-  if (!receipt) throw new Error(`Deployment receipt was not found; transaction hash: ${txHash}`);
-  if (receipt.status !== "0x1") throw new Error(`Deployment reverted; transaction hash: ${txHash}`);
-  const minedBlock = BigInt(receipt.blockNumber);
-  for (let attempt = 0; attempt < 180; attempt += 1) {
-    const latest = BigInt(await rpc("eth_blockNumber"));
-    if (latest - minedBlock + 1n >= BigInt(confirmations)) return receipt;
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
-  }
-  throw new Error(`Deployment is not yet ${confirmations}-confirmed; transaction hash: ${txHash}`);
-}
+const rpcUrl = process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
 
 async function main() {
-  const chainId = Number(BigInt(await rpc("eth_chainId")));
-  if (chainId !== CHAIN_ID) {
-    throw new Error(`Refusing to run on chain ${chainId}; Sepolia (11155111) is required.`);
+  const provider = new JsonRpcProvider(rpcUrl, CHAIN_ID);
+  const network = await provider.getNetwork();
+  if (Number(network.chainId) !== CHAIN_ID) {
+    throw new Error(`Refusing deployment on chain ${network.chainId}; Sepolia (11155111) is required.`);
   }
-  if (!fs.existsSync(artifactPath)) {
-    throw new Error("Contract artifact is missing; compile with hardhat.offline.config.cjs first.");
-  }
+  const privateKey = process.env.DEPLOYER_PRIVATE_KEY?.trim();
+  if (!privateKey) throw new Error("DEPLOYER_PRIVATE_KEY is required.");
   if (fs.existsSync(outputPath)) {
     throw new Error(`Deployment record already exists at ${outputPath}; refusing a second Sepolia deployment.`);
   }
-
-  const feeRecipient = process.env.EVM_ORDERBOOK_SEPOLIA_FEE_RECIPIENT?.trim();
-  if (!feeRecipient || !isAddress(feeRecipient) || feeRecipient.toLowerCase() === ZeroAddress.toLowerCase()) {
-    throw new Error("EVM_ORDERBOOK_SEPOLIA_FEE_RECIPIENT must be a non-zero EVM address.");
+  if (!fs.existsSync(artifactPath)) {
+    throw new Error("Contract artifact is missing; compile the contracts package first.");
   }
-  const privateKey = process.env.SEPOLIA_DEPLOYER_PRIVATE_KEY?.trim();
-  if (!privateKey) throw new Error("SEPOLIA_DEPLOYER_PRIVATE_KEY is required for an explicitly approved deployment.");
 
+  const wallet = new Wallet(privateKey, provider);
+  const feeRecipient = process.env.EVM_ORDERBOOK_FEE_RECIPIENT?.trim() || wallet.address;
+  if (!isAddress(feeRecipient) || feeRecipient.toLowerCase() === ZeroAddress) {
+    throw new Error("EVM_ORDERBOOK_FEE_RECIPIENT must be a non-zero EVM address.");
+  }
   const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
-  const wallet = new Wallet(privateKey);
-  const iface = new Interface(artifact.abi);
   const factory = new ContractFactory(artifact.abi, artifact.bytecode, wallet);
   const deployRequest = await factory.getDeployTransaction(feeRecipient, FEE_BPS);
-  const [nonceHex, balanceHex, gasPriceHex, estimatedGasHex] = await Promise.all([
-    rpc("eth_getTransactionCount", [wallet.address, "pending"]),
-    rpc("eth_getBalance", [wallet.address, "pending"]),
-    rpc("eth_gasPrice"),
-    rpc("eth_estimateGas", [{ from: wallet.address, data: String(deployRequest.data), value: "0x0" }]),
+  const [balance, feeData, estimatedGas] = await Promise.all([
+    provider.getBalance(wallet.address),
+    provider.getFeeData(),
+    provider.estimateGas({ ...deployRequest, from: wallet.address }),
   ]);
-  const nonce = BigInt(nonceHex);
-  const balance = BigInt(balanceHex);
-  const gasPrice = BigInt(gasPriceHex);
-  const gasLimit = BigInt(estimatedGasHex) * 125n / 100n;
-  const estimatedCost = gasLimit * gasPrice;
-  const reserveRequired = estimatedCost * 110n / 100n;
-
-  console.log("Network: Ethereum Sepolia (chain 11155111)");
-  console.log(`Fee recipient: ${feeRecipient}`);
+  const minPriority = 1_000_000_000n;
+  const priorityFee = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriority
+    ? feeData.maxPriorityFeePerGas
+    : minPriority;
+  const suggestedMaxFee = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
+  const maxFeePerGas = suggestedMaxFee > priorityFee * 2n ? suggestedMaxFee : priorityFee * 2n;
+  const gasLimit = estimatedGas * 125n / 100n;
+  const maxExpectedCost = gasLimit * maxFeePerGas;
+  const minRequiredBalance = maxExpectedCost * 110n / 100n;
+  console.log("Network: Sepolia (chain 11155111)");
   console.log(`Fee: ${FEE_BPS} bps (0.1%)`);
-  console.log(`Estimated gas limit: ${gasLimit}`);
-  console.log(`Estimated maximum gas cost: ${formatEther(estimatedCost)} Sepolia ETH`);
-  if (balance < reserveRequired) throw new Error("Deployer wallet does not have enough Sepolia ETH for the estimate plus reserve.");
-  if (process.env.EVM_ORDERBOOK_DEPLOY_DRY_RUN === "true") {
-    console.log("Dry run complete; no transaction was sent.");
+  console.log(`Estimated maximum gas: ${formatEther(maxExpectedCost)} test ETH`);
+  if (balance < minRequiredBalance) {
+    throw new Error("The deployer wallet does not have enough Sepolia ETH plus reserve.");
+  }
+  if (process.env.EVM_ORDERBOOK_SEPOLIA_DEPLOY !== "true") {
+    console.log("Dry run only. Set EVM_ORDERBOOK_SEPOLIA_DEPLOY=true to submit this testnet deployment.");
     return;
   }
-  if (process.env.ALLOW_SEPOLIA_ORDERBOOK_DEPLOY !== "true") {
-    throw new Error("No deployment sent. Set ALLOW_SEPOLIA_ORDERBOOK_DEPLOY=true only after explicit approval.");
-  }
 
-  const signedTransaction = await wallet.signTransaction({
-    chainId: CHAIN_ID,
-    nonce,
+  const contract = await factory.deploy(feeRecipient, FEE_BPS, {
     gasLimit,
-    gasPrice,
-    value: 0n,
-    data: String(deployRequest.data),
+    maxFeePerGas,
+    maxPriorityFeePerGas: priorityFee,
   });
-  const txHash = await rpc("eth_sendRawTransaction", [signedTransaction]);
-  const receipt = await waitForConfirmations(txHash, 3);
-  if (!receipt.contractAddress) throw new Error(`Missing deployed address; transaction hash: ${txHash}`);
+  const tx = contract.deploymentTransaction();
+  if (!tx) throw new Error("No Sepolia deployment transaction was created.");
+  console.log(`Deployment transaction: ${tx.hash}`);
+  const receipt = await tx.wait(3);
+  if (!receipt || receipt.status !== 1) throw new Error("Sepolia orderbook escrow deployment failed.");
+  const address = await contract.getAddress();
+  const code = await provider.getCode(address);
+  if (code === "0x") throw new Error("Deployment receipt exists, but the address has no contract code.");
 
-  const address = receipt.contractAddress;
-  const deployedCode = await rpc("eth_getCode", [address, "latest"]);
-  if (!deployedCode || deployedCode === "0x") throw new Error("Deployment has no contract code.");
-  const [feeBpsResult, feeRecipientResult] = await Promise.all([
-    rpc("eth_call", [{ to: address, data: iface.encodeFunctionData("feeBps") }, "latest"]),
-    rpc("eth_call", [{ to: address, data: iface.encodeFunctionData("feeRecipient") }, "latest"]),
-  ]);
-  const deployedFeeBps = Number(iface.decodeFunctionResult("feeBps", feeBpsResult)[0]);
-  const deployedFeeRecipient = iface.decodeFunctionResult("feeRecipient", feeRecipientResult)[0];
+  const deployedFeeBps = Number(await contract.feeBps());
+  const deployedFeeRecipient = await contract.feeRecipient();
   if (deployedFeeBps !== FEE_BPS || deployedFeeRecipient.toLowerCase() !== feeRecipient.toLowerCase()) {
-    throw new Error("Deployed contract configuration did not match the requested Sepolia settings.");
+    throw new Error("Deployed Sepolia orderbook escrow configuration does not match.");
   }
-
   const record = {
     chainId: CHAIN_ID,
     network: "sepolia",
     address,
     feeRecipient,
     feeBps: FEE_BPS,
-    deploymentTxHash: txHash,
-    deploymentBlock: Number(BigInt(receipt.blockNumber)),
+    deploymentTxHash: tx.hash,
+    deploymentBlock: receipt.blockNumber,
     confirmations: 3,
     deployedAt: new Date().toISOString(),
   };
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${JSON.stringify(record, null, 2)}\n`, { flag: "wx" });
-  console.log(`Verified Sepolia orderbook escrow: ${address}`);
-  console.log(`Deployment block: ${record.deploymentBlock}`);
+  console.log(`Verified Sepolia escrow address: ${address}`);
+  console.log(`Deployment record: ${outputPath}`);
 }
 
 main().catch((error) => {

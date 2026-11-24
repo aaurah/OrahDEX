@@ -3,15 +3,15 @@ import { db, pool } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
 import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
-import { recoverMessageAddress } from "viem";
+import { formatUnits as viemFormatUnits, recoverMessageAddress } from "viem";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
+import { orderbookTradingEnabled, safeApiStartup } from "../lib/startupMode.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
 import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
 import { getCachedQuote } from "../lib/routeCache.js";
 import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
-import { getTokenSymbolByAddress } from "../lib/tokenRegistry.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
 import { parseUnits, formatUnits, mulPriceQty, mulDiv, pow10 } from "../lib/money.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
@@ -22,12 +22,14 @@ import { recordPlatformFee } from "../lib/feeCollector.js";
 import { attemptLeAutoRoute } from "../lib/leAutoRoute.js";
 import {
   getEvmOrderbookEscrowConfig,
-  settleEvmOrderFill,
-  supportsEvmOrderbookPair,
   findActiveEvmOrderbookOrders,
+  settleEvmOrderFill,
+  supportsEthereumOrderbookPair,
   verifyEvmOrderLock,
   verifyEvmOrderbookCancelTx,
 } from "../lib/evmOrderbookEscrow.js";
+import { getOrderNetworkCapability, getTradingCapabilities } from "../lib/tradingCapabilities.js";
+import { getAssetSymbolForAddress } from "../lib/tokenRegistry.js";
 import {
   buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
   verifyBsvWithdrawSignature, verifySolWithdrawSignature,
@@ -102,7 +104,7 @@ function settlementExplorerUrl(txid: string | null | undefined, chainId?: number
 }
 
 type EvmOrderbookFunding = {
-  chainId: 1 | 11155111;
+  chainId: number;
   escrowAddress: string;
   orderKey: `0x${string}`;
   lockTxHash: `0x${string}`;
@@ -119,7 +121,7 @@ function parseEvmOrderbookFundingRef(ref: string | null | undefined): EvmOrderbo
     !/^0x[0-9a-f]{64}$/i.test(lockTxHash ?? "")
   ) return null;
   return {
-    chainId: chainId as 1 | 11155111,
+    chainId,
     escrowAddress: escrowAddress!,
     orderKey: orderKey as `0x${string}`,
     lockTxHash: lockTxHash as `0x${string}`,
@@ -137,10 +139,7 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
     remainingQuantity: parseFloat(o.remainingQuantity),
     total:             o.total             ? parseFloat(o.total)             : undefined,
     fee:               parseFloat(o.fee),
-    explorerUrl:       settlementExplorerUrl(
-      o.txid,
-      parseEvmOrderbookFundingRef(o.fundingRef)?.chainId ?? null,
-    ),
+    explorerUrl:       settlementExplorerUrl(o.txid, null),
   };
 }
 
@@ -149,17 +148,131 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
 // then pass `sig` + `nonce` to GET /orders to prove they own the address.
 // Enforcement is controlled by REQUIRE_ORDER_READ_SIG env var.
 router.get("/orders/evm-settlement/config", async (req, res) => {
-  const requestedChainId = req.query.chainId == null ? 1 : Number(req.query.chainId);
-  if (![1, 11155111].includes(requestedChainId)) {
-    res.status(400).json({ error: "Unsupported EVM orderbook chainId" });
-    return;
-  }
   try {
     res.setHeader("Cache-Control", "no-store");
-    res.json(await getEvmOrderbookEscrowConfig(requestedChainId));
+    const rawChainId = req.query.chainId;
+    const chainId = rawChainId === undefined ? undefined : Number(rawChainId);
+    if (chainId !== undefined && ![1, 11155111].includes(chainId)) {
+      res.status(400).json({ available: false, chainId, reason: "Unsupported EVM orderbook chain." });
+      return;
+    }
+    const config = await getEvmOrderbookEscrowConfig(chainId);
+    res.json(safeApiStartup && !orderbookTradingEnabled
+      ? { ...config, available: false, safeStartup: true }
+      : config);
   } catch (err: any) {
     req.log.warn({ err: err?.message }, "EVM orderbook settlement config check failed");
-    res.json({ chainId: requestedChainId, available: false });
+    res.json({
+      chainId: Number(req.query.chainId ?? process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1"),
+      available: false,
+      safeStartup: safeApiStartup && !orderbookTradingEnabled,
+    });
+  }
+});
+
+router.get("/runtime-config", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const rawChainId = req.query.chainId;
+  const chainId = rawChainId === undefined ? undefined : Number(rawChainId);
+  if (chainId !== undefined && ![1, 11155111].includes(chainId)) {
+    res.status(400).json({ error: "Unsupported EVM trading chain." });
+    return;
+  }
+  res.json(await getTradingCapabilities(chainId));
+});
+
+router.post("/orders/recover-evm", async (req, res) => {
+  try {
+    const walletAddress = String(req.body?.walletAddress ?? "");
+    const chainId = Number(req.body?.chainId);
+    const timestamp = Number(req.body?.timestamp);
+    const signature = String(req.body?.signature ?? "");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress) ||
+        ![1, 11155111].includes(chainId) ||
+        !Number.isSafeInteger(timestamp) ||
+        Math.abs(Date.now() - timestamp) > 5 * 60_000 ||
+        !/^0x[0-9a-fA-F]{130}$/.test(signature)) {
+      res.status(400).json({ error: "A wallet, supported chain, recent timestamp, and signature are required." });
+      return;
+    }
+    const message = `OrahDEX EVM order recovery\nChain: ${chainId}\nWallet: ${walletAddress.toLowerCase()}\nTimestamp: ${timestamp}`;
+    const signer = await recoverMessageAddress({ message, signature: signature as `0x${string}` });
+    if (signer.toLowerCase() !== walletAddress.toLowerCase()) {
+      res.status(401).json({ error: "Recovery signature does not match this wallet." });
+      return;
+    }
+
+    const capability = (await getTradingCapabilities(chainId)).networks.evm;
+    if (capability.available !== true || capability.chainId !== chainId) {
+      res.status(503).json({
+        error: capability.reason ?? "EVM order recovery is not enabled on this chain.",
+        code: "TRADING_NETWORK_DISABLED",
+      });
+      return;
+    }
+    const config = await getEvmOrderbookEscrowConfig(chainId);
+    if (!config.available || !config.address) {
+      res.status(503).json({ error: "The configured order escrow is not available.", code: "ORDERBOOK_ESCROW_DISABLED" });
+      return;
+    }
+
+    const onchainOrders = await findActiveEvmOrderbookOrders(walletAddress, [], chainId);
+    let insertedCount = 0;
+    for (const order of onchainOrders) {
+      const base = getAssetSymbolForAddress(chainId, order.baseToken);
+      const quote = getAssetSymbolForAddress(chainId, order.quoteToken);
+      if (!base || !quote || !supportsEthereumOrderbookPair(base, quote, chainId)) continue;
+      const quantityRaw = BigInt(order.originalBaseAmountRaw);
+      const remainingRaw = BigInt(order.remainingBaseAmountRaw);
+      if (quantityRaw <= 0n || remainingRaw <= 0n || remainingRaw > quantityRaw) continue;
+      const quantity = viemFormatUnits(quantityRaw, 18);
+      const remainingQuantity = viemFormatUnits(remainingRaw, 18);
+      const filledQuantity = viemFormatUnits(quantityRaw - remainingRaw, 18);
+      const priceRaw = BigInt(order.limitPriceX18);
+      const price = viemFormatUnits(priceRaw, 18);
+      const totalRaw = mulPriceQty({
+        priceRaw,
+        priceDecimals: 18,
+        quantityRaw,
+        quantityDecimals: 18,
+        outputDecimals: 18,
+        rounding: "ceil",
+      });
+      const fundingRef = `evm-order:${chainId}:${order.escrowAddress}:${order.orderKey}:${order.lockTxHash}`;
+      const id = `evm-${chainId}-${order.orderKey.slice(2)}`;
+      const insertResult = await db.insert(ordersTable).values({
+        id,
+        symbol: `${base}/${quote}`,
+        walletAddress,
+        networkType: "evm",
+        side: order.side,
+        type: "limit",
+        status: "open",
+        price,
+        quantity,
+        filledQuantity,
+        remainingQuantity,
+        total: viemFormatUnits(totalRaw, 18),
+        fee: "0",
+        feeAsset: quote,
+        timeInForce: "GTC",
+        txid: null,
+        signedTx: null,
+        matchedOrderId: null,
+        fundingRef,
+        nonce: `recovered-${chainId}-${order.orderKey}`,
+        expiry: String(order.expiresAt),
+        chainId,
+        isBot: false,
+        isSynthetic: false,
+      }).onConflictDoNothing().returning({ id: ordersTable.id });
+      insertedCount += insertResult.length;
+    }
+
+    res.json({ count: insertedCount, scanned: onchainOrders.length });
+  } catch (err: any) {
+    req.log.warn({ err: err?.message }, "EVM order recovery failed");
+    res.status(500).json({ error: "Could not recover EVM order list." });
   }
 });
 
@@ -309,31 +422,14 @@ router.post("/orders/sol-challenge", (req, res) => {
 // On match, a BSV OP_RETURN settlement transaction is generated and both orders
 // are marked filled with the txid.
 router.post("/orders", async (req, res) => {
-  if (process.env.NODE_ENV === "development") {
-    const [previewBase = "", previewQuote = ""] = String(req.body?.symbol ?? "")
-      .replace(/-/g, "/")
-      .split("/");
-    const isSepoliaLimitOrder =
-      Number(req.body?.chainId) === 11155111 &&
-      String(req.body?.type).toLowerCase() === "limit" &&
-      supportsEvmOrderbookPair(11155111, previewBase, previewQuote);
-    let testnetEscrowAvailable = false;
-    if (isSepoliaLimitOrder) {
-      try {
-        testnetEscrowAvailable = (await getEvmOrderbookEscrowConfig(11155111)).available;
-      } catch {
-        testnetEscrowAvailable = false;
-      }
-    }
-    if (!testnetEscrowAvailable) {
-      res.status(423).json({
-        code: "REPLIT_PREVIEW_TRADING_PAUSED",
-        error: "New orders are paused in this preview unless a verified Sepolia orderbook escrow is enabled. Existing orders can still be reviewed, recovered, or canceled.",
+  try {
+    if (safeApiStartup && !orderbookTradingEnabled) {
+      res.status(503).json({
+        error: "Order submission is paused in safe API startup because matching and settlement workers are disabled.",
+        code: "SAFE_STARTUP",
       });
       return;
     }
-  }
-  try {
     const body = req.body;
     if (!body.walletAddress || !body.symbol || !body.side || !body.type || !body.quantity) {
       res.status(400).json({ error: "Missing required fields" });
@@ -432,6 +528,35 @@ router.post("/orders", async (req, res) => {
       : "orah";
 
     const isExternalWallet = walletSource === "external";
+
+    // Expose and enforce the same per-network readiness policy. At present the
+    // only path that can qualify is a verified, escrow-backed Ethereum limit
+    // order; BSV/Solana/Bitcoin/BCH settlement remains disabled until verified.
+    const runtimeCapabilities = await getTradingCapabilities(
+      chainIdInput ? Number(chainIdInput) : undefined,
+    );
+    const requestCapability = getOrderNetworkCapability(runtimeCapabilities, {
+      networkType,
+      chainId: chainIdInput ? Number(chainIdInput) : undefined,
+      orderType: type,
+      symbol,
+      walletAddressIsEvm: isEvmAddress,
+      hasEscrowLock: typeof body.orderbookLockTxHash === "string" && body.orderbookLockTxHash.length > 0,
+      ethereumPairSupported: isEvmAddress && supportsEthereumOrderbookPair(
+        symbol.split("/")[0] ?? "",
+        symbol.split("/")[1] ?? "",
+        chainIdInput ? Number(chainIdInput) : undefined,
+      ),
+    });
+    if (!requestCapability.available) {
+      res.status(503).json({
+        error: requestCapability.reason ?? "Order trading is not available on this network.",
+        code: "TRADING_NETWORK_DISABLED",
+        network: networkType,
+        chainId: requestCapability.chainId,
+      });
+      return;
+    }
 
     // ── Verify wallet ownership for external wallets ─────────────────────────
     // The signature must have been produced by the private key of walletAddress
@@ -587,25 +712,6 @@ router.post("/orders", async (req, res) => {
       chainId = n;
     }
 
-    if (chainId === 11155111 && isEvmAddress) {
-      const [sepoliaBase = "", sepoliaQuote = ""] = symbol.split("/");
-      if (type !== "limit" || !supportsEvmOrderbookPair(11155111, sepoliaBase, sepoliaQuote)) {
-        res.status(400).json({
-          error: "Sepolia orderbook currently supports limit orders for ETH/DAI only.",
-          code: "UNSUPPORTED_TESTNET_ORDERBOOK_PAIR",
-        });
-        return;
-      }
-      const sepoliaConfig = await getEvmOrderbookEscrowConfig(11155111);
-      if (!sepoliaConfig.available) {
-        res.status(423).json({
-          error: "Sepolia orderbook escrow is not deployed and enabled in app configuration.",
-          code: "SEPOLIA_ORDERBOOK_UNAVAILABLE",
-        });
-        return;
-      }
-    }
-
     // Warn when an EVM external order arrives without chainId — the matching engine
     // can still handle it (legacy-compatible) but cannot reject cross-chain mismatches.
     if (walletSource === "external" && networkType === "evm" && chainId == null) {
@@ -645,24 +751,21 @@ router.post("/orders", async (req, res) => {
     let fundingRef = "";
     if (parseFloat(lockAmount) > 0 && lockAsset) {
       const requestedOrderbookLock = body.orderbookLockTxHash;
-      const isEvmOrderbookSpotPair =
+      const isEthereumSpotPair =
         isEvmAddress &&
-        chainId != null &&
+        [1, 11155111].includes(Number(chainId)) &&
         type === "limit" &&
-        supportsEvmOrderbookPair(chainId, baseAsset!, quoteAsset);
+        supportsEthereumOrderbookPair(baseAsset!, quoteAsset, Number(chainId));
 
       if (requestedOrderbookLock != null) {
         const expiresAt = Number(body.orderbookExpiresAt);
-        const signedExpiry = Number(body.expiry);
         if (
-          !isEvmOrderbookSpotPair ||
+          !isEthereumSpotPair ||
           !body.nonce ||
-          !Number.isSafeInteger(expiresAt) ||
-          !Number.isSafeInteger(signedExpiry) ||
-          signedExpiry !== expiresAt
+          !Number.isSafeInteger(expiresAt)
         ) {
           res.status(400).json({
-            error: "EVM escrow locks require a supported limit order whose signed and on-chain expiries match.",
+            error: "EVM escrow locks require a signed limit order with a valid expiry.",
             code: "INVALID_ORDERBOOK_LOCK",
           });
           return;
@@ -683,19 +786,19 @@ router.post("/orders", async (req, res) => {
           fundingRef = verified.fundingRef;
         } catch (lockErr: any) {
           res.status(400).json({
-            error: String(lockErr?.message ?? "EVM escrow lock could not be verified."),
+            error: String(lockErr?.message ?? "Ethereum escrow lock could not be verified."),
             code: "INVALID_ORDERBOOK_LOCK",
           });
           return;
         }
       } else {
-        // When escrow-backed EVM orderbook trading is enabled for this
+        // When escrow-backed Ethereum orderbook trading is enabled for this
         // pair, never accept an uncollateralized wallet-balance assertion.
-        if (isEvmOrderbookSpotPair) {
-          const config = await getEvmOrderbookEscrowConfig(chainId!);
+        if (isEthereumSpotPair) {
+          const config = await getEvmOrderbookEscrowConfig(Number(chainId));
           if (config.available) {
             res.status(400).json({
-              error: "A confirmed EVM escrow lock is required for this order.",
+              error: "A confirmed Ethereum escrow lock is required for this order.",
               code: "ORDERBOOK_LOCK_REQUIRED",
             });
             return;
@@ -845,12 +948,6 @@ router.post("/orders", async (req, res) => {
           // P1: expired orders must never be matchable before/without the expiry worker
           sql`${ordersTable.expiry} > ${String(Math.floor(Date.now() / 1000))}`,
           ne(ordersTable.walletAddress, body.walletAddress),
-          ...(chainId === 11155111
-            ? [
-                eq(ordersTable.chainId, 11155111),
-                sql`${ordersTable.fundingRef} LIKE ${"evm-order:11155111:%"}`,
-              ]
-            : [sql`COALESCE(${ordersTable.fundingRef}, '') NOT LIKE ${"evm-order:11155111:%"}`]),
           // Limit orders have price constraints; market + triggered-stop orders take any price
           ...(isLimit && safePriceStr
             ? [side === "buy"
@@ -881,7 +978,8 @@ router.post("/orders", async (req, res) => {
             if (candidateClaimsOrderbookEscrow && !candidateOrderbookFunding) return false;
             if (
               candidateOrderbookFunding &&
-              candidateOrderbookFunding.escrowAddress.toLowerCase() !== incomingOrderbookFunding?.escrowAddress.toLowerCase()
+              (candidateOrderbookFunding.chainId !== incomingOrderbookFunding?.chainId ||
+                candidateOrderbookFunding.escrowAddress.toLowerCase() !== incomingOrderbookFunding?.escrowAddress.toLowerCase())
             ) return false;
             const isEvmExternal = (
               ref.startsWith("evm-sig:") ||
@@ -982,6 +1080,12 @@ router.post("/orders", async (req, res) => {
           incomingOrderbookFunding.chainId === matchOrderbookFunding.chainId &&
           incomingOrderbookFunding.escrowAddress.toLowerCase() === matchOrderbookFunding.escrowAddress.toLowerCase()
         );
+        const hasEvmOrderbookFunding = Boolean(incomingOrderbookFunding || matchOrderbookFunding);
+        if (hasEvmOrderbookFunding && !bothEvmOrderbookEscrow) {
+          // Never fall back to internal-ledger or HTLC settlement for orders
+          // whose funds are held in an orderbook escrow, especially across chains.
+          continue;
+        }
 
         // ─────────────────────────────────────────────────────────────────────
         // ESCROW INTEGRITY PRECHECK — runs BEFORE any DB writes / fillResult.
@@ -1081,7 +1185,7 @@ router.post("/orders", async (req, res) => {
               fillValueRaw.toString(),
             ].join(":")).digest("hex")}` as `0x${string}`;
             const settled = await settleEvmOrderFill({
-              chainId: incomingOrderbookFunding.chainId,
+              chainId: buyFunding.chainId,
               settlementId,
               buyOrderKey: buyFunding.orderKey,
               sellOrderKey: sellFunding.orderKey,
@@ -1594,7 +1698,7 @@ router.post("/orders", async (req, res) => {
         pushNotification(body.walletAddress, {
           type:  isFullyFilled ? "order_filled" : "order_partial",
           title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilledText} ${fillBase}`,
-          body:  `${totalFilledText} ${fillBase} @ $${avgFillPriceText} avg · ${incomingOrderbookFunding ? "EVM escrow settled on-chain" : "settled on-chain"}`,
+          body:  `${totalFilledText} ${fillBase} @ $${avgFillPriceText} avg · ${incomingOrderbookFunding ? "Ethereum escrow settled on-chain" : "settled on-chain"}`,
           pair:  fillSymbol,
           txid:  lastTxid ?? undefined,
           side,
@@ -1693,10 +1797,7 @@ router.post("/orders", async (req, res) => {
       matched:        !!settlementTxid,
       settlementTxid,
       quoteSymbol,
-      explorerUrl:    settlementExplorerUrl(
-        settlementTxid,
-        lastEvmHtlcSession?.chainId ?? incomingOrderbookFunding?.chainId ?? null,
-      ),
+      explorerUrl:    settlementExplorerUrl(settlementTxid, lastEvmHtlcSession?.chainId ?? null),
       // BSV Core DEX v2 settlement metadata
       settlement: settlementTxid ? {
         type:              lastSettlementType,
@@ -1754,10 +1855,7 @@ router.get("/orders/:orderId", async (req, res) => {
     }
     res.json({
       ...serializeOrder(order),
-      explorerUrl: settlementExplorerUrl(
-        order.txid,
-        parseEvmOrderbookFundingRef(order.fundingRef)?.chainId ?? null,
-      ),
+      explorerUrl: settlementExplorerUrl(order.txid, null),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get order");
@@ -1790,11 +1888,11 @@ router.delete("/orders/:orderId", async (req, res) => {
       const escrowFunding = parseEvmOrderbookFundingRef(existingOrder.fundingRef);
       const cancelTxHash = String(body.orderbookCancelTxHash ?? "");
       if (!escrowFunding) {
-        res.status(409).json({ error: "Stored EVM escrow details are invalid; do not retry a wallet transaction.", code: "ORDERBOOK_CANCEL_INVALID" });
+        res.status(409).json({ error: "Stored Ethereum escrow details are invalid; do not retry a wallet transaction.", code: "ORDERBOOK_CANCEL_INVALID" });
         return;
       }
       if (!/^0x[0-9a-fA-F]{64}$/.test(cancelTxHash)) {
-        res.status(400).json({ error: "A confirmed EVM escrow cancellation transaction is required.", code: "ORDERBOOK_CANCEL_INVALID" });
+        res.status(400).json({ error: "A confirmed Ethereum escrow cancellation transaction is required.", code: "ORDERBOOK_CANCEL_INVALID" });
         return;
       }
       if (existingOrder.status === "cancelled") {
@@ -1950,135 +2048,6 @@ router.delete("/orders/:orderId", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to cancel order");
     res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// ── POST /orders/recover-evm — restore confirmed wallet-funded orders ─────────
-// This is a read-only chain scan followed by a database insert; it never sends
-// a transaction. Chain identity is required so testnet locks cannot be confused
-// with mainnet orders.
-router.post("/orders/recover-evm", async (req, res) => {
-  const walletAddress = String(req.body?.walletAddress ?? "");
-  const chainId = req.body?.chainId == null ? 1 : Number(req.body.chainId);
-  const knownLockTxHashes = Array.isArray(req.body?.knownLockTxHashes)
-    ? req.body.knownLockTxHashes
-      .filter((hash: unknown): hash is string => typeof hash === "string" && /^0x[0-9a-fA-F]{64}$/.test(hash))
-      .slice(0, 10)
-    : [];
-  if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-    res.status(400).json({ error: "A valid EVM walletAddress is required" });
-    return;
-  }
-  if (![1, 11155111].includes(chainId)) {
-    res.status(400).json({ error: "Only Ethereum mainnet and Sepolia recovery are supported" });
-    return;
-  }
-
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS evm_order_recovery_cursors (
-        wallet_address text NOT NULL,
-        chain_id integer NOT NULL,
-        next_block numeric NOT NULL,
-        updated_at timestamptz NOT NULL DEFAULT now(),
-        PRIMARY KEY (wallet_address, chain_id)
-      )
-    `);
-    const normalizedWallet = walletAddress.toLowerCase();
-    const [cursorRow] = (await pool.query<{ next_block: string }>(
-      `SELECT next_block FROM evm_order_recovery_cursors
-       WHERE wallet_address = $1 AND chain_id = $2`,
-      [normalizedWallet, chainId],
-    )).rows;
-    const previousCursorBlock = cursorRow ? BigInt(cursorRow.next_block) : null;
-    const recovery = await findActiveEvmOrderbookOrders(
-      walletAddress,
-      knownLockTxHashes,
-      chainId,
-      previousCursorBlock ?? undefined,
-    );
-    const recovered: Array<{ id: string; symbol: string; side: string; quantity: string }> = [];
-    for (const order of recovery.orders) {
-      const base = getTokenSymbolByAddress(chainId, order.baseToken);
-      const quote = getTokenSymbolByAddress(chainId, order.quoteToken);
-      if (!base || !quote || !supportsEvmOrderbookPair(chainId, base, quote)) continue;
-
-      const fundingRef =
-        `evm-order:${chainId}:${order.escrowAddress}:${order.orderKey}:${order.lockTxHash}`;
-      const [existing] = await db.select({ id: ordersTable.id })
-        .from(ordersTable)
-        .where(eq(ordersTable.fundingRef, fundingRef))
-        .limit(1);
-      if (existing) continue;
-
-      const quantityRaw = BigInt(order.originalBaseAmountRaw);
-      const remainingRaw = BigInt(order.remainingBaseAmountRaw);
-      const priceRaw = BigInt(order.limitPriceX18);
-      if (quantityRaw <= 0n || remainingRaw < 0n || remainingRaw > quantityRaw || priceRaw <= 0n) continue;
-      const quantity = formatUnits(quantityRaw, 18);
-      const remainingQuantity = formatUnits(remainingRaw, 18);
-      const filledQuantity = formatUnits(quantityRaw - remainingRaw, 18);
-      const price = formatUnits(priceRaw, 18);
-      const total = formatUnits((quantityRaw * priceRaw) / (10n ** 18n), 18);
-      const id = crypto.randomUUID();
-
-      const [inserted] = await db.insert(ordersTable).values({
-        id,
-        symbol: `${base}/${quote}`,
-        walletAddress,
-        networkType: "evm",
-        side: order.side,
-        type: "limit",
-        status: "open",
-        price,
-        quantity,
-        filledQuantity,
-        remainingQuantity,
-        total,
-        fee: "0",
-        feeAsset: quote,
-        timeInForce: "GTC",
-        fundingRef,
-        nonce: order.orderKey,
-        expiry: String(order.expiresAt),
-        chainId,
-        isBot: false,
-        isSynthetic: false,
-      }).onConflictDoNothing().returning({ id: ordersTable.id });
-
-      if (inserted) {
-        recovered.push({ id, symbol: `${base}/${quote}`, side: order.side, quantity });
-      }
-    }
-    if (recovery.nextHistoricalCursorBlock != null) {
-      const nextBlock = recovery.nextHistoricalCursorBlock;
-      if (previousCursorBlock == null) {
-        await pool.query(
-          `INSERT INTO evm_order_recovery_cursors (wallet_address, chain_id, next_block)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (wallet_address, chain_id) DO NOTHING`,
-          [normalizedWallet, chainId, nextBlock],
-        );
-      } else {
-        // Compare-and-set prevents overlapping recovery requests from moving
-        // the cursor back after a newer request has already advanced it.
-        await pool.query(
-          `UPDATE evm_order_recovery_cursors
-           SET next_block = $3, updated_at = now()
-           WHERE wallet_address = $1 AND chain_id = $2 AND next_block = $4`,
-          [normalizedWallet, chainId, nextBlock, previousCursorBlock.toString()],
-        );
-      }
-    }
-    res.json({
-      chainId,
-      recovered,
-      count: recovered.length,
-      historicalScanHasMore: recovery.historicalScanHasMore,
-    });
-  } catch (err: any) {
-    req.log.warn({ err: err?.message, chainId }, "EVM order recovery scan failed");
-    res.status(500).json({ error: "Could not scan and recover confirmed EVM escrow orders" });
   }
 });
 

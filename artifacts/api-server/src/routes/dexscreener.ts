@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { logger } from "../lib/logger.js";
-import { BoundedTtlCache } from "../lib/boundedTtlCache.mjs";
 
 const router = Router();
 
@@ -29,8 +28,8 @@ interface DexPair {
 }
 
 /* ── Simple in-memory cache ───────────────────────────────────────────────── */
+const cache = new Map<string, { data: DexPair[]; ts: number }>();
 const CACHE_TTL = 30_000; // 30 s
-const cache = new BoundedTtlCache<string, { data: DexPair[]; ts: number }>(128, CACHE_TTL);
 
 async function fetchDexScreener(query: string): Promise<DexPair[]> {
   const cacheKey = query.toLowerCase();
