@@ -35,6 +35,7 @@ import {
 } from "@/lib/crossChain";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
 import { lockOrderbookOrder } from "@/lib/escrow";
+import { switchTradingWalletToEthereum } from "@/lib/switchTradingWalletToEthereum";
 
 function supportsEthereumWalletOrderbookAsset(symbol: string, chainId = 1): boolean {
   const normalized = symbol.trim().toUpperCase();
@@ -355,12 +356,14 @@ export function OrderForm({
 }) {
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
+  const [switchingToEthereum, setSwitchingToEthereum] = useState(false);
+  const tradingCapabilityChainId = walletChainId === 11155111 ? 11155111 : 1;
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const apiRuntimeConfigQuery = useQuery({
-    queryKey: ["api-runtime-config", walletChainId ?? 1],
+    queryKey: ["api-runtime-config", tradingCapabilityChainId],
     queryFn: async () => {
-      const response = await fetch(`${API_BASE}/runtime-config?chainId=${walletChainId ?? 1}`, { cache: "no-store" });
+      const response = await fetch(`${API_BASE}/runtime-config?chainId=${tradingCapabilityChainId}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Trading status unavailable");
       return response.json() as Promise<{
         safeStartup: boolean;
@@ -404,19 +407,20 @@ export function OrderForm({
   const submittedOrderbookTxRef = useRef<typeof submittedOrderbookTx>(null);
 
   const chainId = walletChainId ?? 1;
+  const orderbookConfigChainId = walletChainId === 11155111 ? 11155111 : 1;
   const nativeSymbol = (network === "bsv" || network === "bsv-test") ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
   const nativeBal = balance ? parseFloat(balance) : 0;
 
   useEffect(() => {
-    if (!address || !isEvm || (walletChainId != null && walletChainId !== 1 && walletChainId !== 11155111)) {
+    if (!address || !isEvm) {
       setEvmOrderbookConfig(null);
       setEvmOrderbookConfigLoaded(true);
       return;
     }
     let active = true;
     setEvmOrderbookConfigLoaded(false);
-    fetch(`${API_BASE}/orders/evm-settlement/config?chainId=${walletChainId}`, { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() : { available: false, chainId: walletChainId })
+    fetch(`${API_BASE}/orders/evm-settlement/config?chainId=${orderbookConfigChainId}`, { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : { available: false, chainId: orderbookConfigChainId })
       .then((config) => {
         if (!active) return;
         setEvmOrderbookConfig(config);
@@ -424,11 +428,11 @@ export function OrderForm({
       })
       .catch(() => {
         if (!active) return;
-        setEvmOrderbookConfig({ available: false, chainId: walletChainId ?? undefined });
+        setEvmOrderbookConfig({ available: false, chainId: orderbookConfigChainId });
         setEvmOrderbookConfigLoaded(true);
       });
     return () => { active = false; };
-  }, [address, isEvm, walletChainId]);
+  }, [address, isEvm, orderbookConfigChainId]);
 
   // Fetch real on-chain token balances for the connected EVM wallet
   const { balances: tokenBalances, loading: balancesLoading, refresh: refreshBalances, lastFetch: balancesLastFetch } = useEvmBalances(
@@ -576,13 +580,34 @@ export function OrderForm({
     (tradingNetworkCapability?.available !== true || walletOrderbookWrongChain || unsupportedEvmOrderbookPair) &&
     !externalSwapSubmission;
   const tradingCapabilityReason = walletOrderbookWrongChain
-    ? `Switch your wallet to chain ${configuredOrderbookChainId} before placing this order.`
+    ? `Your wallet is on chain ${walletChainId}. Switch to Ethereum Mainnet before placing this order.`
     : unsupportedEvmOrderbookPair
     ? `${symbol} is not supported by the verified orderbook on chain ${configuredOrderbookChainId}.`
     : tradingNetworkCapability?.reason ??
       (apiRuntimeConfigQuery.data?.safeStartup
         ? "This preview is read-only while trading services are paused."
         : "Trading is not enabled for this wallet network.");
+  const canSwitchToEthereum =
+    !!address &&
+    isEvm &&
+    walletChainId !== 1 &&
+    walletChainId !== 11155111 &&
+    tradingNetworkCapability?.available === true &&
+    tradingNetworkCapability.chainId === 1;
+  const handleSwitchToEthereum = async () => {
+    setSwitchingToEthereum(true);
+    try {
+      await switchTradingWalletToEthereum(provider);
+    } catch (error: any) {
+      toast({
+        title: "Could not switch network",
+        description: error?.message || "Open your wallet and switch to Ethereum Mainnet.",
+        variant: "destructive",
+      });
+    } finally {
+      setSwitchingToEthereum(false);
+    }
+  };
   // Ethereum wallet orders use the exact on-chain balance only when the
   // verified orderbook escrow path is available; other orders use ledger funds.
   const usesApiBalance = !(walletOrderbookAvailable || (externalSwapMode && type === "market"));
@@ -1359,6 +1384,16 @@ export function OrderForm({
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300" role="status">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{tradingCapabilityReason} No signature or order will be requested.</span>
+            {canSwitchToEthereum && (
+              <button
+                type="button"
+                onClick={handleSwitchToEthereum}
+                disabled={switchingToEthereum}
+                className="ml-auto shrink-0 rounded-md border border-emerald-500/40 px-2 py-1 font-semibold text-emerald-300 disabled:opacity-50"
+              >
+                {switchingToEthereum ? "Waiting…" : "Switch to Ethereum"}
+              </button>
+            )}
           </div>
         )}
         {tradingCapabilityPending && (
