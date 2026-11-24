@@ -9,6 +9,7 @@
  */
 
 import { logger } from "./logger.js";
+import { BoundedMap } from "./boundedMap.js";
 
 const LIFI_BASE = "https://li.quest/v1";
 const INTEGRATOR = "orahdex"; // identifies OrahDEX in LI.FI analytics
@@ -215,7 +216,7 @@ export async function getLifiChains(): Promise<unknown[]> {
 
 // ── Tokens cache ──────────────────────────────────────────────────────────────
 
-const tokensCache = new Map<string, { data: unknown[]; ts: number }>();
+const tokensCache = new BoundedMap<string, { data: unknown[]; ts: number }>(100);
 const TOKENS_TTL = 60 * 60 * 1000;
 
 export async function getLifiTokensByChain(chainKey: string): Promise<unknown[]> {

@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
 import { notifyNewTicket } from "../lib/notifier.js";
+import { requireAdminToken } from "../middleware/adminAuth.js";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const router = Router();
 
@@ -22,8 +24,23 @@ interface ChatMessage {
 
 /* ── In-memory store ─────────────────────────────────────────────────────── */
 const MAX_MSGS_PER_CHANNEL = 100;
-const store = new Map<ChannelId, ChatMessage[]>();
+const MAX_CHAT_CHANNELS = 200;
+const MAX_SSE_CLIENTS_PER_CHANNEL = 100;
+const MAX_SSE_CLIENTS_TOTAL = 500;
+const store = new BoundedMap<ChannelId, ChatMessage[]>(MAX_CHAT_CHANNELS);
 const sseClients = new Map<ChannelId, Set<Response>>();
+let totalSseClients = 0;
+
+const STATIC_CHANNELS = new Set(["global", "support", "system", "ora", "nft"]);
+
+function normalizeChannel(channel: string): string | null {
+  if (STATIC_CHANNELS.has(channel)) return channel;
+  const pair = /^pair:([a-z0-9]{1,20})-([a-z0-9]{1,20})$/i.exec(channel);
+  if (pair) return `pair:${pair[1]!.toUpperCase()}-${pair[2]!.toUpperCase()}`;
+  const vault = /^vault:([a-z0-9_-]{1,64})$/i.exec(channel);
+  if (vault) return `vault:${vault[1]!.toLowerCase()}`;
+  return null;
+}
 
 function getChannel(channel: ChannelId): ChatMessage[] {
   if (!store.has(channel)) store.set(channel, []);
@@ -87,7 +104,7 @@ function extractTxid(text: string): string | undefined {
 
 /* ── Support-notify debounce (per wallet, 5 min) ─────────────────────────── */
 const SUPPORT_NOTIFY_COOLDOWN = 5 * 60_000;
-const supportNotifyMap = new Map<string, number>();
+const supportNotifyMap = new BoundedMap<string, number>(5_000);
 function shouldNotifySupport(wallet: string): boolean {
   const now = Date.now();
   const last = supportNotifyMap.get(wallet) ?? 0;
@@ -103,7 +120,7 @@ function shouldNotifySupport(wallet: string): boolean {
 }
 
 /* ── Rate limiting ───────────────────────────────────────────────────────── */
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const rateLimitMap = new BoundedMap<string, { count: number; resetAt: number }>(10_000);
 const RATE_LIMIT = 10; // msgs per window
 const RATE_WINDOW = 15_000; // 15 seconds
 
@@ -160,7 +177,11 @@ seedSystemChannel();
 
 /* GET /api/chat/channels/:channel/messages — last N messages */
 router.get("/channels/:channel/messages", (req: Request, res: Response) => {
-  const channel = decodeURIComponent(String(req.params["channel"]));
+  const channel = normalizeChannel(String(req.params["channel"] ?? ""));
+  if (!channel) {
+    res.status(400).json({ error: "Unsupported chat channel." });
+    return;
+  }
   const limit = Math.min(Number(req.query["limit"] ?? 50), 100);
   const msgs = getChannel(channel).slice(-limit);
   res.json({ channel, messages: msgs });
@@ -168,7 +189,20 @@ router.get("/channels/:channel/messages", (req: Request, res: Response) => {
 
 /* GET /api/chat/channels/:channel/stream — SSE real-time feed */
 router.get("/channels/:channel/stream", (req: Request, res: Response) => {
-  const channel = decodeURIComponent(String(req.params["channel"]));
+  const channel = normalizeChannel(String(req.params["channel"] ?? ""));
+  if (!channel) {
+    res.status(400).json({ error: "Unsupported chat channel." });
+    return;
+  }
+  const clients = sseClients.get(channel);
+  if (totalSseClients >= MAX_SSE_CLIENTS_TOTAL || (clients?.size ?? 0) >= MAX_SSE_CLIENTS_PER_CHANNEL) {
+    res.status(503).json({ error: "Chat stream capacity is temporarily full. Please retry shortly." });
+    return;
+  }
+  if (!clients && sseClients.size >= MAX_CHAT_CHANNELS) {
+    res.status(503).json({ error: "Too many active chat channels. Please retry shortly." });
+    return;
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -176,8 +210,10 @@ router.get("/channels/:channel/stream", (req: Request, res: Response) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  if (!sseClients.has(channel)) sseClients.set(channel, new Set());
-  sseClients.get(channel)!.add(res);
+  const channelClients = clients ?? new Set<Response>();
+  if (!clients) sseClients.set(channel, channelClients);
+  channelClients.add(res);
+  totalSseClients++;
 
   /* Send last 20 messages immediately as backfill */
   const backfill = getChannel(channel).slice(-20);
@@ -188,32 +224,64 @@ router.get("/channels/:channel/stream", (req: Request, res: Response) => {
     try { res.write(": ping\n\n"); } catch { clearInterval(ping); }
   }, 25_000);
 
-  req.on("close", () => {
+  res.on("close", () => {
     clearInterval(ping);
-    sseClients.get(channel)?.delete(res);
+    const activeClients = sseClients.get(channel);
+    if (activeClients?.delete(res)) {
+      totalSseClients = Math.max(0, totalSseClients - 1);
+      if (activeClients.size === 0) sseClients.delete(channel);
+    }
   });
 });
 
 /* POST /api/chat/channels/:channel/messages — send a message */
 router.post("/channels/:channel/messages", (req: Request, res: Response) => {
-  const channel = decodeURIComponent(String(req.params["channel"]));
-
-  /* System channel is read-only */
-  if (channel === "system") {
-    res.status(403).json({ error: "System channel is read-only." });
+  const channel = normalizeChannel(String(req.params["channel"] ?? ""));
+  if (!channel) {
+    res.status(400).json({ error: "Unsupported chat channel." });
     return;
   }
 
-  const { text, wallet, displayName, role, replyTo } = req.body as {
+  /* System announcements and Ora AI replies are server/admin controlled. */
+  if (channel === "system" || channel === "ora") {
+    res.status(403).json({ error: "This chat channel is read-only." });
+    return;
+  }
+
+  const { text, wallet, displayName, replyTo } = req.body as {
     text?: string;
     wallet?: string;
     displayName?: string;
-    role?: string;
     replyTo?: string;
   };
 
-  if (!text?.trim()) {
+  if (typeof text !== "string" || !text.trim()) {
     res.status(400).json({ error: "text is required" });
+    return;
+  }
+
+  if (wallet !== undefined && typeof wallet !== "string") {
+    res.status(400).json({ error: "wallet must be a string" });
+    return;
+  }
+  if (displayName !== undefined && typeof displayName !== "string") {
+    res.status(400).json({ error: "displayName must be a string" });
+    return;
+  }
+  if (replyTo !== undefined && typeof replyTo !== "string") {
+    res.status(400).json({ error: "replyTo must be a string" });
+    return;
+  }
+  if (wallet && wallet.length > 120) {
+    res.status(400).json({ error: "wallet must be 120 characters or fewer" });
+    return;
+  }
+  if (displayName && displayName.length > 40) {
+    res.status(400).json({ error: "displayName must be 40 characters or fewer" });
+    return;
+  }
+  if (replyTo && replyTo.length > 80) {
+    res.status(400).json({ error: "replyTo must be 80 characters or fewer" });
     return;
   }
 
@@ -239,8 +307,8 @@ router.post("/channels/:channel/messages", (req: Request, res: Response) => {
     id: genId(),
     channel,
     wallet: senderWallet,
-    displayName: displayName?.trim() || formatWallet(senderWallet),
-    role: (role as ChatMessage["role"]) || "trader",
+    displayName: displayName?.trim().slice(0, 40) || formatWallet(senderWallet),
+    role: "trader",
     text: text.trim(),
     ts: Date.now(),
     ...(txid && { txid }),
@@ -288,16 +356,15 @@ router.get("/channels", (_req: Request, res: Response) => {
   res.json({ channels: withCounts });
 });
 
-/* POST /api/chat/system — admin-only system message */
-router.post("/system", (req: Request, res: Response) => {
-  const { text, adminKey } = req.body as { text?: string; adminKey?: string };
-  const expectedKey = process.env["ADMIN_KEY"] || "admin-secret";
-  if (adminKey !== expectedKey) {
-    res.status(403).json({ error: "Forbidden" });
+/* POST /api/chat/system — authenticated admin-only system message */
+router.post("/system", requireAdminToken, (req: Request, res: Response) => {
+  const { text } = req.body as { text?: string };
+  if (typeof text !== "string" || !text.trim()) {
+    res.status(400).json({ error: "text required" });
     return;
   }
-  if (!text?.trim()) {
-    res.status(400).json({ error: "text required" });
+  if (text.length > 2_000) {
+    res.status(413).json({ error: "text must be 2000 characters or fewer" });
     return;
   }
   const msg: ChatMessage = {

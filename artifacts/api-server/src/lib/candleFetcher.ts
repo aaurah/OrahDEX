@@ -13,6 +13,7 @@ import { tradesTable } from "@workspace/db/schema";
 import { gte, and, eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { getCoinGeckoApiKey, resolveCoinGeckoId } from "./priceUpdater.js";
+import { BoundedMap } from "./boundedMap.js";
 
 const INTERVAL_SECONDS: Record<string, number> = {
   "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
@@ -87,17 +88,17 @@ interface Candle {
 
 /* ── In-memory candle cache — 1 min TTL ─────────────────────────────────────── */
 interface CacheEntry { data: Candle[]; ts: number }
-const candleCache = new Map<string, CacheEntry>();
+const candleCache = new BoundedMap<string, CacheEntry>(200);
 const CACHE_TTL_MS = 60 * 1000;
 const EMPTY_CANDLE_RETRY_MS = 5 * 1000;
 const STALE_CANDLE_TTL_MS = 24 * 60 * 60 * 1000;
 const COINGECKO_OHLC_TTL_MS = 5 * 60 * 1000;
-const coingeckoOhlcCache = new Map<string, { data: Candle[]; ts: number }>();
-const coingeckoOhlcPending = new Map<string, Promise<Candle[]>>();
+const coingeckoOhlcCache = new BoundedMap<string, { data: Candle[]; ts: number }>(200);
+const coingeckoOhlcPending = new BoundedMap<string, Promise<Candle[]>>(100);
 let coingeckoBackoffUntil = 0;
-const candleSourceCache = new Map<string, string>();
-const candleRefreshBackoff = new Map<string, number>();
-const emptyCandleRetryCache = new Map<string, number>();
+const candleSourceCache = new BoundedMap<string, string>(200);
+const candleRefreshBackoff = new BoundedMap<string, number>(200);
+const emptyCandleRetryCache = new BoundedMap<string, number>(200);
 
 const COINGECKO_VS_CURRENCY: Record<string, string> = {
   USD: "usd", USDT: "usd", USDC: "usd", TUSD: "usd", USDD: "usd",
@@ -513,6 +514,24 @@ async function fetchBitfinexHistory(base: string): Promise<Candle[]> {
 interface HistoryCacheEntry { data: Candle[]; ts: number; includesOrderbook: boolean }
 const historyCache = new Map<string, HistoryCacheEntry>();
 const HISTORY_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const HISTORY_CACHE_MAX_ENTRIES = 24;
+
+function setHistoryCache(key: string, entry: HistoryCacheEntry): void {
+  historyCache.delete(key);
+  historyCache.set(key, entry);
+  while (historyCache.size > HISTORY_CACHE_MAX_ENTRIES) {
+    let oldestKey: string | undefined;
+    let oldestTs = Number.POSITIVE_INFINITY;
+    for (const [candidate, value] of historyCache) {
+      if (value.ts < oldestTs) {
+        oldestTs = value.ts;
+        oldestKey = candidate;
+      }
+    }
+    if (oldestKey === undefined) break;
+    historyCache.delete(oldestKey);
+  }
+}
 
 /**
  * fetchFullHistoryCandles — returns A-to-Z OHLCV for a symbol:
@@ -599,7 +618,7 @@ export async function fetchFullHistoryCandles(
     return [];
   }
 
-  historyCache.set(cacheKey, { data: merged, ts: Date.now(), includesOrderbook });
+  setHistoryCache(cacheKey, { data: merged, ts: Date.now(), includesOrderbook });
   logger.info({ symbol, total: merged.length }, "Full history assembled");
   return includesOrderbook
     ? merged.map((candle) => ({ ...candle }))

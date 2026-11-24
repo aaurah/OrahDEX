@@ -9,6 +9,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import router from "./routes";
+import { getAiProviderHealth } from "./routes/ai.js";
 import v1Router from "./routes/v1.js";
 import { docsRouter, rpcRouter } from "./routes/docs.js";
 import { logger } from "./lib/logger";
@@ -171,6 +172,7 @@ pool.query(`
 `).catch((err: Error) => logger.warn({ err: err.message }, "github_tokens migration failed (non-fatal)"));
 
 const app: Express = express();
+let lastHealthWarningAt = 0;
 const middlewareRegistrationOrder: string[] = [];
 
 function assertWebhookMiddlewareOrder(order: string[]): void {
@@ -844,45 +846,57 @@ async function healthHandler(_req: any, res: any) {
       status: "starting",
       uptime: Math.floor(uptimeSec),
       timestamp: new Date().toISOString(),
+      services: [],
+      alerts: [],
     });
   }
 
   try {
-  const services = getHealthReport();
-  const anyDead  = services.some(s => s.status === "dead");
-  const anyStuck = services.some(s => s.status === "stuck");
+    const services = [
+      ...getHealthReport().map((service) => ({
+        name: service.name,
+        status: service.status,
+        lastRunAt: service.lastRunAt?.toISOString() ?? null,
+        lastSuccessAt: service.lastSuccessAt?.toISOString() ?? null,
+        consecutiveFails: service.consecutiveFails,
+        avgDurationMs: Math.round(service.avgDurationMs),
+        staleSinceMs: service.staleSinceMs,
+      })),
+      getAiProviderHealth(),
+    ];
+    const anyDead = services.some((service) => service.status === "dead");
+    const anyStuck = services.some((service) => service.status === "stuck");
+    const anyDegraded = services.some((service) => service.status === "degraded");
+    const anyStarting = services.some((service) => service.status === "starting");
+    const status = services.length === 0
+      ? "unknown"
+      : anyDead
+        ? "outage"
+        : anyStuck || anyDegraded
+          ? "degraded"
+          : anyStarting
+            ? "unknown"
+            : "ok";
+    const alerts = [
+      ...services.filter((service) => service.status === "dead").map((service) => `OUTAGE: ${service.name}`),
+      ...services.filter((service) => service.status === "stuck").map((service) => `STUCK: ${service.name}`),
+      ...services.filter((service) => service.status === "degraded").map((service) => `DEGRADED: ${service.name}`),
+    ];
 
-  // Only CRITICAL services failing should degrade the public health signal.
-  // Non-critical reconcilers being stuck or dead should not cause healthcheck
-  // failures that trigger deployment restarts — the core exchange still works.
-  // price-updater is the only truly indispensable background service.
-  // NOTE: Even when degraded we return 200 — returning 503 causes the deployment
-  // platform to kill and restart the process, making the problem worse.
-  const CRITICAL_SERVICES = new Set([
-    "price-updater",
-  ]);
-  const anyCriticalDead = services.some(
-    s => s.status === "dead" && CRITICAL_SERVICES.has(s.name),
-  );
+    if (alerts.length > 0 && Date.now() - lastHealthWarningAt >= 60_000) {
+      lastHealthWarningAt = Date.now();
+      logger.warn({ status, alerts, serviceCount: services.length }, "Health check: system status is not fully operational");
+    }
 
-  const payload = {
-    status:    anyCriticalDead ? "degraded" : "ok",
-    uptime:    Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-  };
-  const publicAlerts = [
-    ...services.filter(s => s.status === "dead").map(s => `DEAD: ${s.name}`),
-    ...services.filter(s => s.status === "stuck").map(s => `STUCK: ${s.name}`),
-    ...services.filter(s => s.status === "degraded").map(s => `DEGRADED: ${s.name}`),
-  ];
-
-  if (anyDead || anyStuck) {
-    logger.warn({ alerts: publicAlerts }, "Health check: degraded services detected");
-  }
-
-  // Always return 200 — the deployment platform kills on 503, making any
-  // transient issue permanent. Status field in the body carries the real signal.
-  res.status(200).json(payload);
+    // Keep the process probe HTTP 200 to avoid restart loops. The JSON status
+    // carries the actual service state for the public status page and monitors.
+    res.status(200).json({
+      status,
+      uptime: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+      services,
+      alerts,
+    });
   } catch (err: any) {
     // Unexpected error in health handler — log but always return 200 so the
     // deployment probe doesn't restart the instance due to a reporting bug.

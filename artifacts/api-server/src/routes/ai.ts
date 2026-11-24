@@ -12,6 +12,7 @@ import { eq, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { getTopHlMarkets } from "../lib/hyperliquid.js";
 import { aiChatRateLimit } from "../middleware/aiChatRateLimit.js";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const router = Router();
 
@@ -64,9 +65,16 @@ Today is approximately March 2026. BSV settlement is the backbone of OrahDEX's s
 
 let aiUnavailable = false;
 let aiUnavailableUntil = 0;
+let aiUnavailableCode: "AI_PROVIDER_NOT_CONFIGURED" | "AI_PROVIDER_UNAVAILABLE" | null = null;
 let consecutiveTimeouts = 0;
+let aiProviderState: "starting" | "healthy" | "degraded" =
+  process.env.AI_INTEGRATIONS_OPENAI_API_KEY ? "starting" : "degraded";
+let aiProviderLastRunAt: Date | null = null;
+let aiProviderLastSuccessAt: Date | null = null;
+let aiProviderConsecutiveFails = 0;
 const AI_AUTH_BACKOFF_MS    = 5 * 60 * 1000;  // 5 min for auth errors
 const AI_TIMEOUT_BACKOFF_MS = 2 * 60 * 1000;  // 2 min after 3 consecutive timeouts
+const AI_CONFIG_BACKOFF_MS  = 10 * 60 * 1000; // avoid retrying known provider misconfiguration
 const AI_TIMEOUT_THRESHOLD  = 3;               // timeouts before backing off
 
 function isAuthError(err: unknown): boolean {
@@ -82,17 +90,46 @@ function isAbortError(err: unknown): boolean {
   return name === "AbortError" || msg.includes("aborted") || msg.includes("This operation was aborted");
 }
 
+function isProviderConfigurationError(err: unknown): boolean {
+  const status = Number((err as any)?.status ?? (err as any)?.statusCode ?? 0);
+  const message = String((err as any)?.message ?? "").toLowerCase();
+  return status === 404 || message.includes("not configured") || message.includes("integration is not configured");
+}
+
 function isAiAvailable(): boolean {
   if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) return false;
   if (aiUnavailable && Date.now() < aiUnavailableUntil) return false;
-  if (Date.now() >= aiUnavailableUntil) { aiUnavailable = false; consecutiveTimeouts = 0; }
+  if (Date.now() >= aiUnavailableUntil) {
+    aiUnavailable = false;
+    aiUnavailableCode = null;
+    consecutiveTimeouts = 0;
+  }
   return true;
 }
 
+function recordAiSuccess(): void {
+  const now = new Date();
+  consecutiveTimeouts = 0;
+  aiProviderState = "healthy";
+  aiProviderLastRunAt = now;
+  aiProviderLastSuccessAt = now;
+  aiProviderConsecutiveFails = 0;
+}
+
 function tripCircuitBreaker(err: unknown) {
-  if (isAuthError(err)) {
+  aiProviderState = "degraded";
+  aiProviderLastRunAt = new Date();
+  aiProviderConsecutiveFails++;
+  if (isProviderConfigurationError(err)) {
+    aiUnavailable = true;
+    aiUnavailableUntil = Date.now() + AI_CONFIG_BACKOFF_MS;
+    aiUnavailableCode = "AI_PROVIDER_NOT_CONFIGURED";
+    consecutiveTimeouts = 0;
+    logger.warn({ status: (err as any)?.status }, "AI provider is not configured — backing off 10 min");
+  } else if (isAuthError(err)) {
     aiUnavailable      = true;
     aiUnavailableUntil = Date.now() + AI_AUTH_BACKOFF_MS;
+    aiUnavailableCode = "AI_PROVIDER_UNAVAILABLE";
     consecutiveTimeouts = 0;
     logger.warn("AI provider unavailable (auth error) — backing off 5 min");
   } else if (isAbortError(err)) {
@@ -100,6 +137,7 @@ function tripCircuitBreaker(err: unknown) {
     if (consecutiveTimeouts >= AI_TIMEOUT_THRESHOLD) {
       aiUnavailable      = true;
       aiUnavailableUntil = Date.now() + AI_TIMEOUT_BACKOFF_MS;
+      aiUnavailableCode = "AI_PROVIDER_UNAVAILABLE";
       logger.warn({ consecutiveTimeouts }, "AI provider repeatedly timing out — backing off 2 min");
     }
   } else {
@@ -107,13 +145,22 @@ function tripCircuitBreaker(err: unknown) {
   }
 }
 
-// ── Fallback content ──────────────────────────────────────────────────────────
+export function getAiProviderHealth() {
+  const configured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const circuitOpen = aiUnavailable && Date.now() < aiUnavailableUntil;
+  const state = !configured || circuitOpen ? "degraded" : aiProviderState;
+  return {
+    name: "ai-provider",
+    status: state,
+    lastRunAt: aiProviderLastRunAt?.toISOString() ?? null,
+    lastSuccessAt: aiProviderLastSuccessAt?.toISOString() ?? null,
+    consecutiveFails: aiProviderConsecutiveFails,
+    avgDurationMs: 0,
+    staleSinceMs: aiProviderLastRunAt ? Date.now() - aiProviderLastRunAt.getTime() : null,
+  } as const;
+}
 
-const FALLBACK_INSIGHTS = [
-  "Monitor BSV on-chain settlement volumes for early trend signals.",
-  "DeFi TVL remains a leading indicator for altcoin rotations.",
-  "Cross-chain bridge flows signal where liquidity is moving next.",
-];
+// ── Fallback content ──────────────────────────────────────────────────────────
 
 function fallbackAnalysis(symbol: string): string {
   return `**${symbol}** market analysis is temporarily unavailable. Check the Markets tab for live price data and order book depth.`;
@@ -131,8 +178,39 @@ const FALLBACK_CHAT = "I'm temporarily unavailable — the AI provider is offlin
 // ── Cache for market analysis (5 min TTL) ────────────────────────────────────
 
 interface CacheEntry { content: string; ts: number }
-const analysisCache = new Map<string, CacheEntry>();
+const analysisCache = new BoundedMap<string, CacheEntry>(256);
 const CACHE_TTL = 5 * 60 * 1000;
+
+function readFreshCache<T extends { ts: number }>(
+  cache: Map<string, T>,
+  key: string,
+  ttlMs: number,
+): T | undefined {
+  const entry = cache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts >= ttlMs) {
+    cache.delete(key);
+    return undefined;
+  }
+  return entry;
+}
+
+function normalizeAiSymbol(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const symbol = value.trim().toUpperCase();
+  return /^[A-Z0-9][A-Z0-9._/-]{0,39}$/.test(symbol) ? symbol : null;
+}
+
+function unavailableAiResponse(): { error: string; code: string; available: false } {
+  const configured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  return {
+    error: configured
+      ? "The AI provider is unavailable or not configured correctly."
+      : "No AI provider is configured on this server.",
+    code: configured ? aiUnavailableCode ?? "AI_PROVIDER_UNAVAILABLE" : "AI_PROVIDER_NOT_CONFIGURED",
+    available: false,
+  };
+}
 
 // ── POST /ai/conversations — create a new conversation ───────────────────────
 
@@ -243,6 +321,7 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
       }
     }
 
+    if (!useLocalOllama) recordAiSuccess();
     await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
 
     const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
@@ -271,17 +350,17 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
 // ── GET /ai/market-analysis?symbol=BTC — cached AI analysis for a coin ───────
 
 router.get("/ai/market-analysis", async (req, res) => {
-  const symbol = ((req.query.symbol as string) ?? "").toUpperCase().trim();
-  if (!symbol) { res.status(400).json({ error: "symbol is required" }); return; }
+  const symbol = normalizeAiSymbol(req.query.symbol);
+  if (!symbol) { res.status(400).json({ error: "A valid symbol is required (maximum 40 characters)." }); return; }
 
-  const cached = analysisCache.get(symbol);
-  if (cached && Date.now() - cached.ts < CACHE_TTL) {
-    res.json({ symbol, analysis: cached.content, cached: true });
+  const cached = readFreshCache(analysisCache, symbol, CACHE_TTL);
+  if (cached) {
+    res.json({ symbol, analysis: cached.content, cached: true, available: true });
     return;
   }
 
   if (!isAiAvailable()) {
-    res.json({ symbol, analysis: fallbackAnalysis(symbol), cached: false });
+    res.status(503).json({ symbol, analysis: fallbackAnalysis(symbol), cached: false, ...unavailableAiResponse() });
     return;
   }
 
@@ -304,8 +383,8 @@ Keep it under 200 words. Use plain markdown. No financial advice disclaimer need
 
     const content = response.choices[0]?.message?.content || fallbackAnalysis(symbol);
     analysisCache.set(symbol, { content, ts: Date.now() });
-    consecutiveTimeouts = 0;
-    if (!res.headersSent) res.json({ symbol, analysis: content, cached: false });
+    recordAiSuccess();
+    if (!res.headersSent) res.json({ symbol, analysis: content, cached: false, available: true });
   } catch (err: any) {
     tripCircuitBreaker(err);
     if (isAbortError(err)) {
@@ -313,7 +392,9 @@ Keep it under 200 words. Use plain markdown. No financial advice disclaimer need
     } else {
       logger.error({ err: err?.message }, "AI market analysis error");
     }
-    if (!res.headersSent) res.json({ symbol, analysis: fallbackAnalysis(symbol), cached: false });
+    if (!res.headersSent) {
+      res.status(503).json({ symbol, analysis: fallbackAnalysis(symbol), cached: false, ...unavailableAiResponse() });
+    }
   }
 });
 
@@ -325,17 +406,27 @@ const INSIGHTS_TTL = 10 * 60 * 1000;
 router.get("/ai/insights", async (_req, res) => {
   if (insightsCache.content && Date.now() - insightsCache.ts < INSIGHTS_TTL) {
     try {
-      if (!res.headersSent) res.json({ insights: JSON.parse(insightsCache.content), cached: true });
+      if (!res.headersSent) res.json({ insights: JSON.parse(insightsCache.content), cached: true, available: true });
     } catch {
-      if (!res.headersSent) res.json({ insights: FALLBACK_INSIGHTS, cached: true });
+      insightsCache.content = "";
+      insightsCache.ts = 0;
     }
-    return;
+    if (insightsCache.content) return;
   }
 
-  // Serve stale cache immediately if AI is unavailable — don't make the user wait
+  // Serve only previously generated data when stale; never label generic copy as live AI.
   if (!isAiAvailable()) {
-    const stale = insightsCache.content ? JSON.parse(insightsCache.content) : FALLBACK_INSIGHTS;
-    if (!res.headersSent) res.json({ insights: stale, cached: true });
+    if (insightsCache.content) {
+      try {
+        res.json({ insights: JSON.parse(insightsCache.content), cached: true, stale: true, available: false });
+      } catch {
+        insightsCache.content = "";
+        insightsCache.ts = 0;
+        res.status(503).json({ insights: [], cached: false, ...unavailableAiResponse() });
+      }
+    } else {
+      res.status(503).json({ insights: [], cached: false, ...unavailableAiResponse() });
+    }
     return;
   }
 
@@ -372,40 +463,50 @@ router.get("/ai/insights", async (_req, res) => {
     const content = JSON.stringify(parsed);
     insightsCache.content = content;
     insightsCache.ts = Date.now();
-    consecutiveTimeouts = 0;  // success — reset timeout counter
-    if (!res.headersSent) res.json({ insights: parsed, cached: false });
+    recordAiSuccess();
+    if (!res.headersSent) res.json({ insights: parsed, cached: false, available: true });
   } catch (err: any) {
     tripCircuitBreaker(err);
-    // Serve stale cache on error — don't return empty hands to the client
-    const stale = insightsCache.content ? JSON.parse(insightsCache.content) : FALLBACK_INSIGHTS;
     if (isAbortError(err)) {
       logger.warn({ timeouts: consecutiveTimeouts }, "AI insights timeout — serving stale/fallback");
     } else {
       logger.error({ err: err?.message }, "AI insights error");
     }
-    if (!res.headersSent) res.json({ insights: stale, cached: true });
+    if (res.headersSent) return;
+    if (insightsCache.content) {
+      try {
+        res.json({ insights: JSON.parse(insightsCache.content), cached: true, stale: true, available: false });
+      } catch {
+        insightsCache.content = "";
+        insightsCache.ts = 0;
+        res.status(503).json({ insights: [], cached: false, ...unavailableAiResponse() });
+      }
+    } else {
+      res.status(503).json({ insights: [], cached: false, ...unavailableAiResponse() });
+    }
   }
 });
 
 // ── GET /ai/trade-signal?symbol=BTC&action=buy — quick trade signal (cached 5 min) ──
 
-const signalCache = new Map<string, { signal: string; sentiment: string; ts: number }>();
+const signalCache = new BoundedMap<string, { signal: string; sentiment: string; ts: number }>(256);
 const SIGNAL_CACHE_TTL = 5 * 60 * 1000;
 
 router.get("/ai/trade-signal", async (req, res) => {
-  const symbol = ((req.query.symbol as string) ?? "BTC").toUpperCase().trim();
-  const action = ((req.query.action as string) ?? "").toLowerCase().trim();
+  const symbol = req.query.symbol === undefined ? "BTC" : normalizeAiSymbol(req.query.symbol);
+  if (!symbol) { res.status(400).json({ error: "A valid symbol is required (maximum 40 characters)." }); return; }
+  const action = typeof req.query.action === "string" ? req.query.action.toLowerCase().trim().slice(0, 32) : "";
   const cacheKey = `${symbol}:${action}`;
 
-  const cached = signalCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < SIGNAL_CACHE_TTL) {
-    res.json({ symbol, signal: cached.signal, sentiment: cached.sentiment, cached: true });
+  const cached = readFreshCache(signalCache, cacheKey, SIGNAL_CACHE_TTL);
+  if (cached) {
+    res.json({ symbol, signal: cached.signal, sentiment: cached.sentiment, cached: true, available: true });
     return;
   }
 
   if (!isAiAvailable()) {
     const fb = fallbackSignal(symbol);
-    if (!res.headersSent) res.json({ symbol, ...fb, cached: false });
+    if (!res.headersSent) res.status(503).json({ symbol, ...fb, cached: false, ...unavailableAiResponse() });
     return;
   }
 
@@ -428,8 +529,8 @@ router.get("/ai/trade-signal", async (req, res) => {
       : signal.toLowerCase().includes("bearish") ? "bearish" : "neutral";
 
     signalCache.set(cacheKey, { signal, sentiment, ts: Date.now() });
-    consecutiveTimeouts = 0;
-    if (!res.headersSent) res.json({ symbol, signal, sentiment });
+    recordAiSuccess();
+    if (!res.headersSent) res.json({ symbol, signal, sentiment, available: true });
   } catch (err: any) {
     tripCircuitBreaker(err);
     if (isAbortError(err)) {
@@ -438,7 +539,7 @@ router.get("/ai/trade-signal", async (req, res) => {
       logger.error({ err: err?.message }, "AI trade signal error");
     }
     const fb = fallbackSignal(symbol);
-    if (!res.headersSent) res.json({ symbol, ...fb, cached: false });
+    if (!res.headersSent) res.status(503).json({ symbol, ...fb, cached: false, ...unavailableAiResponse() });
   }
 });
 
@@ -446,17 +547,39 @@ router.get("/ai/trade-signal", async (req, res) => {
 // holdings param: JSON array of {symbol, valueUSD, pct} objects
 // Cached per unique portfolio fingerprint (5 min TTL)
 
-const portfolioCache = new Map<string, CacheEntry>();
+const portfolioCache = new BoundedMap<string, CacheEntry>(128);
 const PORTFOLIO_CACHE_TTL = 5 * 60 * 1000;
 
 router.get("/ai/portfolio-analysis", async (req, res) => {
   const raw = (req.query.holdings as string) ?? "";
   if (!raw) { res.status(400).json({ error: "holdings is required" }); return; }
+  if (raw.length > 12_000) {
+    res.status(413).json({ error: "holdings payload is too large" });
+    return;
+  }
 
   let holdings: Array<{ symbol: string; valueUSD: number; pct: number }>;
   try { holdings = JSON.parse(raw); } catch {
     res.status(400).json({ error: "holdings must be valid JSON" }); return;
   }
+  if (!Array.isArray(holdings) || holdings.length > 20 || holdings.some((holding) =>
+    !holding ||
+    typeof holding.symbol !== "string" ||
+    !normalizeAiSymbol(holding.symbol) ||
+    !Number.isFinite(holding.valueUSD) ||
+    holding.valueUSD < 0 ||
+    !Number.isFinite(holding.pct) ||
+    holding.pct < 0 ||
+    holding.pct > 100
+  )) {
+    res.status(400).json({ error: "holdings must contain at most 20 valid assets with finite non-negative values and percentages from 0 to 100" });
+    return;
+  }
+  holdings = holdings.map((holding) => ({
+    symbol: normalizeAiSymbol(holding.symbol)!,
+    valueUSD: holding.valueUSD,
+    pct: holding.pct,
+  }));
 
   if (!holdings.length) {
     res.json({ score: 50, riskLevel: "medium", summary: "No holdings found to analyze.", bullets: [], sentiment: "neutral" });
@@ -464,8 +587,8 @@ router.get("/ai/portfolio-analysis", async (req, res) => {
   }
 
   const fingerprint = holdings.map(h => `${h.symbol}:${h.pct.toFixed(1)}`).sort().join(",");
-  const cached = portfolioCache.get(fingerprint);
-  if (cached && Date.now() - cached.ts < PORTFOLIO_CACHE_TTL) {
+  const cached = readFreshCache(portfolioCache, fingerprint, PORTFOLIO_CACHE_TTL);
+  if (cached) {
     try { res.json({ ...JSON.parse(cached.content), cached: true }); return; } catch { /* fall through */ }
   }
 
@@ -490,6 +613,8 @@ router.get("/ai/portfolio-analysis", async (req, res) => {
       ],
       sentiment: riskLevel === "low" ? "bullish" : riskLevel === "high" ? "bearish" : "neutral",
       cached: false,
+      available: false,
+      source: "computed_fallback",
     });
     return;
   }
@@ -531,7 +656,7 @@ Consider: diversification, concentration risk, exposure to volatile vs stable as
     if (!parsed) throw new Error("No JSON in response");
 
     portfolioCache.set(fingerprint, { content: JSON.stringify(parsed), ts: Date.now() });
-    consecutiveTimeouts = 0;
+    recordAiSuccess();
     res.json({ ...parsed, cached: false });
   } catch (err: any) {
     tripCircuitBreaker(err);
@@ -554,27 +679,20 @@ Consider: diversification, concentration risk, exposure to volatile vs stable as
 // Generates 4 narrative "headlines" about a coin's current situation.
 // Cached per symbol (15 min TTL — news narratives are slow to change)
 
-const newsSentimentCache = new Map<string, CacheEntry>();
+const newsSentimentCache = new BoundedMap<string, CacheEntry>(256);
 const NEWS_CACHE_TTL = 15 * 60 * 1000;
 
 router.get("/ai/news-sentiment", async (req, res) => {
-  const symbol = ((req.query.symbol as string) ?? "").toUpperCase().trim();
-  if (!symbol) { res.status(400).json({ error: "symbol is required" }); return; }
+  const symbol = normalizeAiSymbol(req.query.symbol);
+  if (!symbol) { res.status(400).json({ error: "A valid symbol is required (maximum 40 characters)." }); return; }
 
-  const cached = newsSentimentCache.get(symbol);
-  if (cached && Date.now() - cached.ts < NEWS_CACHE_TTL) {
+  const cached = readFreshCache(newsSentimentCache, symbol, NEWS_CACHE_TTL);
+  if (cached) {
     try { res.json({ ...JSON.parse(cached.content), symbol, cached: true }); return; } catch { /* fall through */ }
   }
 
-  const fallbackNarratives = [
-    `**${symbol}** continues to trade with mixed signals across major markets.`,
-    "On-chain data shows steady accumulation from long-term holders.",
-    "Macro crypto sentiment remains cautiously optimistic heading into Q3 2026.",
-    "Watch key support/resistance levels before entering new positions.",
-  ];
-
   if (!isAiAvailable()) {
-    res.json({ symbol, sentiment: "neutral", narratives: fallbackNarratives, catalyst: null, risk: null, cached: false });
+    res.status(503).json({ symbol, sentiment: null, narratives: [], catalyst: null, risk: null, cached: false, ...unavailableAiResponse() });
     return;
   }
 
@@ -608,12 +726,12 @@ Be specific to ${symbol}'s actual situation. Focus on: ecosystem developments, i
     if (!parsed) throw new Error("No JSON in response");
 
     newsSentimentCache.set(symbol, { content: JSON.stringify(parsed), ts: Date.now() });
-    consecutiveTimeouts = 0;
-    res.json({ ...parsed, symbol, cached: false });
+    recordAiSuccess();
+    res.json({ ...parsed, symbol, cached: false, available: true });
   } catch (err: any) {
     tripCircuitBreaker(err);
-    logger.warn({ err: err?.message, symbol }, "AI news sentiment failed — serving fallback");
-    res.json({ symbol, sentiment: "neutral", sentimentScore: 0, narratives: fallbackNarratives, catalyst: null, risk: null, cached: false });
+    logger.warn({ err: err?.message, symbol }, "AI news sentiment unavailable");
+    res.status(503).json({ symbol, sentiment: null, sentimentScore: null, narratives: [], catalyst: null, risk: null, cached: false, ...unavailableAiResponse() });
   }
 });
 

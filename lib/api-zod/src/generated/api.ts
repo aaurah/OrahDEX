@@ -98,8 +98,30 @@ export const SendAnthropicMessageResponse = zod.unknown()
 /**
  * @summary Health check
  */
+export const healthCheckResponseUptimeMin = 0;
+
+export const healthCheckResponseServicesItemConsecutiveFailsMin = 0;
+
+export const healthCheckResponseServicesItemAvgDurationMsMin = 0;
+
+export const healthCheckResponseServicesItemStaleSinceMsMin = 0;
+
+
+
 export const HealthCheckResponse = zod.object({
-  "status": zod.string()
+  "status": zod.enum(['starting', 'ok', 'degraded', 'outage', 'unknown']),
+  "uptime": zod.number().min(healthCheckResponseUptimeMin),
+  "timestamp": zod.date(),
+  "services": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.enum(['healthy', 'degraded', 'stuck', 'dead', 'starting']),
+  "lastRunAt": zod.date().nullable(),
+  "lastSuccessAt": zod.date().nullable(),
+  "consecutiveFails": zod.number().min(healthCheckResponseServicesItemConsecutiveFailsMin),
+  "avgDurationMs": zod.number().min(healthCheckResponseServicesItemAvgDurationMsMin),
+  "staleSinceMs": zod.number().min(healthCheckResponseServicesItemStaleSinceMsMin).nullable()
+})),
+  "alerts": zod.array(zod.string())
 })
 
 
@@ -793,3 +815,5 @@ export const GetWalletTransactionsResponseItem = zod.object({
   "blockHeight": zod.number().optional()
 })
 export const GetWalletTransactionsResponse = zod.array(GetWalletTransactionsResponseItem)
+
+

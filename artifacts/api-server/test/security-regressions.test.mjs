@@ -34,6 +34,17 @@ const emailInboxPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages
 const htlcDeployPath = path.join(__dirname, "..", "..", "..", "contracts", "deploy.ts");
 const gitignorePath = path.join(__dirname, "..", "..", "..", ".gitignore");
 const v1RoutesPath = path.join(__dirname, "..", "src", "routes", "v1.ts");
+const healthHandlerPath = path.join(__dirname, "..", "src", "app.ts");
+const selfHealingPath = path.join(__dirname, "..", "src", "lib", "selfHealing.ts");
+const aiRoutesPath = path.join(__dirname, "..", "src", "routes", "ai.ts");
+const anthropicRoutesPath = path.join(__dirname, "..", "src", "routes", "anthropic", "index.ts");
+const chatRoutesPath = path.join(__dirname, "..", "src", "routes", "chat.ts");
+const candleFetcherPath = path.join(__dirname, "..", "src", "lib", "candleFetcher.ts");
+const swapRoutesPath = path.join(__dirname, "..", "src", "routes", "swap.ts");
+const withdrawalsRoutesPath = path.join(__dirname, "..", "src", "routes", "withdrawals.ts");
+const lifiClientPath = path.join(__dirname, "..", "src", "lib", "lifi.ts");
+const statusPagePath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "StatusPage.tsx");
+const supportSettingsPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "SupportSettings.tsx");
 
 async function read(filePath) {
   return readFile(filePath, "utf8");
@@ -344,4 +355,68 @@ test("internal admin metadata and authentication state have bounded capacity", a
   assert.match(walletAuthSrc, /new BoundedMap<string, WithdrawNonce>\(10_000\)/);
   assert.match(walletAuthSrc, /new BoundedMap<string, TradeNonce>\(10_000\)/);
   assert.match(boundedMapSrc, /this\.size >= this\.maxEntries/);
+});
+
+test("public health reports real worker states and does not call an empty registry healthy", async () => {
+  const [src, monitorSrc] = await Promise.all([read(healthHandlerPath), read(selfHealingPath)]);
+  assert.match(src, /getHealthReport\(\)\.map/);
+  assert.match(src, /getAiProviderHealth\(\)/);
+  assert.match(src, /services\.length === 0[\s\S]*?"unknown"/);
+  assert.match(src, /status,\s*uptime:[\s\S]*services,\s*alerts/);
+  assert.match(monitorSrc, /if \(!e\.lastRunAt\)[\s\S]*?status = "starting"/);
+  assert.doesNotMatch(src, /anyCriticalDead/);
+});
+
+test("status page shows current checks without fabricated historical uptime", async () => {
+  const src = await read(statusPagePath);
+  assert.match(src, /historical uptime is not tracked/);
+  assert.match(src, /health\.status === "unknown"/);
+  assert.doesNotMatch(src, /generateBars|calcUptime|% uptime|< 30 DAYS AGO/);
+});
+
+test("AI response caches are bounded and symbols/payloads are validated", async () => {
+  const [aiSrc, candleSrc] = await Promise.all([read(aiRoutesPath), read(candleFetcherPath)]);
+  assert.match(aiSrc, /new BoundedMap<string, CacheEntry>\(256\)/);
+  assert.match(aiSrc, /new BoundedMap<string, CacheEntry>\(128\)/);
+  assert.match(aiSrc, /normalizeAiSymbol/);
+  assert.match(aiSrc, /holdings\.length > 20/);
+  assert.match(candleSrc, /HISTORY_CACHE_MAX_ENTRIES = 24/);
+  assert.match(candleSrc, /setHistoryCache\(cacheKey/);
+  assert.match(candleSrc, /coingeckoOhlcCache = new BoundedMap/);
+  assert.match(candleSrc, /candleRefreshBackoff = new BoundedMap/);
+});
+
+test("AI endpoints report provider failures and cannot create unsigned orders", async () => {
+  const [aiSrc, anthropicSrc] = await Promise.all([read(aiRoutesPath), read(anthropicRoutesPath)]);
+  assert.match(aiSrc, /AI_PROVIDER_NOT_CONFIGURED/);
+  assert.match(aiSrc, /res\.status\(503\)\.json\(\{ insights: \[\], cached: false/);
+  assert.match(aiSrc, /available: false,\s*source: "computed_fallback"/);
+  assert.doesNotMatch(aiSrc, /FALLBACK_INSIGHTS/);
+  assert.match(anthropicSrc, /router\.post\("\/ai\/trade", aiChatRateLimit/);
+  assert.match(anthropicSrc, /execute === true[\s\S]*?SIGNED_ORDER_FLOW_REQUIRED/);
+  assert.doesNotMatch(anthropicSrc, /ordersTable|AI trade order placed/);
+});
+
+test("public chat storage is bounded and privileged channels require server auth", async () => {
+  const [chatSrc, supportUi] = await Promise.all([read(chatRoutesPath), read(supportSettingsPath)]);
+  assert.match(chatSrc, /new BoundedMap<ChannelId, ChatMessage\[\]>\(MAX_CHAT_CHANNELS\)/);
+  assert.match(chatSrc, /normalizeChannel/);
+  assert.match(chatSrc, /MAX_SSE_CLIENTS_TOTAL = 500/);
+  assert.match(chatSrc, /role: "trader"/);
+  assert.match(chatSrc, /router\.post\("\/system", requireAdminToken/);
+  assert.doesNotMatch(chatSrc, /ADMIN_KEY.*admin-secret|expectedKey = .*admin-secret/);
+  assert.match(supportUi, /adminFetch\(`\/api\/chat\/system`/);
+  assert.doesNotMatch(supportUi, /adminKey/);
+});
+
+test("high-cardinality quote and withdrawal caches have fixed capacity", async () => {
+  const [swapSrc, withdrawalSrc, lifiSrc] = await Promise.all([
+    read(swapRoutesPath),
+    read(withdrawalsRoutesPath),
+    read(lifiClientPath),
+  ]);
+  assert.match(swapSrc, /_rateCache\s*=\s*new BoundedMap/);
+  assert.match(swapSrc, /_rateInFlight\s*=\s*new BoundedMap/);
+  assert.match(withdrawalSrc, /_withdrawRateMap\s*=\s*new BoundedMap/);
+  assert.match(lifiSrc, /tokensCache = new BoundedMap/);
 });

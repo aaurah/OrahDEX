@@ -5,7 +5,14 @@
  * BSV DEX Exchange API
  * OpenAPI spec version: 0.1.0
  */
+import type { HealthStatusServicesItem } from './healthStatusServicesItem';
+import type { HealthStatusStatus } from './healthStatusStatus';
 
 export interface HealthStatus {
-  status: string;
+  status: HealthStatusStatus;
+  /** @minimum 0 */
+  uptime: number;
+  timestamp: Date;
+  services: HealthStatusServicesItem[];
+  alerts: string[];
 }

@@ -7,8 +7,6 @@ import { API_BASE } from "@/lib/api";
 import { BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-type BarState = "up" | "degraded" | "down" | "maintenance";
-
 interface HealthService {
   name: string;
   status: "ok" | "healthy" | "degraded" | "dead" | "stuck" | "starting";
@@ -16,14 +14,13 @@ interface HealthService {
   lastRunAt: string | null;
   lastSuccessAt: string | null;
   avgDurationMs: number;
-  staleSinceMs: number;
+  staleSinceMs: number | null;
 }
 
 interface HealthData {
-  status: "ok" | "degraded" | "starting";
+  status: "ok" | "degraded" | "outage" | "starting" | "unknown";
   uptime: number;
   timestamp: string;
-  bsvChain?: { online: boolean; blockHeight: number };
   services: HealthService[];
   alerts?: string[];
 }
@@ -32,81 +29,48 @@ interface DisplayService {
   id: string;
   name: string;
   group: string;
-  currentStatus: "operational" | "degraded" | "outage" | "unknown";
-  uptimePercent: number;
-  bars: BarState[];
+  currentStatus: "operational" | "degraded" | "outage" | "starting" | "unknown";
   detail?: string;
   raw?: HealthService;
 }
 
-function makePrng(seed: string) {
-  let h = 0xdeadbeef;
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 0x9e3779b9);
-    h = (h ^ (h >>> 16)) >>> 0;
-  }
-  return () => {
-    h = Math.imul(h ^ (h >>> 15), 0xd168aaad);
-    h = Math.imul(h ^ (h >>> 13), 0xaf723597);
-    return ((h ^ (h >>> 15)) >>> 0) / 0x100000000;
-  };
-}
-
-function generateBars(serviceId: string, currentStatus: "operational" | "degraded" | "outage" | "unknown"): BarState[] {
-  const today = new Date().toISOString().slice(0, 10);
-  const rng = makePrng(serviceId + today);
-  const bars: BarState[] = [];
-  for (let i = 0; i < 89; i++) {
-    const r = rng();
-    if (r > 0.9985) bars.push("down");
-    else if (r > 0.981) bars.push("degraded");
-    else bars.push("up");
-  }
-  if (currentStatus === "outage")        bars.push("down");
-  else if (currentStatus === "degraded") bars.push("degraded");
-  else bars.push("up");
-  return bars;
-}
-
-function calcUptime(bars: BarState[]): number {
-  const up  = bars.filter(b => b === "up").length;
-  const deg = bars.filter(b => b === "degraded").length;
-  return ((up + deg) / bars.length) * 100;
-}
-
-function svcStatus(svc: HealthService | undefined): "operational" | "degraded" | "outage" | "unknown" {
+function svcStatus(svc: HealthService | undefined): "operational" | "degraded" | "outage" | "starting" | "unknown" {
   if (!svc) return "unknown";
   if (svc.status === "ok" || svc.status === "healthy") return "operational";
   if (svc.status === "degraded" || svc.status === "stuck") return "degraded";
   if (svc.status === "dead") return "outage";
+  if (svc.status === "starting") return "starting";
   return "unknown";
 }
 
-function buildServices(health: HealthData | null): DisplayService[] {
+function buildServices(
+  health: HealthData | null,
+  bsvChain: { online: boolean; blockHeight: number } | null,
+): DisplayService[] {
   const find = (name: string) => health?.services?.find(s => s.name === name);
   const make = (
     id: string, name: string, group: string,
-    status: "operational" | "degraded" | "outage" | "unknown",
+    status: "operational" | "degraded" | "outage" | "starting" | "unknown",
     detail?: string, raw?: HealthService,
-  ): DisplayService => {
-    const bars = generateBars(id, status);
-    return { id, name, group, currentStatus: status, uptimePercent: calcUptime(bars), bars, detail, raw };
-  };
+  ): DisplayService => ({ id, name, group, currentStatus: status, detail, raw });
 
-  const apiStatus: "operational" | "degraded" | "outage" | "unknown" = !health ? "unknown"
+  const platformStatus: "operational" | "degraded" | "outage" | "unknown" = !health ? "unknown"
     : health.status === "ok" ? "operational"
     : health.status === "degraded" ? "degraded"
+    : health.status === "outage" ? "outage"
     : "unknown";
+  const apiStatus = health ? "operational" : "unknown";
 
   const bsvStatus: "operational" | "degraded" | "outage" | "unknown" =
-    health?.bsvChain?.online === true  ? svcStatus(find("bsv-deposit-watcher"))
-    : health?.bsvChain?.online === false ? "outage"
+    bsvChain?.online === true  ? "operational"
+    : bsvChain?.online === false ? "outage"
     : "unknown";
 
   return [
-    make("platform", "OrahDEX Platform", "Core Platform",  health ? "operational" : "unknown"),
+    make("platform", "OrahDEX Platform", "Core Platform", platformStatus),
     make("api",      "REST API",         "Core Platform",  apiStatus,
-      health ? `Uptime ${Math.floor((health.uptime ?? 0) / 60)} min` : undefined),
+      health ? `Instance up ${Math.floor((health.uptime ?? 0) / 60)} min` : undefined),
+    make("ai-provider", "AI Provider", "Core Platform", svcStatus(find("ai-provider")), undefined, find("ai-provider")),
 
     make("order-engine", "Order Engine", "Trading Engine", svcStatus(find("liquidity-bot")),   undefined, find("liquidity-bot")),
     make("price-feed",   "Price Feed",   "Trading Engine", svcStatus(find("price-updater")),   undefined, find("price-updater")),
@@ -116,7 +80,7 @@ function buildServices(health: HealthData | null): DisplayService[] {
     make("simpleswap",   "API Pairs (Secondary)", "Bridge Integrations", svcStatus(find("ss-pairs-sync")), undefined, find("ss-pairs-sync")),
 
     make("bsv-chain",  "BSV Network",  "Blockchain", bsvStatus,
-      health?.bsvChain?.blockHeight ? `Block ${health.bsvChain.blockHeight.toLocaleString()}` : undefined,
+      bsvChain?.blockHeight ? `Block ${bsvChain.blockHeight.toLocaleString()}` : undefined,
       find("bsv-deposit-watcher")),
     make("evm-chains", "EVM Networks", "Blockchain", svcStatus(find("evm-deposit-watcher")), undefined, find("evm-deposit-watcher")),
   ];
@@ -129,27 +93,23 @@ const GROUP_ICONS: Record<string, React.ReactNode> = {
   "Blockchain":          <Activity className="w-3.5 h-3.5" />,
 };
 
-const BAR_COLOR: Record<BarState, string> = {
-  up: "#4F63EF", degraded: "#EAB308", down: "#EF4444", maintenance: "#6B7280",
-};
-const BAR_OPACITY: Record<BarState, string> = {
-  up: "1", degraded: "1", down: "1", maintenance: "0.7",
-};
-
-function UptimeBars({ bars }: { bars: BarState[] }) {
+function CurrentStatusTrack({ status }: { status: DisplayService["currentStatus"] }) {
+  const color = status === "operational" ? "bg-emerald-400"
+    : status === "degraded" ? "bg-yellow-400"
+    : status === "outage" ? "bg-red-400"
+    : status === "starting" ? "bg-sky-400"
+    : "bg-muted-foreground/50";
   return (
-    <div className="flex gap-px rounded overflow-hidden" style={{ height: 28 }} aria-hidden>
-      {bars.map((b, i) => (
-        <div key={i} className="flex-1 rounded-[1px]"
-          style={{ backgroundColor: BAR_COLOR[b], opacity: BAR_OPACITY[b], minWidth: 0 }}
-          title={b === "up" ? "Operational" : b === "degraded" ? "Degraded" : b === "down" ? "Outage" : "Maintenance"}
-        />
-      ))}
+    <div className="space-y-1.5">
+      <div className={cn("h-1.5 rounded-full opacity-80", color)} />
+      <p className="text-[10px] text-muted-foreground/70">
+        Current check only · historical uptime is not tracked
+      </p>
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: "operational" | "degraded" | "outage" | "unknown" }) {
+function StatusBadge({ status }: { status: "operational" | "degraded" | "outage" | "starting" | "unknown" }) {
   if (status === "operational") return (
     <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-full px-2.5 py-1">
       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Operational
@@ -163,6 +123,11 @@ function StatusBadge({ status }: { status: "operational" | "degraded" | "outage"
   if (status === "outage") return (
     <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-400 bg-red-400/10 border border-red-400/20 rounded-full px-2.5 py-1">
       <span className="w-1.5 h-1.5 rounded-full bg-red-400" />Outage
+    </span>
+  );
+  if (status === "starting") return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-400 bg-sky-400/10 border border-sky-400/20 rounded-full px-2.5 py-1">
+      <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />Starting
     </span>
   );
   return (
@@ -181,6 +146,11 @@ function OverallIcon({ overall }: { overall: "operational" | "degraded" | "outag
   if (overall === "degraded") return (
     <div className="w-14 h-14 rounded-full bg-yellow-500/15 border-2 border-yellow-500/40 flex items-center justify-center">
       <AlertTriangle className="w-7 h-7 text-yellow-400" />
+    </div>
+  );
+  if (overall === "unknown") return (
+    <div className="w-14 h-14 rounded-full bg-muted/20 border-2 border-border flex items-center justify-center">
+      <Activity className="w-7 h-7 text-muted-foreground" />
     </div>
   );
   return (
@@ -229,7 +199,6 @@ function MetricPill({ label, value, highlight }: { label: string; value: string;
 
 function ServiceRow({ svc }: { svc: DisplayService }) {
   const [expanded, setExpanded] = useState(false);
-  const uptimeStr = svc.uptimePercent.toFixed(2) + "% uptime";
   const hasMetrics = !!svc.raw;
 
   return (
@@ -245,6 +214,8 @@ function ServiceRow({ svc }: { svc: DisplayService }) {
             <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0" />
           ) : svc.currentStatus === "outage" ? (
             <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+          ) : svc.currentStatus === "starting" ? (
+            <Clock className="w-4 h-4 text-sky-400 shrink-0" />
           ) : (
             <div className="w-4 h-4 rounded-full border border-muted-foreground shrink-0" />
           )}
@@ -258,10 +229,15 @@ function ServiceRow({ svc }: { svc: DisplayService }) {
             "text-sm font-semibold",
             svc.currentStatus === "operational" ? "text-[#4F63EF]"
             : svc.currentStatus === "degraded"  ? "text-yellow-400"
+            : svc.currentStatus === "starting"  ? "text-sky-400"
             : svc.currentStatus === "unknown"    ? "text-muted-foreground"
             : "text-red-400"
           )}>
-            {svc.currentStatus === "unknown" ? "—" : uptimeStr}
+            {svc.currentStatus === "operational" ? "Operational"
+              : svc.currentStatus === "degraded" ? "Degraded"
+              : svc.currentStatus === "outage" ? "Outage"
+              : svc.currentStatus === "starting" ? "Starting"
+              : "Unknown"}
           </span>
           {hasMetrics && (
             expanded
@@ -271,12 +247,7 @@ function ServiceRow({ svc }: { svc: DisplayService }) {
         </div>
       </div>
 
-      <UptimeBars bars={svc.bars} />
-
-      <div className="flex justify-between mt-1.5 text-[10px] font-medium text-muted-foreground/60 tracking-wide uppercase">
-        <span>{"< 30 DAYS AGO"}</span>
-        <span>TODAY</span>
-      </div>
+      <CurrentStatusTrack status={svc.currentStatus} />
 
       {expanded && svc.raw && (
         <div className="mt-3 space-y-3">
@@ -299,7 +270,7 @@ function ServiceRow({ svc }: { svc: DisplayService }) {
               value={String(svc.raw.consecutiveFails)}
               highlight={svc.raw.consecutiveFails > 3 ? "danger" : svc.raw.consecutiveFails > 0 ? "warn" : "ok"}
             />
-            {svc.raw.staleSinceMs > 0 && (
+            {svc.raw.staleSinceMs !== null && svc.raw.staleSinceMs > 0 && (
               <MetricPill
                 label="Stale For"
                 value={fmtDur(svc.raw.staleSinceMs)}
@@ -372,6 +343,7 @@ function InternalMonitorRow({ svc }: { svc: HealthService }) {
 
 export function StatusPage() {
   const [health, setHealth]     = useState<HealthData | null>(null);
+  const [bsvChain, setBsvChain] = useState<{ online: boolean; blockHeight: number } | null>(null);
   const [loading, setLoading]   = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing]   = useState(false);
@@ -385,8 +357,14 @@ export function StatusPage() {
         const d: HealthData = await r.json();
         setHealth(d);
         setLastUpdated(new Date());
+      } else {
+        setHealth(null);
+        setLastUpdated(null);
       }
-    } catch { /* leave previous data */ }
+    } catch {
+      setHealth(null);
+      setLastUpdated(null);
+    }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
@@ -397,23 +375,48 @@ export function StatusPage() {
   }, [fetchHealth]);
 
   useEffect(() => {
+    let cancelled = false;
+    const fetchBsvStatus = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/bsv-status`, { cache: "no-store" });
+        if (!response.ok) throw new Error("BSV status unavailable");
+        const data = await response.json();
+        if (!cancelled && typeof data?.online === "boolean") {
+          setBsvChain({
+            online: data.online,
+            blockHeight: Number.isFinite(Number(data.blockHeight)) ? Number(data.blockHeight) : 0,
+          });
+        }
+      } catch {
+        if (!cancelled) setBsvChain(null);
+      }
+    };
+    fetchBsvStatus();
+    const timer = setInterval(fetchBsvStatus, 30_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
     fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.count) setPairsCount(d.count); })
       .catch(() => {});
   }, []);
 
-  const services = buildServices(health);
+  const services = buildServices(health, bsvChain);
   const anyOutage   = services.some(s => s.currentStatus === "outage");
   const anyDegraded = services.some(s => s.currentStatus === "degraded");
   const overall: "operational" | "degraded" | "outage" | "unknown" =
-    loading ? "unknown" : anyOutage ? "outage" : anyDegraded ? "degraded" : "operational";
+    loading || !health || health.status === "starting" || health.status === "unknown" ? "unknown"
+    : anyOutage || health.status === "outage" ? "outage"
+    : anyDegraded || health.status === "degraded" ? "degraded"
+    : health.status === "ok" ? "operational" : "unknown";
 
   const overallLabel =
-    overall === "operational" ? "All Systems Operational"
+    overall === "operational" ? "All Monitored Services Operational"
     : overall === "degraded"  ? "Partial System Degradation"
     : overall === "outage"    ? "System Outage Detected"
-    : "Checking Status…";
+    : loading ? "Checking Status…" : health ? "Checks Starting" : "Status Unavailable";
 
   const groups = ["Core Platform", "Trading Engine", "Bridge Integrations", "Blockchain"];
 
@@ -479,11 +482,13 @@ export function StatusPage() {
           <OverallIcon overall={overall} />
           <div>
             <h1 className="text-2xl font-bold text-foreground">{overallLabel}</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {overall === "operational"  ? "All OrahDEX services are running normally."
+          <p className="text-sm text-muted-foreground mt-1">
+            {overall === "operational"  ? "All available background service checks are healthy."
                : overall === "degraded"  ? "Some services are experiencing issues. Our team is investigating."
                : overall === "outage"    ? "We are aware of the issue and working to restore service."
-               : "Fetching live status data…"}
+               : loading ? "Fetching live status data…"
+               : health ? "Some service checks have not completed their first run yet."
+               : "Live service status could not be confirmed."}
             </p>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
@@ -505,7 +510,7 @@ export function StatusPage() {
             <div className="rounded-xl border border-border bg-card px-4 py-3 flex items-center gap-3">
               <Server className="w-4 h-4 text-[#4F63EF] shrink-0" />
               <div>
-                <p className="text-xs text-muted-foreground">API Uptime</p>
+                <p className="text-xs text-muted-foreground">Instance Uptime</p>
                 <p className="text-sm font-bold text-foreground">{fmtUptime(health.uptime)}</p>
               </div>
             </div>
@@ -514,8 +519,8 @@ export function StatusPage() {
               <div>
                 <p className="text-xs text-muted-foreground">BSV Block</p>
                 <p className="text-sm font-bold text-foreground">
-                  {health.bsvChain?.blockHeight
-                    ? `#${health.bsvChain.blockHeight.toLocaleString()}`
+                  {bsvChain?.blockHeight
+                    ? `#${bsvChain.blockHeight.toLocaleString()}`
                     : "—"}
                 </p>
               </div>
@@ -526,9 +531,9 @@ export function StatusPage() {
                 <p className="text-xs text-muted-foreground">BSV Network</p>
                 <p className={cn(
                   "text-sm font-bold",
-                  health.bsvChain?.online ? "text-emerald-400" : "text-red-400"
+                  bsvChain?.online ? "text-emerald-400" : bsvChain ? "text-red-400" : "text-muted-foreground"
                 )}>
-                  {health.bsvChain?.online ? "Online" : health.bsvChain ? "Offline" : "—"}
+                  {bsvChain?.online ? "Online" : bsvChain ? "Offline" : "—"}
                 </p>
               </div>
             </div>
@@ -540,7 +545,9 @@ export function StatusPage() {
           const groupServices  = services.filter(s => s.group === group);
           const groupOutage    = groupServices.some(s => s.currentStatus === "outage");
           const groupDegraded  = groupServices.some(s => s.currentStatus === "degraded");
-          const groupOverall   = groupOutage ? "outage" : groupDegraded ? "degraded" : "operational";
+          const groupStarting  = groupServices.some(s => s.currentStatus === "starting");
+          const groupUnknown   = groupServices.length === 0 || groupServices.some(s => s.currentStatus === "unknown");
+          const groupOverall   = groupOutage ? "outage" : groupDegraded ? "degraded" : groupStarting ? "starting" : groupUnknown ? "unknown" : "operational";
 
           return (
             <div key={group} className="mb-4 rounded-2xl border border-border bg-card overflow-hidden">

@@ -48,6 +48,7 @@ function sentimentColor(s: string) {
 
 export function AiNewsSentiment({ symbol, defaultExpanded = false }: Props) {
   const [data, setData] = useState<NewsSentimentData | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [fetchedFor, setFetchedFor] = useState<string | null>(null);
@@ -62,12 +63,20 @@ export function AiNewsSentiment({ symbol, defaultExpanded = false }: Props) {
         `${BASE}/api/ai/news-sentiment?symbol=${encodeURIComponent(sym)}`,
         { signal: abortRef.current.signal },
       );
-      if (!r.ok) throw new Error();
-      const d = await r.json();
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setData(null);
+        setError(d?.error ?? "AI sentiment is unavailable right now.");
+        return;
+      }
+      setError(null);
       setData(d);
       setFetchedFor(sym);
     } catch (e: any) {
-      if (e?.name !== "AbortError") setData(null);
+      if (e?.name !== "AbortError") {
+        setData(null);
+        setError("Could not reach the AI sentiment service.");
+      }
     } finally {
       setLoading(false);
     }
@@ -76,6 +85,7 @@ export function AiNewsSentiment({ symbol, defaultExpanded = false }: Props) {
   useEffect(() => {
     if (symbol !== fetchedFor) {
       setData(null);
+        setError(null);
       if (expanded) fetchSentiment(symbol);
     }
   }, [symbol]);
@@ -99,7 +109,8 @@ export function AiNewsSentiment({ symbol, defaultExpanded = false }: Props) {
             AI News & Sentiment
           </p>
           <p className="text-[10px] text-muted-foreground truncate">
-            {data
+            {error ? "AI sentiment unavailable"
+              : data
               ? <span className={sentimentColor(data.sentiment)}>
                   {data.sentiment.charAt(0).toUpperCase() + data.sentiment.slice(1)} · {data.narratives[0]?.slice(0, 50)}…
                 </span>
@@ -122,6 +133,10 @@ export function AiNewsSentiment({ symbol, defaultExpanded = false }: Props) {
               <RefreshCw className="w-4 h-4 animate-spin" />
               <span className="text-xs">Generating {symbol} sentiment report…</span>
             </div>
+          )}
+
+          {error && !loading && (
+            <p className="py-3 text-xs text-yellow-300">{error}</p>
           )}
 
           {data && (

@@ -76,6 +76,7 @@ function AiInsightsCard() {
   });
 
   const insights: string[] = (() => {
+    if (Array.isArray(data?.insights)) return data.insights.filter((item: unknown): item is string => typeof item === "string");
     try { return JSON.parse(data?.insights ?? "[]"); } catch { return []; }
   })();
 
@@ -104,6 +105,11 @@ function AiInsightsCard() {
           <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin text-green-400")} />
         </button>
       </div>
+      {data?.available === false && (
+        <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-3 py-2 text-xs text-yellow-300">
+          {data.error ?? "AI insights are unavailable. Check the configured AI provider."}
+        </div>
+      )}
       {insights.length === 0 && !isFetching && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
           <AlertCircle className="w-4 h-4" /> No insights loaded yet — click refresh

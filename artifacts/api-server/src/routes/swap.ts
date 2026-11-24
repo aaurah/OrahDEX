@@ -27,6 +27,7 @@ import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
 import { createSXExchange, getSXExchange }  from "../lib/stealthex.js";
 import { createChangellyExchange, getChangellyExchange } from "../lib/changelly.js";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const router: IRouter = Router();
 
@@ -45,8 +46,8 @@ const DEFAULT_MAX_SLIPPAGE_PCT = 5; // 5%
  * The actual /swap execution still calls resolveRate() directly (no cache)
  * so fills always use the freshest price from the market table.
  */
-const _rateCache    = new Map<string, { rate: number; expiresAt: number }>();
-const _rateInFlight = new Map<string, Promise<number | null>>();
+const _rateCache    = new BoundedMap<string, { rate: number; expiresAt: number }>(500);
+const _rateInFlight = new BoundedMap<string, Promise<number | null>>(100);
 const RATE_CACHE_TTL_MS = 30_000; // 30 s — quotes refresh faster than this
 
 async function resolveRateCached(assetIn: string, assetOut: string): Promise<number | null> {

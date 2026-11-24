@@ -18,6 +18,7 @@ import {
   verifySolWithdrawSignature,
 } from "../lib/walletAuth.js";
 import { verifyWalletRequestProof } from "../lib/walletRequestAuth.js";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const router: IRouter = Router();
 
@@ -27,7 +28,7 @@ function isBsvSignableAddress(address: string): boolean {
 }
 
 // ── Per-wallet withdrawal rate limiter (5 requests / 60 s) ───────────────────
-const _withdrawRateMap = new Map<string, { count: number; resetAt: number }>();
+const _withdrawRateMap = new BoundedMap<string, { count: number; resetAt: number }>(10_000);
 const WITHDRAW_RATE_WINDOW_MS = 60_000;
 const WITHDRAW_RATE_LIMIT = 5;
 

@@ -194,7 +194,6 @@ function LiveChatTab() {
 
   /* system announcement */
   const [announcement, setAnnouncement] = useState("");
-  const [adminKey, setAdminKey] = useState("");
   const [sending, setSending] = useState(false);
 
   /* selected channel messages */
@@ -256,10 +255,10 @@ function LiveChatTab() {
     if (!announcement.trim()) return;
     setSending(true);
     try {
-      const r = await fetch(`${BASE}/api/chat/system`, {
+      const r = await adminFetch(`/api/chat/system`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: announcement.trim(), adminKey }),
+        body: JSON.stringify({ text: announcement.trim() }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -409,7 +408,7 @@ function LiveChatTab() {
           <span className="ml-auto text-[10px] font-black px-2 py-0.5 rounded bg-green-400/10 text-green-400 border border-green-400/20">System Channel</span>
         </div>
         <p className="text-xs text-muted-foreground mb-4">
-          Broadcasts to the read-only System channel — visible to all connected users in their chat widget. Requires the admin key set in your server environment.
+          Broadcasts to the read-only System channel — visible to all connected users in their chat widget. Your signed-in admin session authorizes this action.
         </p>
         <div className="space-y-3">
           <div>
@@ -421,17 +420,6 @@ function LiveChatTab() {
               placeholder="e.g. Scheduled maintenance in 30 minutes — all open orders will be preserved."
               className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors resize-none"
             />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Admin Key</label>
-            <input
-              type="password"
-              value={adminKey}
-              onChange={e => setAdminKey(e.target.value)}
-              placeholder="ADMIN_KEY from server environment"
-              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors"
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">Set <code className="bg-muted/40 px-1 rounded">ADMIN_KEY</code> in your API server environment variables to authorise announcements.</p>
           </div>
           <div className="flex justify-end">
             <button

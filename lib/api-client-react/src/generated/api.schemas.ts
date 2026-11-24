@@ -5,8 +5,53 @@
  * BSV DEX Exchange API
  * OpenAPI spec version: 0.1.0
  */
+export type HealthStatusStatus = typeof HealthStatusStatus[keyof typeof HealthStatusStatus];
+
+
+export const HealthStatusStatus = {
+  starting: 'starting',
+  ok: 'ok',
+  degraded: 'degraded',
+  outage: 'outage',
+  unknown: 'unknown',
+} as const;
+
+export type HealthStatusServicesItemStatus = typeof HealthStatusServicesItemStatus[keyof typeof HealthStatusServicesItemStatus];
+
+
+export const HealthStatusServicesItemStatus = {
+  healthy: 'healthy',
+  degraded: 'degraded',
+  stuck: 'stuck',
+  dead: 'dead',
+  starting: 'starting',
+} as const;
+
+export type HealthStatusServicesItem = {
+  name: string;
+  status: HealthStatusServicesItemStatus;
+  /** @nullable */
+  lastRunAt: string | null;
+  /** @nullable */
+  lastSuccessAt: string | null;
+  /** @minimum 0 */
+  consecutiveFails: number;
+  /** @minimum 0 */
+  avgDurationMs: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  staleSinceMs: number | null;
+};
+
 export interface HealthStatus {
-  status: string;
+  status: HealthStatusStatus;
+  /** @minimum 0 */
+  uptime: number;
+  timestamp: string;
+  services: HealthStatusServicesItem[];
+  alerts: string[];
 }
 
 export type MarketStatus = typeof MarketStatus[keyof typeof MarketStatus];
@@ -622,3 +667,4 @@ export type GetWalletTransactionsParams = {
 walletAddress: string;
 limit?: number;
 };
+

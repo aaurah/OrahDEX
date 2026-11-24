@@ -15,7 +15,7 @@ import { logger } from "./logger.js";
 
 export interface ServiceHealth {
   name:            string;
-  status:          "healthy" | "degraded" | "stuck" | "dead";
+  status:          "healthy" | "degraded" | "stuck" | "dead" | "starting";
   lastRunAt:       Date | null;
   lastSuccessAt:   Date | null;
   consecutiveFails: number;
@@ -56,7 +56,8 @@ export function getHealthReport(): ServiceHealth[] {
     const staleness    = staleSinceMs ?? 0;   // null = never run yet → not stale
 
     let status: ServiceHealth["status"] = "healthy";
-    if (e.consecutiveFails >= 10)                                    status = "dead";
+    if (!e.lastRunAt)                                                 status = "starting";
+    else if (e.consecutiveFails >= 10)                                status = "dead";
     else if (e.lastRunAt && staleness > e.intervalMs * 5)            status = "dead";
     else if (e.consecutiveFails >= 3)                                 status = "degraded";
     else if (e.lastRunAt && staleness > e.intervalMs * 3)            status = "stuck";

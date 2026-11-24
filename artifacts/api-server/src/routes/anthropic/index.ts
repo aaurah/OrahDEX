@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { conversations, messages, marketsTable, ordersTable } from "@workspace/db/schema";
+import { conversations, messages, marketsTable } from "@workspace/db/schema";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import {
   createDevaiOllamaStream,
@@ -11,13 +11,10 @@ import {
 import { eq, asc, desc } from "drizzle-orm";
 import { logger } from "../../lib/logger.js";
 import { aiChatRateLimit } from "../../middleware/aiChatRateLimit.js";
-import { randomBytes, randomUUID } from "node:crypto";
 import {
   parseNaturalLanguageOrder,
   formatOrderConfirmation,
-  type ParsedOrderIntent,
 } from "../../lib/nlOrderParser.js";
-import { isPositiveDecimalString } from "../../lib/orderIntent.js";
 
 const router = Router();
 
@@ -280,32 +277,43 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
 
 // ── POST /ai/trade — Natural language order execution ─────────────────────────
 //
-// Body: { walletAddress: string; message: string; execute?: boolean }
+// Body: { message: string; execute?: boolean }
 //
 // In preview mode (execute !== true): returns intent + confirmation string.
-// In execute mode (execute === true):  places the order into ordersTable if
-//   the intent has sufficient parameters, then returns orderId.
+// Execution is deliberately disabled here. AI intent parsing is not a
+// substitute for a wallet signature, funding proof, or the signed order flow.
 //
 // Flow:
 //   1. Fetch top-50 markets for price context
 //   2. Parse NL message via Anthropic tool_use
 //   3. Build confirmation string
-//   4. Optionally insert order row
+//   4. Return a preview; execution remains in the wallet-signed order flow.
 
-router.post("/ai/trade", async (req, res) => {
+router.post("/ai/trade", aiChatRateLimit, async (req, res) => {
   try {
-    const { walletAddress, message, execute } = req.body as {
-      walletAddress?: string;
+    const { message, execute } = req.body as {
       message?: string;
       execute?: boolean;
     };
 
-    if (!walletAddress || typeof walletAddress !== "string") {
-      res.status(400).json({ error: "walletAddress is required" });
-      return;
-    }
     if (!message || typeof message !== "string" || !message.trim()) {
       res.status(400).json({ error: "message is required" });
+      return;
+    }
+    if (message.length > 2_000) {
+      res.status(413).json({ error: "message must be 2000 characters or fewer" });
+      return;
+    }
+    if (execute !== undefined && typeof execute !== "boolean") {
+      res.status(400).json({ error: "execute must be a boolean" });
+      return;
+    }
+    if (execute === true) {
+      res.status(409).json({
+        error: "AI cannot submit an order directly. Use the wallet-signed order flow to authorize and fund trades.",
+        code: "SIGNED_ORDER_FLOW_REQUIRED",
+        executed: false,
+      });
       return;
     }
 
@@ -322,7 +330,7 @@ router.post("/ai/trade", async (req, res) => {
     }));
 
     // 2. Parse the natural language instruction
-    const intent: ParsedOrderIntent = await parseNaturalLanguageOrder(message.trim(), marketContext);
+    const intent = await parseNaturalLanguageOrder(message.trim(), marketContext);
 
     // 3. Build confirmation string
     if (intent.type === "unknown") {
@@ -337,144 +345,11 @@ router.post("/ai/trade", async (req, res) => {
     const currentPrice = symbolMatch?.lastPrice ?? 0;
     const confirmation = formatOrderConfirmation(intent, currentPrice);
 
-    // 4. Execute if requested and we have enough params
-    if (execute === true) {
-      const canExecute = canPlaceOrder(intent);
-
-      if (!canExecute) {
-        // Not enough info to place — return as preview with a hint
-        res.json({
-          intent,
-          confirmation,
-          executed: false,
-          hint: "Specify quantity to execute this order.",
-        });
-        return;
-      }
-
-      // Build order row
-      const orderId    = randomUUID();
-      const nonce      = randomBytes(16).toString("hex");
-      const now        = Date.now();
-      const expiryUnix = String(now + 24 * 60 * 60 * 1000); // 24 hours
-
-      const orderRow = buildOrderRow({
-        orderId,
-        nonce,
-        expiry: expiryUnix,
-        walletAddress,
-        intent,
-      });
-
-      await db.insert(ordersTable).values(orderRow);
-
-      logger.info({ orderId, walletAddress, intent }, "AI trade order placed");
-
-      res.status(201).json({ intent, confirmation, executed: true, orderId });
-      return;
-    }
-
-    // Preview mode — return intent + confirmation only
     res.json({ intent, confirmation, executed: false });
   } catch (err) {
     logger.error({ err }, "POST /ai/trade failed");
     res.status(500).json({ error: "AI trade request failed" });
   }
 });
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Returns true if the intent has enough fields to place a real order
- * (i.e. we know quantity or quoteAmount).
- */
-function hasPositiveDecimal(value?: string | null): boolean {
-  return value != null && isPositiveDecimalString(value);
-}
-
-function canPlaceOrder(intent: ParsedOrderIntent): boolean {
-  switch (intent.type) {
-    case "market":
-      return hasPositiveDecimal(intent.quantity);
-    case "limit":
-      return hasPositiveDecimal(intent.quantity) && hasPositiveDecimal(intent.price);
-    case "stop_limit":
-      return hasPositiveDecimal(intent.quantity) && hasPositiveDecimal(intent.stopPrice) && hasPositiveDecimal(intent.limitPrice);
-    case "trailing_stop":
-      return hasPositiveDecimal(intent.quantity) && intent.trailPercent > 0;
-    case "twap":
-      return hasPositiveDecimal(intent.totalAmount) && intent.durationMinutes > 0 && intent.slices >= 2;
-    case "oco":
-      return hasPositiveDecimal(intent.quantity) && hasPositiveDecimal(intent.limitPrice) && hasPositiveDecimal(intent.stopPrice);
-    default:
-      return false;
-  }
-}
-
-interface OrderRowParams {
-  orderId:       string;
-  nonce:         string;
-  expiry:        string;
-  walletAddress: string;
-  intent:        Exclude<ParsedOrderIntent, { type: "unknown" }>;
-}
-
-/**
- * Map a parsed order intent to an ordersTable insert row.
- * Quantity defaults to 0 when only quoteAmount is specified (matching engine resolves it).
- * Stop price is stored in the stopPrice column when present.
- */
-function buildOrderRow(p: OrderRowParams) {
-  const { orderId, nonce, expiry, walletAddress, intent } = p;
-
-  let quantity: string;
-  let price: string | undefined;
-  let stopPrice: string | undefined;
-
-  switch (intent.type) {
-    case "market":
-      quantity = intent.quantity!;
-      break;
-    case "limit":
-      quantity = intent.quantity!;
-      price    = intent.price;
-      break;
-    case "stop_limit":
-      quantity  = intent.quantity;
-      stopPrice = intent.stopPrice;
-      price     = intent.limitPrice;
-      break;
-    case "trailing_stop":
-      quantity = intent.quantity;
-      price    = String(intent.trailPercent);
-      break;
-    case "twap":
-      quantity = intent.totalAmount;
-      break;
-    case "oco":
-      quantity  = intent.quantity;
-      price     = intent.limitPrice;
-      stopPrice = intent.stopPrice;
-      break;
-  }
-
-  return {
-    id:                orderId,
-    symbol:            intent.symbol,
-    walletAddress:     walletAddress.toLowerCase(),
-    networkType:       walletAddress.startsWith("0x") ? "evm" : "bsv",
-    side:              intent.side,
-    type:              intent.type,
-    status:            "open",
-    price:             price ?? null,
-    stopPrice:         stopPrice ?? null,
-    quantity:          quantity || "0",
-    remainingQuantity: quantity || "0",
-    filledQuantity:    "0",
-    fee:               "0",
-    nonce,
-    expiry,
-  };
-}
 
 export default router;

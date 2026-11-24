@@ -14,6 +14,7 @@ interface AnalysisData {
   analysis: string;
   sentiment?: "bullish" | "bearish" | "neutral";
   signal?: string;
+  available?: boolean;
 }
 
 function parseMarkdown(text: string): string {
@@ -62,7 +63,13 @@ export function AiTradeAnalysis({ symbol, baseAsset }: Props) {
     ])
       .then(([ar, sr]) => Promise.all([ar.json(), sr.json()]))
       .then(([a, s]) => {
-        setData({ analysis: a.analysis ?? "", signal: s.signal ?? "", sentiment: s.sentiment });
+        const available = a.available !== false && s.available !== false;
+        setData({
+          analysis: a.analysis ?? "",
+          signal: s.signal ?? "",
+          sentiment: available ? s.sentiment : undefined,
+          available,
+        });
         setFetched(coin);
       })
       .catch(() => {})
@@ -88,7 +95,7 @@ export function AiTradeAnalysis({ symbol, baseAsset }: Props) {
           Ora AI Analysis
           <span className="text-gray-500 font-normal ml-2 text-xs">· {coin}</span>
         </span>
-        {data?.sentiment && !loading && <SentimentBadge sentiment={data.sentiment} />}
+        {data?.available !== false && data?.sentiment && !loading && <SentimentBadge sentiment={data.sentiment} />}
         {loading && <div className="flex gap-1">
           {[0, 1, 2].map(i => (
             <span key={i} className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
@@ -110,6 +117,9 @@ export function AiTradeAnalysis({ symbol, baseAsset }: Props) {
             </div>
           ) : data ? (
             <div className="space-y-3 pt-3">
+              {data.available === false && (
+                <p className="text-xs text-yellow-300">AI provider is unavailable. The text below is a service notice, not a live analysis.</p>
+              )}
               {/* Signal */}
               {data.signal && (
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-white/5 border border-white/5">

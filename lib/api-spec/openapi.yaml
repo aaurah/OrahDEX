@@ -697,8 +697,56 @@ components:
       properties:
         status:
           type: string
+          enum: [starting, ok, degraded, outage, unknown]
+        uptime:
+          type: integer
+          minimum: 0
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              status:
+                type: string
+                enum: [healthy, degraded, stuck, dead, starting]
+              lastRunAt:
+                type: [string, "null"]
+                format: date-time
+              lastSuccessAt:
+                type: [string, "null"]
+                format: date-time
+              consecutiveFails:
+                type: integer
+                minimum: 0
+              avgDurationMs:
+                type: integer
+                minimum: 0
+              staleSinceMs:
+                type: [integer, "null"]
+                minimum: 0
+            required:
+              - name
+              - status
+              - lastRunAt
+              - lastSuccessAt
+              - consecutiveFails
+              - avgDurationMs
+              - staleSinceMs
+        alerts:
+          type: array
+          items:
+            type: string
       required:
         - status
+        - uptime
+        - timestamp
+        - services
+        - alerts
 
     Market:
       type: object

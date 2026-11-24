@@ -17,6 +17,7 @@ interface PortfolioAnalysis {
   summary: string;
   bullets: string[];
   sentiment: "bullish" | "bearish" | "neutral";
+  available?: boolean;
 }
 
 interface Props {
@@ -125,7 +126,7 @@ export function AiPortfolioAnalysis({ holdings, totalValueUSD }: Props) {
             <Sparkles className="w-3 h-3 text-green-400" /> Ora AI Portfolio Review
           </p>
           <p className="text-[10px] text-muted-foreground">
-            {data ? data.summary : "AI analysis of your current holdings"}
+            {data ? (data.available === false ? "AI is unavailable; showing rule-based metrics." : data.summary) : "AI analysis of your current holdings"}
           </p>
         </div>
         {loading ? (
@@ -148,6 +149,9 @@ export function AiPortfolioAnalysis({ holdings, totalValueUSD }: Props) {
 
           {data && (
             <div className="pt-3 space-y-3">
+              {data.available === false && (
+                <p className="text-xs text-yellow-300">AI provider unavailable. This is a rule-based summary, not an AI review.</p>
+              )}
               {/* Score + badges row */}
               <div className="flex items-center gap-4">
                 <ScoreRing score={data.score} />
@@ -155,7 +159,7 @@ export function AiPortfolioAnalysis({ holdings, totalValueUSD }: Props) {
                   <p className="text-[11px] text-muted-foreground font-medium">Portfolio Health</p>
                   <div className="flex flex-wrap gap-1.5">
                     <RiskBadge level={data.riskLevel} />
-                    <SentimentBadge sentiment={data.sentiment} />
+                    {data.available !== false && <SentimentBadge sentiment={data.sentiment} />}
                   </div>
                 </div>
               </div>

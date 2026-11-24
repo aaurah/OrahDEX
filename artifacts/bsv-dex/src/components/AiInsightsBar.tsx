@@ -17,6 +17,7 @@ export function AiInsightsBar({ onAskOra }: Props) {
   const [loading, setLoading] = useState(true);
   const [activeIdx, setActiveIdx] = useState(0);
   const [error, setError] = useState(false);
+  const [stale, setStale] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,8 +26,13 @@ export function AiInsightsBar({ onAskOra }: Props) {
         const r = await fetch(`${BASE}/api/ai/insights`);
         if (!r.ok) throw new Error();
         const data = await r.json();
-        const parsed: string[] = JSON.parse(data.insights);
+        const parsed: string[] = Array.isArray(data.insights)
+          ? data.insights.filter((item: unknown): item is string => typeof item === "string")
+          : typeof data.insights === "string"
+            ? JSON.parse(data.insights)
+            : [];
         if (!cancelled) {
+          setStale(data.available === false || data.stale === true);
           setInsights(parsed.filter(Boolean));
         }
       } catch {
@@ -57,7 +63,9 @@ export function AiInsightsBar({ onAskOra }: Props) {
           <div className="w-5 h-5 rounded-full bg-green-400/20 flex items-center justify-center">
             <Sparkles className="w-3 h-3 text-green-400" />
           </div>
-          <span className="text-[11px] font-semibold text-green-400 uppercase tracking-wider">Ora AI</span>
+          <span className="text-[11px] font-semibold text-green-400 uppercase tracking-wider">
+            {stale ? "Ora AI · Cached" : "Ora AI"}
+          </span>
         </div>
 
         <div className="w-px h-4 bg-green-500/30 shrink-0" />
