@@ -1975,9 +1975,30 @@ router.post("/orders/recover-evm", async (req, res) => {
   }
 
   try {
-    const chainOrders = await findActiveEvmOrderbookOrders(walletAddress, knownLockTxHashes, chainId);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS evm_order_recovery_cursors (
+        wallet_address text NOT NULL,
+        chain_id integer NOT NULL,
+        next_block numeric NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (wallet_address, chain_id)
+      )
+    `);
+    const normalizedWallet = walletAddress.toLowerCase();
+    const [cursorRow] = (await pool.query<{ next_block: string }>(
+      `SELECT next_block FROM evm_order_recovery_cursors
+       WHERE wallet_address = $1 AND chain_id = $2`,
+      [normalizedWallet, chainId],
+    )).rows;
+    const previousCursorBlock = cursorRow ? BigInt(cursorRow.next_block) : null;
+    const recovery = await findActiveEvmOrderbookOrders(
+      walletAddress,
+      knownLockTxHashes,
+      chainId,
+      previousCursorBlock ?? undefined,
+    );
     const recovered: Array<{ id: string; symbol: string; side: string; quantity: string }> = [];
-    for (const order of chainOrders) {
+    for (const order of recovery.orders) {
       const base = getTokenSymbolByAddress(chainId, order.baseToken);
       const quote = getTokenSymbolByAddress(chainId, order.quoteToken);
       if (!base || !quote || !supportsEvmOrderbookPair(chainId, base, quote)) continue;
@@ -2029,7 +2050,32 @@ router.post("/orders/recover-evm", async (req, res) => {
         recovered.push({ id, symbol: `${base}/${quote}`, side: order.side, quantity });
       }
     }
-    res.json({ chainId, recovered, count: recovered.length });
+    if (recovery.nextHistoricalCursorBlock != null) {
+      const nextBlock = recovery.nextHistoricalCursorBlock;
+      if (previousCursorBlock == null) {
+        await pool.query(
+          `INSERT INTO evm_order_recovery_cursors (wallet_address, chain_id, next_block)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (wallet_address, chain_id) DO NOTHING`,
+          [normalizedWallet, chainId, nextBlock],
+        );
+      } else {
+        // Compare-and-set prevents overlapping recovery requests from moving
+        // the cursor back after a newer request has already advanced it.
+        await pool.query(
+          `UPDATE evm_order_recovery_cursors
+           SET next_block = $3, updated_at = now()
+           WHERE wallet_address = $1 AND chain_id = $2 AND next_block = $4`,
+          [normalizedWallet, chainId, nextBlock, previousCursorBlock.toString()],
+        );
+      }
+    }
+    res.json({
+      chainId,
+      recovered,
+      count: recovered.length,
+      historicalScanHasMore: recovery.historicalScanHasMore,
+    });
   } catch (err: any) {
     req.log.warn({ err: err?.message, chainId }, "EVM order recovery scan failed");
     res.status(500).json({ error: "Could not scan and recover confirmed EVM escrow orders" });
