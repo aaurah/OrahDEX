@@ -14,34 +14,35 @@ import { midpointFromOrderbook, recordOrderbookQuoteCandle } from "../lib/orderb
 import { logger } from "../lib/logger.js";
 import { getVirtualCatalogPage } from "../lib/universalMarkets.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
+import { BoundedTtlCache } from "../lib/boundedTtlCache.mjs";
 
 const router: IRouter = Router();
 
 // ─── Simple in-memory TTL cache ──────────────────────────────────────────────
 interface CacheEntry<T> { data: T; ts: number }
 class TtlCache<T> {
-  private store = new Map<string, CacheEntry<T>>();
-  constructor(private ttlMs: number) {}
+  private store: BoundedTtlCache<string, CacheEntry<T>>;
+  constructor(private ttlMs: number, maxEntries: number) {
+    this.store = new BoundedTtlCache<string, CacheEntry<T>>(maxEntries, ttlMs);
+  }
   get(key: string): T | null {
     const e = this.store.get(key);
-    if (!e) return null;
-    if (Date.now() - e.ts > this.ttlMs) { this.store.delete(key); return null; }
-    return e.data;
+    return e?.data ?? null;
   }
   set(key: string, data: T) { this.store.set(key, { data, ts: Date.now() }); }
 }
 
-const marketsCache    = new TtlCache<any[]>(60_000);   // 60 s — matches price-updater interval
-const orderbookCache  = new TtlCache<any>(2_000);      //  2 s
-const tradesCache     = new TtlCache<any[]>(5_000);    //  5 s
-const tickerCache     = new TtlCache<any>(5_000);      //  5 s
+const marketsCache    = new TtlCache<any[]>(60_000, 8);   // 60 s — matches price-updater interval
+const orderbookCache  = new TtlCache<any>(2_000, 512);    //  2 s
+const tradesCache     = new TtlCache<any[]>(5_000, 256);  //  5 s
+const tickerCache     = new TtlCache<any>(5_000, 256);    //  5 s
 const swapReferenceCache = new TtlCache<{
   lastPrice: number; high24h: number; low24h: number;
   priceChange24h: number; priceChangePercent24h: number;
-}>(30_000);
+}>(30_000, 128);
 
 // ETag store for markets — maps cacheKey → weak ETag string
-const marketsETag = new Map<string, string>();
+const marketsETag = new BoundedTtlCache<string, string>(8, 60_000);
 function makeETag(data: any[]): string {
   // Fast hash: XOR of length + spot-check a few records
   let h = data.length * 2654435761;
@@ -1088,8 +1089,8 @@ router.get("/markets/:symbol/trades", async (req, res) => {
 // BTC/ETH/BSV come from Coinbase (with Binance batch fallback) via fetchKeyPrices();
 // every other tracked symbol falls back to FALLBACK_PRICES so the response stays
 // fully populated for callers that iterate the full coin list.
-const pricesCache     = new TtlCache<Record<string, number>>(60_000); // 60 s
-const pricesFullCache = new TtlCache<Record<string, { usd: number; change24h: number }>>(60_000);
+const pricesCache     = new TtlCache<Record<string, number>>(60_000, 2); // 60 s
+const pricesFullCache = new TtlCache<Record<string, { usd: number; change24h: number }>>(60_000, 2);
 
 router.get("/prices", async (_req, res) => {
   const cached = pricesCache.get("all");

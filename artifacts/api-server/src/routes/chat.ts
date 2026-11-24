@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
 import { notifyNewTicket } from "../lib/notifier.js";
+import { BoundedTtlCache } from "../lib/boundedTtlCache.mjs";
 
 const router = Router();
 
@@ -22,12 +23,32 @@ interface ChatMessage {
 
 /* ── In-memory store ─────────────────────────────────────────────────────── */
 const MAX_MSGS_PER_CHANNEL = 100;
+const MAX_STORED_CHANNELS = 512;
+const MAX_ACTIVE_CHANNELS = 512;
 const store = new Map<ChannelId, ChatMessage[]>();
 const sseClients = new Map<ChannelId, Set<Response>>();
 
 function getChannel(channel: ChannelId): ChatMessage[] {
-  if (!store.has(channel)) store.set(channel, []);
-  return store.get(channel)!;
+  const messages = store.get(channel);
+  if (!messages) return [];
+  store.delete(channel);
+  store.set(channel, messages);
+  return messages;
+}
+
+function getOrCreateChannel(channel: ChannelId): ChatMessage[] | null {
+  const existing = getChannel(channel);
+  if (store.has(channel)) return existing;
+  if (store.size >= MAX_STORED_CHANNELS) {
+    const evictable = [...store.keys()].find(
+      key => key !== "system" && !sseClients.get(key)?.size,
+    );
+    if (evictable) store.delete(evictable);
+    if (store.size >= MAX_STORED_CHANNELS) return null;
+  }
+  const messages: ChatMessage[] = [];
+  store.set(channel, messages);
+  return messages;
 }
 
 function broadcast(channel: ChannelId, msg: ChatMessage) {
@@ -37,13 +58,18 @@ function broadcast(channel: ChannelId, msg: ChatMessage) {
   for (const res of clients) {
     try { res.write(payload); } catch { clients.delete(res); }
   }
+  if (clients.size === 0) {
+    sseClients.delete(channel);
+  }
 }
 
-function addMessage(channel: ChannelId, msg: ChatMessage) {
-  const ch = getChannel(channel);
+function addMessage(channel: ChannelId, msg: ChatMessage): boolean {
+  const ch = getOrCreateChannel(channel);
+  if (!ch) return false;
   ch.push(msg);
   if (ch.length > MAX_MSGS_PER_CHANNEL) ch.splice(0, ch.length - MAX_MSGS_PER_CHANNEL);
   broadcast(channel, msg);
+  return true;
 }
 
 /* ── ID generator ────────────────────────────────────────────────────────── */
@@ -87,25 +113,19 @@ function extractTxid(text: string): string | undefined {
 
 /* ── Support-notify debounce (per wallet, 5 min) ─────────────────────────── */
 const SUPPORT_NOTIFY_COOLDOWN = 5 * 60_000;
-const supportNotifyMap = new Map<string, number>();
+const supportNotifyMap = new BoundedTtlCache<string, number>(2048, 60 * 60_000);
 function shouldNotifySupport(wallet: string): boolean {
   const now = Date.now();
   const last = supportNotifyMap.get(wallet) ?? 0;
   if (now - last < SUPPORT_NOTIFY_COOLDOWN) return false;
   supportNotifyMap.set(wallet, now);
-  /* Lazy GC: prune entries older than 1h */
-  if (supportNotifyMap.size > 500) {
-    for (const [k, v] of supportNotifyMap) {
-      if (now - v > 3_600_000) supportNotifyMap.delete(k);
-    }
-  }
   return true;
 }
 
 /* ── Rate limiting ───────────────────────────────────────────────────────── */
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 10; // msgs per window
 const RATE_WINDOW = 15_000; // 15 seconds
+const rateLimitMap = new BoundedTtlCache<string, { count: number; resetAt: number }>(10_000, RATE_WINDOW);
 
 function checkRateLimit(wallet: string): boolean {
   const now = Date.now();
@@ -161,6 +181,7 @@ seedSystemChannel();
 /* GET /api/chat/channels/:channel/messages — last N messages */
 router.get("/channels/:channel/messages", (req: Request, res: Response) => {
   const channel = decodeURIComponent(String(req.params["channel"]));
+  if (channel.length > 128) { res.status(400).json({ error: "Invalid channel" }); return; }
   const limit = Math.min(Number(req.query["limit"] ?? 50), 100);
   const msgs = getChannel(channel).slice(-limit);
   res.json({ channel, messages: msgs });
@@ -169,6 +190,11 @@ router.get("/channels/:channel/messages", (req: Request, res: Response) => {
 /* GET /api/chat/channels/:channel/stream — SSE real-time feed */
 router.get("/channels/:channel/stream", (req: Request, res: Response) => {
   const channel = decodeURIComponent(String(req.params["channel"]));
+  if (channel.length > 128) { res.status(400).json({ error: "Invalid channel" }); return; }
+  if (!sseClients.has(channel) && sseClients.size >= MAX_ACTIVE_CHANNELS) {
+    res.status(503).json({ error: "Chat stream capacity reached. Retry shortly." });
+    return;
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -190,13 +216,16 @@ router.get("/channels/:channel/stream", (req: Request, res: Response) => {
 
   req.on("close", () => {
     clearInterval(ping);
-    sseClients.get(channel)?.delete(res);
+    const clients = sseClients.get(channel);
+    clients?.delete(res);
+    if (clients?.size === 0) sseClients.delete(channel);
   });
 });
 
 /* POST /api/chat/channels/:channel/messages — send a message */
 router.post("/channels/:channel/messages", (req: Request, res: Response) => {
   const channel = decodeURIComponent(String(req.params["channel"]));
+  if (channel.length > 128) { res.status(400).json({ error: "Invalid channel" }); return; }
 
   /* System channel is read-only */
   if (channel === "system") {
@@ -247,7 +276,10 @@ router.post("/channels/:channel/messages", (req: Request, res: Response) => {
     ...(replyTo && { replyTo }),
   };
 
-  addMessage(channel, msg);
+  if (!addMessage(channel, msg)) {
+    res.status(503).json({ error: "Chat channel capacity reached. Retry shortly." });
+    return;
+  }
   logger.debug({ channel, wallet: msg.wallet, msgId: msg.id }, "chat message posted");
 
   /* Fire admin notification for support-channel user messages (Telegram/Discord/ntfy/Pushover)
