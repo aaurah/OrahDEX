@@ -1,20 +1,16 @@
 import { Router } from "express";
 import { logger } from "../lib/logger.js";
-import { BoundedTtlCache } from "../lib/boundedTtlCache.mjs";
 
 const router = Router();
 const GT_BASE = "https://api.geckoterminal.com/api/v2";
 const GT_HEADERS = { Accept: "application/json;version=20230302", "User-Agent": "OrahDEX/1.0" };
 
 /* ── In-memory cache ─────────────────────────────────────────────────────── */
-const cache = new BoundedTtlCache<string, { data: unknown; ts: number }>(128, 60_000);
+const cache = new Map<string, { data: unknown; ts: number }>();
 function cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
   const hit = cache.get(key);
-  if (hit) return Promise.resolve(hit.data as T);
-  return fetcher().then(data => {
-    cache.set(key, { data, ts: Date.now() }, ttlMs);
-    return data;
-  });
+  if (hit && Date.now() - hit.ts < ttlMs) return Promise.resolve(hit.data as T);
+  return fetcher().then(data => { cache.set(key, { data, ts: Date.now() }); return data; });
 }
 
 async function gt(path: string, ttl = 60_000): Promise<unknown> {

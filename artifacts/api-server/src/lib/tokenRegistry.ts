@@ -291,16 +291,8 @@ export function getTokenInfo(chainId: number, symbol: string): TokenInfo | null 
   return TOKEN_REGISTRY[chainId]?.[upper] ?? null;
 }
 
-/**
- * Returns true if `symbol` is the native asset for `chainId`
- * (i.e. use `getBalance` rather than `balanceOf`).
- */
-export function isNativeAsset(chainId: number, symbol: string): boolean {
-  return NATIVE_SYMBOLS[chainId] === symbol.toUpperCase();
-}
-
-/** Resolve a registered token address to its symbol for an EVM chain. */
-export function getTokenSymbolByAddress(chainId: number, address: string): string | null {
+/** Reverse lookup a registered token address, including the chain native asset. */
+export function getAssetSymbolForAddress(chainId: number, address: string): string | null {
   const normalized = address.toLowerCase();
   if (normalized === "0x0000000000000000000000000000000000000000") {
     return NATIVE_SYMBOLS[chainId] ?? null;
@@ -308,4 +300,12 @@ export function getTokenSymbolByAddress(chainId: number, address: string): strin
   const entry = Object.entries(TOKEN_REGISTRY[chainId] ?? {})
     .find(([, token]) => token.address.toLowerCase() === normalized);
   return entry?.[0] ?? null;
+}
+
+/**
+ * Returns true if `symbol` is the native asset for `chainId`
+ * (i.e. use `getBalance` rather than `balanceOf`).
+ */
+export function isNativeAsset(chainId: number, symbol: string): boolean {
+  return NATIVE_SYMBOLS[chainId] === symbol.toUpperCase();
 }

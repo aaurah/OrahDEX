@@ -7,9 +7,6 @@ const router = Router();
 
 const ROUND_DURATION_S = 300;
 const LOCK_DURATION_S  = 30;
-const SUPPORTED_PREDICTION_SYMBOLS = new Set([
-  "BSV-USDT", "BTC-USDT", "ETH-USDT", "BNB-USDT", "SOL-USDT",
-]);
 
 interface PredictionRound {
   id: string;
@@ -272,9 +269,9 @@ function seedIfEmpty(symbol: string, price: number) {
   arr.push(nextRound);
 }
 
-async function tickRounds(symbol: string): Promise<number | null> {
+async function tickRounds(symbol: string) {
   const price = await getCurrentPrice(symbol);
-  if (!Number.isFinite(price) || price <= 0) return null;
+  if (price <= 0) return;
   seedIfEmpty(symbol, price);
 
   const arr = getSymbolRounds(symbol);
@@ -319,23 +316,14 @@ async function tickRounds(symbol: string): Promise<number | null> {
   }
 
   while (arr.length > 20) arr.shift();
-  return price;
 }
 
 router.get("/prediction/rounds/:symbol", async (req, res) => {
   try {
-    const requestedSymbol = String(req.params.symbol ?? "").toUpperCase().replace("/", "-");
-    if (!SUPPORTED_PREDICTION_SYMBOLS.has(requestedSymbol)) {
-      res.status(404).json({ error: "Prediction market not found" });
-      return;
-    }
-    const symbol = requestedSymbol;
-    const price = await tickRounds(symbol);
-    if (price == null) {
-      res.status(404).json({ error: "Prediction market price unavailable" });
-      return;
-    }
-    const arr = rounds.get(symbol) ?? [];
+    const symbol = req.params.symbol.toUpperCase();
+    await tickRounds(symbol);
+    const arr = getSymbolRounds(symbol);
+    const price = await getCurrentPrice(symbol);
     const normalized = arr.slice(-10).map(r => ({
       ...r,
       bullPool:   Number(r.bullAmount  ?? 0),

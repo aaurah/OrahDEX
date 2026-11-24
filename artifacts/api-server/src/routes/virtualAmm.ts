@@ -15,6 +15,7 @@ import { db, withDbRetry } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import { safeApiStartup } from "../lib/startupMode.js";
 
 const GENESIS_DEPTH_USD = 8_500; // virtual depth target
 const SWAP_FEE = 0.003;          // 0.3% total fee
@@ -158,9 +159,11 @@ async function saveVammState(): Promise<void> {
 })();
 
 // Persist every 5 minutes
-setInterval(() => {
-  saveVammState().catch(err => logger.warn({ err }, "vAMM: failed to persist state"));
-}, 5 * 60_000);
+if (!safeApiStartup) {
+  setInterval(() => {
+    saveVammState().catch(err => logger.warn({ err }, "vAMM: failed to persist state"));
+  }, 5 * 60_000);
+}
 
 // Reset 24h volume daily
 setInterval(() => {
