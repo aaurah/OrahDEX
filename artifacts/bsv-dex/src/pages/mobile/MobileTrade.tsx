@@ -639,10 +639,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       ]);
       const count = Number(result?.count ?? 0);
       toast({
-        title: count > 0 ? "Active order restored" : "No missing active orders",
+        title: count > 0
+          ? "Active order restored"
+          : result?.historicalScanHasMore
+            ? "Historical scan is still progressing"
+            : "No missing active orders",
         description: count > 0
           ? `${count} confirmed on-chain order${count === 1 ? " is" : "s are"} now listed in My Orders. Cancel there to request a wallet refund.`
-          : `No confirmed active ${orderbookNetworkName} orders were missing from My Orders.`,
+          : result?.historicalScanHasMore
+            ? `No missing orders were found in this bounded scan. Run recovery again to continue farther back through this wallet's ${orderbookNetworkName} escrow history.`
+            : `No confirmed active ${orderbookNetworkName} orders were missing from My Orders.`,
       });
     } catch (error: any) {
       toast({
