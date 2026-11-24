@@ -47,7 +47,6 @@ import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
 import { startErrorWatcher } from "./lib/errorWatcher.js";
-import { orderbookTradingEnabled, safeApiStartup, tradingWorkersEnabled } from "./lib/startupMode.js";
 import { pool } from "@workspace/db";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
@@ -548,7 +547,7 @@ app.use("/api", apiKeyAuth);
 app.use("/v1", apiKeyAuth);
 app.use("/api", router);
 app.use("/v1", v1Router);
-if (!safeApiStartup) startApiKeyCounterFlusher();
+startApiKeyCounterFlusher();
 
 /* ── Static frontend — always served (dev + production) ─────────────────────
    The Vite build outputs to artifacts/bsv-dex/dist/public.
@@ -606,44 +605,49 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   }
 });
 
-/* ── Background services — disabled by the development safe-startup mode ──── */
-if (!safeApiStartup) {
-  hydrateAdminTokens().catch(e => logger.warn({ err: e }, "hydrateAdminTokens failed (non-fatal)"));
-  startCopyOrchestrator();
-  // Warm the LE currencies cache shortly after boot so the first user request
-  // gets the live 1 000+ coin list rather than the 331-coin built-in fallback.
-  setTimeout(() => {
-    warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
-  }, 3_000);
+/* ── Background services — each wrapped so one failure can't crash others ──── */
+hydrateAdminTokens().catch(e => logger.warn({ err: e }, "hydrateAdminTokens failed (non-fatal)"));
+startCopyOrchestrator();
+// Warm the LE currencies cache shortly after boot so the first user request
+// gets the live 1 000+ coin list rather than the 331-coin built-in fallback.
+setTimeout(() => {
+  warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
+}, 3_000);
 
-  // Seed coingecko_id for all known coins — runs once 15 s after boot.
-  setTimeout(() => {
-    seedCoinGeckoIds().catch(e => logger.warn({ err: e }, "seedCoinGeckoIds failed (non-fatal)"));
-  }, 15_000);
+// Seed coingecko_id for all known coins — runs once 15 s after boot.
+setTimeout(() => {
+  seedCoinGeckoIds().catch(e => logger.warn({ err: e }, "seedCoinGeckoIds failed (non-fatal)"));
+}, 15_000);
 
-  // Seed GitHub token lists (Trust Wallet + Uniswap) — logos, addresses, decimals, new tokens.
-  // Runs 30 s after boot so DB is warm, then refreshes every 24 h.
-  setTimeout(() => {
-    seedGithubTokens().catch(e => logger.warn({ err: e }, "seedGithubTokens failed (non-fatal)"));
-    setInterval(() => {
-      seedGithubTokens().catch(e => logger.warn({ err: e }, "seedGithubTokens refresh failed (non-fatal)"));
-    }, 24 * 60 * 60 * 1_000);
-  }, 30_000);
+// Seed GitHub token lists (Trust Wallet + Uniswap) — logos, addresses, decimals, new tokens.
+// Runs 30 s after boot so DB is warm, then refreshes every 24 h.
+setTimeout(() => {
+  seedGithubTokens().catch(e => logger.warn({ err: e }, "seedGithubTokens failed (non-fatal)"));
+  setInterval(() => {
+    seedGithubTokens().catch(e => logger.warn({ err: e }, "seedGithubTokens refresh failed (non-fatal)"));
+  }, 24 * 60 * 60 * 1_000);
+}, 30_000);
 
-  // Warm fullCache from DB (coin_info_cache) — instant load for previously-seen coins.
-  setTimeout(() => {
-    warmCacheFromDB().catch(e => logger.warn({ err: e }, "warmCacheFromDB failed (non-fatal)"));
-  }, 1_000);
+// Warm fullCache from DB (coin_info_cache) — instant load for previously-seen coins.
+// Fires at T+1 s so the DB is ready. Non-blocking: serves enriched data immediately
+// on next request even before the CoinGecko prefetch finishes.
+setTimeout(() => {
+  warmCacheFromDB().catch(e => logger.warn({ err: e }, "warmCacheFromDB failed (non-fatal)"));
+}, 1_000);
 
-  // Pre-warm coin info cache with 1 batch /coins/markets call (250 coins).
-  setTimeout(() => {
-    prefetchCgMarkets().catch(e => logger.warn({ err: e }, "prefetchCgMarkets failed (non-fatal)"));
-  }, 3_000);
-} else {
-  logger.warn("Safe API startup enabled: automatic background services are disabled");
-}
+// Pre-warm coin info cache with 1 batch /coins/markets call (250 coins).
+// Fires at T+3 s — before the priceUpdater's first CG call — to win the
+// CoinGecko rate-limit race and seed fullCache with full market data.
+// Auto-retries with exponential back-off if CG returns 429.
+setTimeout(() => {
+  prefetchCgMarkets().catch(e => logger.warn({ err: e }, "prefetchCgMarkets failed (non-fatal)"));
+}, 3_000);
 
-// syncAllLEPairs() remains intentionally on-demand via the admin endpoint.
+// syncAllLEPairs() is intentionally NOT called at startup.
+// The DB already holds LE pairs from a previous run (36 K+ rows).
+// Calling it here would build 109,230 pair objects in RAM before the first
+// JSON.stringify completes, causing an out-of-memory crash on every boot.
+// The /api/admin/sync-le-pairs endpoint triggers it on demand when needed.
 
 // ── Staggered background-service startup ────────────────────────────────
 // All workers previously fired simultaneously, exhausting the DB connection
@@ -655,7 +659,7 @@ const _s = (ms: number, fn: () => void, label: string) =>
   setTimeout(() => { try { fn(); } catch (e) { logger.error({ err: e }, `${label} failed to init`); } }, ms);
 
 // Hook logger.error / logger.warn immediately so all service errors are captured.
-if (!safeApiStartup) startErrorWatcher();
+startErrorWatcher();
 
 // ── Process-level crash guards ────────────────────────────────────────────────
 // Node.js 18+ terminates the process on unhandled rejections. Catch them here
@@ -741,43 +745,30 @@ process.on("unhandledRejection", (reason) => {
   }, 5 * 60 * 1000).unref();
 }
 
-if (!safeApiStartup) {
-  _s(    0, startHlWebSocket,            "startHlWebSocket");
-  _s(    0, startPriceUpdater,          "startPriceUpdater");
-  _s(    0, startOrderbookCandleSampler, "orderbookCandleSampler");
-  _s(6_000, startLiquidityBot,          "startLiquidityBot");
-  _s(12_000, startArbBot,               "startArbBot");
-  _s(18_000, startFuturesProfitEngine,  "startFuturesProfitEngine");
-  _s(24_000, startBsvChainMonitor,      "startBsvChainMonitor");
-  _s(48_000, startRouteCache,           "startRouteCache");
-  _s(60_000, startAllReconcilers,       "startAllReconcilers");
-  _s(66_000, startExchangeApiRepairEngine, "startExchangeApiRepairEngine");
-  _s(84_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
-  _s(90_000, startFundingRateEngine,     "startFundingRateEngine");
-  _s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
-  _s(102_000, startOverlayScanner,     "startOverlayScanner");
-  _s(108_000, startSelfDiagnostic,    "startSelfDiagnostic");
-}
-
-// Wallet funding and order-settlement services use their own switch. This
-// keeps a trading-workflow change from starting market bots or diagnostics.
-if (tradingWorkersEnabled) {
-  _s(114_000, startOrderReconciler, "startOrderReconciler");
-  _s(120_000, startBsvDepositWatcher, "startBsvDepositWatcher");
-  _s(126_000, startEvmDepositWatcher, "startEvmDepositWatcher");
-  _s(132_000, () => {
-    startHtlcWatcher().catch(e    => logger.error({ err: e }, "startHtlcWatcher failed to init"));
-    startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
-  }, "startHtlcWatchers");
-  _s(138_000, startBsvIntentWatcher, "startBsvIntentWatcher");
-  _s(144_000, startArcStatusPoller, "startArcStatusPoller");
-} else if (orderbookTradingEnabled) {
-  // Safe preview may run only the order recovery worker after explicit
-  // per-chain verification; market bots and unrelated settlement workers stay stopped.
-  _s(0, startOrderReconciler, "startOrderReconciler");
-} else if (!safeApiStartup) {
-  logger.warn("Trading workers are disabled; order, deposit, and settlement background services were not started");
-}
+_s(    0, startHlWebSocket,            "startHlWebSocket");
+_s(    0, startPriceUpdater,          "startPriceUpdater");
+_s(    0, startOrderbookCandleSampler, "orderbookCandleSampler");
+_s(6_000, startLiquidityBot,          "startLiquidityBot");
+_s(12_000, startArbBot,               "startArbBot");
+_s(18_000, startFuturesProfitEngine,  "startFuturesProfitEngine");
+_s(24_000, startBsvChainMonitor,      "startBsvChainMonitor");
+_s(30_000, startBsvDepositWatcher,    "startBsvDepositWatcher");
+_s(36_000, startEvmDepositWatcher,    "startEvmDepositWatcher");
+_s(42_000, () => {
+  startHtlcWatcher().catch(e    => logger.error({ err: e }, "startHtlcWatcher failed to init"));
+  startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
+}, "startHtlcWatchers");
+_s(48_000, startRouteCache,           "startRouteCache");
+_s(54_000, startOrderReconciler,      "startOrderReconciler");
+_s(60_000, startAllReconcilers,       "startAllReconcilers");
+_s(66_000, startExchangeApiRepairEngine, "startExchangeApiRepairEngine");
+_s(72_000, startBsvIntentWatcher,       "startBsvIntentWatcher");
+_s(78_000, startArcStatusPoller,        "startArcStatusPoller");
+_s(84_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
+_s(90_000, startFundingRateEngine,     "startFundingRateEngine");
+_s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
+_s(102_000, startOverlayScanner,     "startOverlayScanner");
+_s(108_000, startSelfDiagnostic,    "startSelfDiagnostic");
 
 // ── DB pool keepalive ─────────────────────────────────────────────────────────
 // Run a cheap SELECT 1 every 90 s to keep at least one warm connection in the
@@ -800,45 +791,43 @@ if (tradingWorkersEnabled) {
 // name into coin_metadata using COALESCE so higher-quality CoinGecko data is
 // never overwritten.  Clears the all-sources cache afterward so logos appear
 // immediately without waiting for the 2-minute cache TTL.
-if (!safeApiStartup) {
-  _s(60_000, () => {
-    (async () => {
-      try {
-        await ensureCoinMetadataTable();
-        logger.info("coinMeta: CoinPaprika bulk import starting…");
-        const result = await runCoinPaprikaImport();
-        clearCoinsCache();
-        clearSwapCaches();
-        logger.info(result, "coinMeta: CoinPaprika import complete — caches cleared");
-      } catch (e) {
-        logger.warn({ err: e }, "coinMeta: CoinPaprika import failed (non-fatal)");
-      }
-    })();
-  }, "coinPaprikaSeeder");
+_s(60_000, () => {
+  (async () => {
+    try {
+      await ensureCoinMetadataTable();
+      logger.info("coinMeta: CoinPaprika bulk import starting…");
+      const result = await runCoinPaprikaImport();
+      clearCoinsCache();
+      clearSwapCaches(); // force LE currencies + SS pairs to re-fetch with new logos
+      logger.info(result, "coinMeta: CoinPaprika import complete — caches cleared");
+    } catch (e) {
+      logger.warn({ err: e }, "coinMeta: CoinPaprika import failed (non-fatal)");
+    }
+  })();
+}, "coinPaprikaSeeder");
 
 // ── CoinGecko detail seeder (slower — rate-limited, provides descriptions) ───
 // Only runs if coin_metadata has < 100 rows (first boot after table creation).
 // Subsequent runs are skipped to avoid hammering the free CoinGecko API.
-  _s(114_000, () => {
-    (async () => {
-      try {
-        await ensureCoinMetadataTable();
-        const r = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata`);
-        const count = r.rows[0]?.n ?? 0;
-        if (count < 100) {
-          logger.info({ count }, "coinMeta: table still sparse — running CoinGecko bulk import");
-          runCoinGeckoImport({ maxBulkPages: 4, maxDetailCoins: 20 })
-            .then(res => { clearCoinsCache(); logger.info(res, "coinMeta: CoinGecko import complete"); })
-            .catch(e  => logger.warn({ err: e }, "coinMeta: CoinGecko import failed (non-fatal)"));
-        } else {
-          logger.info({ count }, "coinMeta: already populated, skipping CoinGecko boot import");
-        }
-      } catch (e) {
-        logger.warn({ err: e }, "coinMeta: CoinGecko seeder error (non-fatal)");
+_s(114_000, () => {
+  (async () => {
+    try {
+      await ensureCoinMetadataTable();
+      const r = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata`);
+      const count = r.rows[0]?.n ?? 0;
+      if (count < 100) {
+        logger.info({ count }, "coinMeta: table still sparse — running CoinGecko bulk import");
+        runCoinGeckoImport({ maxBulkPages: 4, maxDetailCoins: 20 })
+          .then(res => { clearCoinsCache(); logger.info(res, "coinMeta: CoinGecko import complete"); })
+          .catch(e  => logger.warn({ err: e }, "coinMeta: CoinGecko import failed (non-fatal)"));
+      } else {
+        logger.info({ count }, "coinMeta: already populated, skipping CoinGecko boot import");
       }
-    })();
-  }, "coinGeckoSeeder");
-}
+    } catch (e) {
+      logger.warn({ err: e }, "coinMeta: CoinGecko seeder error (non-fatal)");
+    }
+  })();
+}, "coinGeckoSeeder");
 
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));

@@ -33,7 +33,6 @@ import {
   logTopics,
 } from "../lib/evmWebhook.js";
 import { getAllChains, saveCustomChain, removeCustomChain } from "../lib/chainRegistry.js";
-import { safeApiStartup } from "../lib/startupMode.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export { serviceState } from "../lib/serviceState.js";
@@ -1819,7 +1818,7 @@ async function seedWelcomeEmail() {
     }
   } catch {}
 }
-if (!safeApiStartup) seedWelcomeEmail();
+seedWelcomeEmail();
 
 // GET /admin/mail — list emails (with optional folder filter)
 router.get("/mail", async (req, res) => {

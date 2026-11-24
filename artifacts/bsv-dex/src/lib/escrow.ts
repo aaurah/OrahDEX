@@ -591,7 +591,7 @@ function orderbookToken(symbol: string, chainId: number) {
     return { address: ZERO_EVM_ADDRESS, decimals: 18, native: true };
   }
   const address = CHAIN_TOKEN_ADDRESSES[chainId]?.[normalized];
-  if (!address) throw new Error(`${normalized} is not supported by EVM order settlement on chain ${chainId}`);
+  if (!address) throw new Error(`${normalized} is not supported by Ethereum order settlement`);
   return { address: address as `0x${string}`, decimals: TOKEN_DECIMALS[normalized] ?? 18, native: false };
 }
 
@@ -603,8 +603,6 @@ async function sendOrderbookWalletTx(params: {
   chainId: number;
   isOrahWallet: boolean;
   confirmations?: number;
-  txKind?: "approval" | "lock";
-  onSubmitted?: (transaction: { hash: `0x${string}`; explorerUrl: string; kind: "approval" | "lock" }) => void;
   onStage?: (stage: string) => void;
 }): Promise<`0x${string}`> {
   let txHash: `0x${string}`;
@@ -636,24 +634,13 @@ async function sendOrderbookWalletTx(params: {
     }) as `0x${string}`;
   }
 
-  params.onSubmitted?.({
-    hash: txHash,
-    explorerUrl: explorerTxUrl(params.chainId, txHash),
-    kind: params.txKind ?? "lock",
-  });
-  params.onStage?.("Waiting for EVM confirmation…");
+  params.onStage?.("Waiting for Ethereum confirmation…");
   const receipt = await getPublicClient(params.chainId).waitForTransactionReceipt({
     hash: txHash,
     confirmations: params.confirmations ?? 1,
     timeout: 180_000,
   });
-  if (receipt.status !== "success") {
-    throw new Error(
-      params.txKind === "approval"
-        ? "EVM token approval transaction reverted"
-        : "EVM order escrow transaction reverted",
-    );
-  }
+  if (receipt.status !== "success") throw new Error("Ethereum order escrow transaction reverted");
   return txHash;
 }
 
@@ -670,16 +657,13 @@ export async function lockOrderbookOrder(params: {
   chainId: number;
   isOrahWallet: boolean;
   onStage?: (stage: string) => void;
-  onSubmitted?: (transaction: { hash: `0x${string}`; explorerUrl: string; kind: "approval" | "lock" }) => void;
 }): Promise<{ orderKey: `0x${string}`; txHash: `0x${string}`; explorerUrl: string }> {
-  if (params.chainId !== 1 && params.chainId !== 11155111) {
-    throw new Error("Wallet-funded order settlement is not enabled on this EVM network");
-  }
-  if (!/^0x[0-9a-fA-F]{40}$/.test(params.escrowAddress)) throw new Error("EVM order escrow is not configured");
+  if (params.chainId !== 1) throw new Error("Wallet-funded order settlement is currently available on Ethereum mainnet only");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(params.escrowAddress)) throw new Error("Ethereum order escrow is not configured");
   const baseAsset = orderbookToken(params.base, params.chainId);
   const quoteAsset = orderbookToken(params.quote, params.chainId);
   if (baseAsset.decimals !== 18 || quoteAsset.decimals !== 18) {
-    throw new Error("EVM wallet order settlement currently supports 18-decimal tokens only");
+    throw new Error("Ethereum wallet order settlement currently supports 18-decimal tokens only");
   }
   const baseAmount = amountAsUnits(params.quantity, baseAsset.decimals);
   const priceWad = amountAsUnits(params.price, 18, params.side === "sell");
@@ -709,8 +693,6 @@ export async function lockOrderbookOrder(params: {
       await sendOrderbookWalletTx({
         from, to: escrowToken.address, data: approveData,
         chainId: params.chainId, isOrahWallet: params.isOrahWallet,
-        txKind: "approval",
-        onSubmitted: params.onSubmitted,
         onStage: params.onStage,
       });
     }
@@ -740,14 +722,12 @@ export async function lockOrderbookOrder(params: {
     chainId: params.chainId,
     isOrahWallet: params.isOrahWallet,
     confirmations: 3,
-    txKind: "lock",
-    onSubmitted: params.onSubmitted,
     onStage: params.onStage,
   });
   return {
     orderKey,
     txHash,
-    explorerUrl: explorerTxUrl(params.chainId, txHash),
+    explorerUrl: `https://etherscan.io/tx/${txHash}`,
   };
 }
 
@@ -758,9 +738,7 @@ export async function cancelOrderbookOrder(params: {
   chainId: number;
   isOrahWallet: boolean;
 }): Promise<{ txHash: `0x${string}`; explorerUrl: string }> {
-  if (params.chainId !== 1 && params.chainId !== 11155111) {
-    throw new Error("Order escrow cancellation is not enabled on this EVM network");
-  }
+  if (params.chainId !== 1) throw new Error("Order escrow cancellation is available on Ethereum mainnet only");
   const txHash = await sendOrderbookWalletTx({
     from: params.from,
     to: params.escrowAddress,
@@ -773,7 +751,7 @@ export async function cancelOrderbookOrder(params: {
     isOrahWallet: params.isOrahWallet,
     confirmations: 3,
   });
-  return { txHash, explorerUrl: explorerTxUrl(params.chainId, txHash) };
+  return { txHash, explorerUrl: `https://etherscan.io/tx/${txHash}` };
 }
 
 /**

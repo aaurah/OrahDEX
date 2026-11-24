@@ -11,9 +11,6 @@ const ordersPath = path.join(__dirname, "..", "src", "routes", "orders.ts");
 const ordersSchemaPath = path.join(__dirname, "..", "..", "..", "lib", "db", "src", "schema", "orders.ts");
 const tradePath = path.join(__dirname, "..", "src", "routes", "trade.ts");
 const fundingVerifierPath = path.join(__dirname, "..", "src", "lib", "fundingVerifier.ts");
-const tradingCapabilitiesPath = path.join(__dirname, "..", "src", "lib", "tradingCapabilities.ts");
-const startupModePath = path.join(__dirname, "..", "src", "lib", "startupMode.ts");
-const appPath = path.join(__dirname, "..", "src", "app.ts");
 const routesIndexPath = path.join(__dirname, "..", "src", "routes", "index.ts");
 const adminAuthPath = path.join(__dirname, "..", "src", "middleware", "adminAuth.ts");
 const adminRoutesPath = path.join(__dirname, "..", "src", "routes", "admin.ts");
@@ -202,69 +199,19 @@ test("futures mutations fail closed and NFT routes can be disabled", async () =>
   assert.match(nftSrc, /process\.env\.NFT_ENABLED === "false"/);
 });
 
-test("EVM orderbook orders require confirmed escrow proof and same-chain settlement", async () => {
+test("Ethereum orderbook orders require confirmed escrow proof and settlement pairing", async () => {
   const [ordersSrc, escrowSrc] = await Promise.all([
     read(ordersPath),
     read(path.join(__dirname, "..", "src", "lib", "evmOrderbookEscrow.ts")),
   ]);
 
   assert.match(ordersSrc, /router\.get\("\/orders\/evm-settlement\/config"/);
-  assert.match(ordersSrc, /getEvmOrderbookEscrowConfig\(chainId\)/);
-  assert.match(ordersSrc, /router\.post\("\/orders\/recover-evm"/);
-  assert.match(ordersSrc, /router\.get\("\/runtime-config"/);
-  assert.match(ordersSrc, /res\.json\(await getTradingCapabilities\(chainId\)\)/);
-  assert.match(ordersSrc, /getTradingCapabilities\(\s*chainIdInput \? Number\(chainIdInput\) : undefined/);
-  assert.match(ordersSrc, /safeStartup: true/);
-  assert.match(ordersSrc, /if \(safeApiStartup && !orderbookTradingEnabled\)[\s\S]*?code: "SAFE_STARTUP"/);
-  assert.match(ordersSrc, /getOrderNetworkCapability\(runtimeCapabilities/);
   assert.match(ordersSrc, /verifyEvmOrderLock\(\{/);
   assert.match(ordersSrc, /ORDERBOOK_LOCK_REQUIRED/);
-  assert.match(ordersSrc, /candidateOrderbookFunding\.chainId !== incomingOrderbookFunding\?\.chainId/);
   assert.match(ordersSrc, /candidateClaimsOrderbookEscrow !== Boolean\(incomingOrderbookFunding\)/);
   assert.match(ordersSrc, /settleEvmOrderFill\(\{/);
   assert.match(ordersSrc, /verifyEvmOrderbookCancelTx\(\{/);
   assert.match(escrowSrc, /MIN_CONFIRMATIONS/);
-  assert.match(escrowSrc, /isEvmOrderbookChainEnabled\(params\.chainId\)/);
   assert.match(escrowSrc, /OrderOpened/);
   assert.match(escrowSrc, /configuredEscrow\.toLowerCase\(\) !== params\.escrowAddress\.toLowerCase\(\)/);
-});
-
-test("only configured and verified EVM chains can trade during safe startup", async () => {
-  const [src, startupSrc, appSrc, mobileTradeSrc, orderFormSrc] = await Promise.all([
-    read(tradingCapabilitiesPath),
-    read(startupModePath),
-    read(appPath),
-    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "mobile", "MobileTrade.tsx")),
-    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "trading", "OrderForm.tsx")),
-  ]);
-
-  assert.match(src, /!isEvmOrderbookChainEnabled\(chainId\)/);
-  assert.match(src, /bsv:\s*\{\s*available: false/);
-  assert.match(src, /sol:\s*\{\s*available: false/);
-  assert.match(src, /btc:\s*\{\s*available: false/);
-  assert.match(src, /bch:\s*\{\s*available: false/);
-  assert.match(src, /input\.chainId !== capability\.chainId/);
-  assert.match(src, /input\.orderType !== "limit"/);
-  assert.match(src, /!input\.hasEscrowLock/);
-  assert.match(src, /await pool\.query\("SELECT 1"\)/);
-  assert.match(src, /service\.name === "order-reconciler"/);
-  assert.match(src, /recovery\.lastSuccessAt !== null/);
-  assert.match(startupSrc, /configuredEvmOrderbookChainIds\(\)\.some\(isEvmOrderbookChainEnabled\)/);
-  assert.match(startupSrc, /ORAHDEX_TRADING_EVM_VERIFIED_CHAIN_IDS/);
-  assert.match(appSrc, /if \(tradingWorkersEnabled\) \{[\s\S]*?startOrderReconciler[\s\S]*?startBsvIntentWatcher/);
-  assert.match(appSrc, /else if \(orderbookTradingEnabled\)[\s\S]*?startOrderReconciler/);
-  const generalWorkerBlock = appSrc.match(/if \(!safeApiStartup\) \{\n  _s\([\s\S]*?\n\}/)?.[0] ?? "";
-  assert.ok(generalWorkerBlock, "general background worker block exists");
-  assert.doesNotMatch(generalWorkerBlock, /startOrderReconciler|startBsvDepositWatcher|startHtlcWatcher|startBsvIntentWatcher/);
-  assert.match(mobileTradeSrc, /tradingNetworkCapability\?\.available === true/);
-  assert.match(mobileTradeSrc, /runtime-config\?chainId=\$\{walletChainId \?\? 1\}/);
-  assert.match(mobileTradeSrc, /tradingCapabilityReason/);
-  assert.match(orderFormSrc, /tradingNetworkCapability\?\.available === true/);
-  assert.match(orderFormSrc, /runtime-config\?chainId=\$\{walletChainId \?\? 1\}/);
-  assert.match(orderFormSrc, /tradingCapabilityReason/);
-});
-
-test("order reconciler never removes a live EVM escrow order from the database", async () => {
-  const selfHealingSrc = await read(path.join(__dirname, "..", "src", "lib", "selfHealing.ts"));
-  assert.match(selfHealingSrc, /order\.fundingRef\?\.startsWith\("evm-order:"\)\) continue/);
 });
