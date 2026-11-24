@@ -10,7 +10,7 @@ Reviewed: 25 November 2026
 
 | Area | User-facing status | Evidence to review before changing the status |
 | --- | --- | --- |
-| Wallet-funded orderbook | Ethereum only | `artifacts/api-server/src/lib/evmOrderbookEscrow.ts`, `artifacts/api-server/src/routes/orders.ts`, registered token decimals, deployed escrow configuration, and confirmed order/fill/cancel transactions |
+| Wallet-funded orderbook | Ethereum mainnet only | `artifacts/api-server/src/lib/evmOrderbookEscrow.ts`, `artifacts/api-server/src/routes/orders.ts`, registered token decimals, deployed escrow configuration, and confirmed order/fill/cancel transactions |
 | Order-book liquidity | Pair-dependent | Active orderbook reads and matching behavior; external quotes or chart prices do not count as orderbook depth |
 | Swaps and bridges | Provider-dependent | Provider quote and exchange-creation paths, destination transaction, and final provider settlement |
 | Markets and charts | Data-source dependent | Market API and chart data-provider behavior, including empty and unavailable responses |

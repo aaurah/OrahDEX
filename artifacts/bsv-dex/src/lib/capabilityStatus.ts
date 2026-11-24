@@ -4,7 +4,7 @@ export const CAPABILITY_STATUS = [
   {
     id: "ethereum-orderbook",
     area: "Wallet-funded orderbook",
-    status: "Ethereum only",
+    status: "Ethereum mainnet only",
     summary:
       "The deployed escrow orderbook supports registered 18-decimal assets on Ethereum. Other chains are not covered by this orderbook path.",
   },
