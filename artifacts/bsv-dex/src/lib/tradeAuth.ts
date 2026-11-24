@@ -68,28 +68,13 @@ export async function signWalletMessage(
 
   if (provider === "reown") {
     const { wagmiAdapter } = await import("@/lib/reown-appkit");
-    const { getConnection, getConnections } = await import("@wagmi/core");
-    const activeConnection = getConnection(wagmiAdapter.wagmiConfig);
-    const hasRequestedAccount = (connection: { addresses?: readonly string[] } | undefined) =>
-      connection?.addresses?.some((account) => account.toLowerCase() === address.toLowerCase()) ?? false;
-    const connection = hasRequestedAccount(activeConnection)
-      ? activeConnection
-      : getConnections(wagmiAdapter.wagmiConfig).find(
+    const { getConnections } = await import("@wagmi/core");
+    const connection = getConnections(wagmiAdapter.wagmiConfig).find(
       (item) => item.accounts.some((account) => account.toLowerCase() === address.toLowerCase()),
     );
-    let eip1193: any;
-    if (connection?.connector) {
-      try { eip1193 = await connection.connector.getProvider(); }
-      catch { /* try the injected provider after account validation */ }
-    }
-    eip1193 ??= (window as any).ethereum;
+    const eip1193 = await connection?.connector.getProvider() as any
+      ?? (window as any).ethereum;
     if (!eip1193?.request) throw new Error("Connected wallet provider unavailable. Reconnect your wallet and try again.");
-    const accounts = await eip1193.request({ method: "eth_accounts" });
-    if (!Array.isArray(accounts) || !accounts.some(
-      (account: unknown) => typeof account === "string" && account.toLowerCase() === address.toLowerCase(),
-    )) {
-      throw new Error("The active wallet account changed. Reconnect the wallet before signing.");
-    }
     return await eip1193.request({ method: "personal_sign", params: [hexMessage, address] });
   }
 
@@ -108,11 +93,5 @@ export async function signWalletMessage(
 
   const ethereum = (window as any).ethereum;
   if (!ethereum?.request) throw new Error("No EVM wallet signing provider is available.");
-  const accounts = await ethereum.request({ method: "eth_accounts" });
-  if (!Array.isArray(accounts) || !accounts.some(
-    (account: unknown) => typeof account === "string" && account.toLowerCase() === address.toLowerCase(),
-  )) {
-    throw new Error("The active wallet account changed. Reconnect the wallet before signing.");
-  }
   return await ethereum.request({ method: "personal_sign", params: [hexMessage, address] });
 }

@@ -9,11 +9,10 @@ export async function cancelEvmOrderbookOrder(params: {
   fundingRef: string;
   isOrahWallet: boolean;
 }): Promise<{ id: string; status: string; txHash?: string; txid?: string }> {
-  const [kind, chainIdText, escrowAddress, orderKey] = params.fundingRef.split(":");
-  const chainId = Number(chainIdText);
+  const [kind, version, escrowAddress, orderKey] = params.fundingRef.split(":");
   if (
     kind !== "evm-order" ||
-    ![1, 11155111].includes(chainId) ||
+    version !== "1" ||
     !/^0x[a-f\d]{40}$/i.test(escrowAddress ?? "") ||
     !/^0x[a-f\d]{64}$/i.test(orderKey ?? "")
   ) {
@@ -43,7 +42,7 @@ export async function cancelEvmOrderbookOrder(params: {
     escrowAddress,
     orderKey: orderKey as `0x${string}`,
     from: params.walletAddress,
-    chainId,
+    chainId: 1,
     isOrahWallet: params.isOrahWallet,
   });
 
