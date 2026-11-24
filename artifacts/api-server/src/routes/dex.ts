@@ -20,7 +20,6 @@ import { getCachedLEPrices } from "../lib/lePriceCache.js";
 import { getCachedLECurrencies } from "./letsexchange.js";
 import { SS_COIN_TICKER } from "../lib/simpleswap.js";
 import { logger } from "../lib/logger.js";
-import { BoundedTtlCache } from "../lib/boundedTtlCache.mjs";
 
 const router: IRouter = Router();
 
@@ -628,8 +627,8 @@ router.get("/coins/all-sources", async (req, res) => {
 });
 
 /* ── GET /api/coins/:id/tickers ────────────────────────────────────────────── */
+const tickerCache = new Map<string, Cache<any>>();
 const TICKER_CACHE_MS = 5 * 60 * 1000;
-const tickerCache = new BoundedTtlCache<string, Cache<any>>(512, TICKER_CACHE_MS);
 
 router.get("/coins/:id/tickers", async (req, res) => {
   const { id } = req.params;
@@ -710,8 +709,8 @@ router.get("/coins/:id/tickers", async (req, res) => {
 });
 
 // ─── Coin detail: description, social links, ATH, categories ─────────────────
+const detailCache = new Map<string, Cache<any>>();
 const DETAIL_CACHE_MS = 10 * 60 * 1000;
-const detailCache = new BoundedTtlCache<string, Cache<any>>(512, DETAIL_CACHE_MS);
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
@@ -830,9 +829,9 @@ const CG_ID_OVERRIDES: Record<string, string> = {
 };
 
 const cgCoinCacheMs   = 30 * 60 * 1000;
-const cgCoinCache     = new BoundedTtlCache<string, Cache<any>>(512, cgCoinCacheMs);
+const cgCoinCache     = new Map<string, Cache<any>>();
 const cgSearchCacheMs = 4 * 60 * 60 * 1000; // 4 h for found; 2 h for null
-const cgSearchCache   = new BoundedTtlCache<string, { id: string | null }>(2048, cgSearchCacheMs);
+const cgSearchCache   = new Map<string, { id: string | null; ts: number }>();
 
 // ─── Persistent coin-info DB cache ───────────────────────────────────────────
 // coin_info_cache stores fully-enriched coin data (including AI analysis).
@@ -922,7 +921,8 @@ export async function warmCacheFromDB(): Promise<void> {
 
 async function searchCgId(symbol: string): Promise<string | null> {
   const hit = cgSearchCache.get(symbol);
-  if (hit) return hit.id;
+  const ttl = hit?.id ? cgSearchCacheMs : cgSearchCacheMs / 2;
+  if (hit && Date.now() - hit.ts < ttl) return hit.id;
   try {
     const r = await fetch(
       `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
@@ -935,7 +935,7 @@ async function searchCgId(symbol: string): Promise<string | null> {
     );
     matches.sort((a, b) => (a.market_cap_rank ?? 999999) - (b.market_cap_rank ?? 999999));
     const id = matches[0]?.id ?? null;
-    cgSearchCache.set(symbol, { id }, id ? cgSearchCacheMs : cgSearchCacheMs / 2);
+    cgSearchCache.set(symbol, { id, ts: Date.now() });
     return id;
   } catch { return null; }
 }
@@ -1224,8 +1224,8 @@ router.get("/coins/:symbol/detail", async (req, res) => {
 });
 
 // ─── Contract address → token lookup (GeckoTerminal multi-chain) ─────────────
+const contractLookupCache = new Map<string, Cache<any>>();
 const CONTRACT_LOOKUP_CACHE_MS = 5 * 60 * 1000;
-const contractLookupCache = new BoundedTtlCache<string, Cache<any>>(1024, CONTRACT_LOOKUP_CACHE_MS);
 
 router.get("/coins/by-contract", async (req, res) => {
   const address = ((req.query.address as string) ?? "").trim().toLowerCase();
@@ -1349,8 +1349,8 @@ router.get("/aggregator/swap", async (req, res) => {
 // Fetches CoinGecko market data + generates a Claude AI analysis.
 // Cached server-side for 30 minutes so repeat opens are instant.
 // ─────────────────────────────────────────────────────────────────────────────
+const fullCache = new Map<string, Cache<any>>();
 const FULL_CACHE_MS = 30 * 60 * 1000;
-const fullCache = new BoundedTtlCache<string, Cache<any>>(512, FULL_CACHE_MS);
 
 // Hardcoded symbol→CoinPaprika ID for the most common coins.
 // CoinPaprika: public API, no key, 2 req/s, much more reliable than CoinGecko free tier.
@@ -1473,7 +1473,7 @@ export async function prefetchCgMarkets(retryDelayMs = 90_000): Promise<void> {
       const sym = (c.symbol ?? "").toUpperCase();
       if (!sym) continue;
       cgIdMap.set(sym, c.id);
-      cgSearchCache.set(sym, { id: c.id }); // warm search cache too
+      cgSearchCache.set(sym, { id: c.id, ts: Date.now() }); // warm search cache too
       const existing = fullCache.get(sym);
       if (existing && !existing.data._partial) continue; // don't overwrite enriched entries
       fullCache.set(sym, { data: cgMarketsItemToData(c), ts: Date.now() });

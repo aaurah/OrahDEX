@@ -10,6 +10,8 @@
     "deploy:localhost": "hardhat run scripts/deploy.ts --network localhost",
     "deploy:orderbook:ethereum": "hardhat --config hardhat.offline.config.cjs compile && node scripts/deploy-orderbook-escrow.mjs",
     "deploy:orderbook:sepolia": "hardhat --config hardhat.offline.config.cjs compile && node scripts/deploy-orderbook-escrow-sepolia.mjs",
+    "smoke-test:orderbook:ethereum": "node scripts/smoke-test-orderbook-ethereum.mjs",
+    "smoke-test:orderbook:sepolia": "node scripts/smoke-test-orderbook-sepolia.mjs",
     "deploy-escrow": "node scripts/deploy-escrow-standalone.mjs --chain",
     "deploy-escrow:sepolia": "node scripts/deploy-escrow-standalone.mjs --chain sepolia",
     "deploy-escrow:base-sepolia": "node scripts/deploy-escrow-standalone.mjs --chain base-sepolia",

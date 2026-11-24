@@ -155,7 +155,7 @@ function getChartColors(theme: string) {
   const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const eff  = theme === 'system' ? (dark ? 'dark' : 'light') : theme;
   switch (eff) {
-    case 'amoled': return { bg:'#000000', text:'#9ca3af', grid:'#111111', border:'#1c1c1c', cross:'#000000', subBg:'#050505' };
+    case 'amoled': return { bg:'#000000', text:'#d1d5db', grid:'#0b0b0b', border:'#171717', cross:'#000000', subBg:'#010101' };
     case 'light':  return { bg:'#ffffff', text:'#374151', grid:'#e5e7eb', border:'#d1d5db', cross:'#ffffff', subBg:'#f9fafb' };
     default:       return { bg:'#0d1117', text:'#848e9c', grid:'#1a2030', border:'#2b3139', cross:'#0d1117', subBg:'#0b0f18' };
   }
@@ -1184,12 +1184,19 @@ function OrahChart({
   });
 
   return (
-    <div ref={wrapRef} className={`relative flex flex-col ${fullscreen ? 'fixed inset-0 z-[9999]' : 'h-full'}`} style={{ backgroundColor: col.bg, color: col.text }}>
+    <div
+      ref={wrapRef}
+      className={`relative flex flex-col ${fullscreen ? 'fixed inset-0 z-[9999] h-[100dvh] w-screen overflow-hidden' : 'h-full'}`}
+      style={{ backgroundColor: col.bg, color: col.text }}
+      data-testid="chart-root"
+    >
       {fullscreen && (
         <button
+          type="button"
           onClick={() => setFullscreen(false)}
           title="Close expanded chart"
           aria-label="Close expanded chart"
+          data-testid="button-chart-close-expanded"
           className="absolute right-2 z-[10001] rounded-full border border-white/15 bg-black/75 p-2 text-white shadow-lg backdrop-blur-sm"
           style={{ top: "calc(env(safe-area-inset-top, 0px) + 8px)" }}
         >
@@ -1349,7 +1356,16 @@ function OrahChart({
         <button onClick={screenshot} title="Save chart image" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><Camera className="w-3.5 h-3.5" /></button>
 
         {/* Fullscreen */}
-        <button onClick={() => setFullscreen(p => !p)} title="Fullscreen" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}>
+        <button
+          type="button"
+          onClick={() => setFullscreen(p => !p)}
+          title={fullscreen ? "Minimize chart" : "Expand chart"}
+          aria-label={fullscreen ? "Minimize chart" : "Expand chart"}
+          aria-expanded={fullscreen}
+          data-testid="button-chart-expand"
+          className="sticky right-0 z-20 ml-1 flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full border shadow-lg"
+          style={{ backgroundColor: col.bg, borderColor: col.grid, color: col.text }}
+        >
           {fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
         </button>
       </div>

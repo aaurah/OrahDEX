@@ -286,7 +286,12 @@ export function startOrderReconciler(): void {
       const cutoff = new Date(Date.now() - STUCK_ORDER_AGE_MS);
 
       const stuck = await db
-        .select({ id: ordersTable.id, symbol: ordersTable.symbol, status: ordersTable.status })
+        .select({
+          id: ordersTable.id,
+          symbol: ordersTable.symbol,
+          status: ordersTable.status,
+          fundingRef: ordersTable.fundingRef,
+        })
         .from(ordersTable)
         .where(
           and(
@@ -303,6 +308,9 @@ export function startOrderReconciler(): void {
       const cancelledSymbols = new Set<string>();
 
       for (const order of stuck) {
+        // The escrow contract still holds these assets. Never mark an on-chain
+        // order cancelled in PostgreSQL without a confirmed wallet cancellation.
+        if (order.fundingRef?.startsWith("evm-order:")) continue;
         if (cancellingOrders.has(order.id)) {
           logger.debug({ orderId: order.id }, "[SelfHeal] Order reconciler: skip in-flight cancel lock");
           continue;
