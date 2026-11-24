@@ -28,7 +28,8 @@ import {
 import { QRCodeCanvas } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
-import { buildOrderIntentMessage } from "@/lib/tradeAuth";
+import { buildOrderIntentMessage, signWalletMessage } from "@/lib/tradeAuth";
+import { withWalletRequestTimeout } from "@/lib/walletRequestTimeout.mjs";
 import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
@@ -949,57 +950,25 @@ export function OrderForm({
         setSigningOrder(true);
         if (isOrahWallet) {
           // Self-custody Orah wallet: sign with the in-app key (PIN/passkey unlock)
-          const account = await getViemAccountForAddress(address!, {
-            title:    "Authorize trade",
-            subtitle: `${side.toUpperCase()} ${amount} ${base} on ${symbol}`,
-          });
-          evmSignature = await account.signMessage!({ message: orderMsg });
+          const signingRequest = (async () => {
+            const account = await getViemAccountForAddress(address!, {
+              title:    "Authorize trade",
+              subtitle: `${side.toUpperCase()} ${amount} ${base} on ${symbol}`,
+            });
+            return account.signMessage!({ message: orderMsg });
+          })();
+          evmSignature = await withWalletRequestTimeout(signingRequest, 90_000);
         } else {
-          // External wallet: tier-1 = wagmi/Reown (WalletConnect + injected via wagmi),
-          //                  tier-2 = direct window.ethereum (covers MetaMask/Rabby/etc.
-          //                           connected through OrahDEX native connect flow,
-          //                           which stores the address in the wallet store but
-          //                           may not have registered a wagmi connector).
-          const isUserRejection = (e: any) => {
-            const code = e?.code;
-            const msg  = (e?.message ?? "").toLowerCase();
-            return code === 4001 || code === "ACTION_REJECTED" ||
-              msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
-          };
-
-          if (evmConnected) {
-            try {
-              evmSignature = await signMessageAsync({ message: orderMsg });
-            } catch (wagmiErr: any) {
-              if (isUserRejection(wagmiErr)) throw wagmiErr;
-              // Wagmi signing failed for a non-rejection reason (connector mismatch,
-              // disconnected session, etc.) — fall through to direct provider below.
-            }
-          }
-
-          if (!evmSignature) {
-            // Build the hex-encoded message required by personal_sign
-            const hexMsg = "0x" + Array.from(new TextEncoder().encode(orderMsg))
-              .map(b => b.toString(16).padStart(2, "0")).join("");
-
-            if (provider === "reown") {
-              // Reown/WalletConnect: window.ethereum is never injected — must call
-              // personal_sign directly on the connector's raw EIP-1193 provider.
-              const { wagmiAdapter } = await import("@/lib/reown-appkit");
-              const connector = wagmiAdapter.wagmiConfig.connectors.find(
-                (c: any) => c.id === "walletConnect" || c.type === "walletConnect"
-              );
-              const eip1193 = await (connector as any)?.getProvider?.();
-              if (!eip1193) throw new Error("WalletConnect provider unavailable. Please reconnect your wallet.");
-              evmSignature = await eip1193.request({ method: "personal_sign", params: [hexMsg, address] });
-            } else {
-              const eth = (window as any).ethereum;
-              if (!eth) {
-                throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
-              }
-              evmSignature = await eth.request({ method: "personal_sign", params: [hexMsg, address] });
-            }
-          }
+          // Sign through the selected account's provider rather than a stale
+          // wagmi connector. A timed-out signature cannot submit an order later.
+          const hasInjectedProvider = Boolean((window as any).ethereum?.request);
+          const wagmiFallback = provider !== "reown" && !hasInjectedProvider && evmConnected
+            ? signMessageAsync
+            : undefined;
+          evmSignature = await withWalletRequestTimeout(
+            signWalletMessage(address, provider ?? undefined, orderMsg, wagmiFallback),
+            90_000,
+          );
         }
       } catch (signErr: any) {
         setSigningOrder(false);

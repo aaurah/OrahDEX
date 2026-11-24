@@ -3,14 +3,15 @@ import type { IBridgeProvider } from "../bridges/IBridgeProvider.js";
 import { SocketBridgeProvider } from "../bridges/SocketBridgeProvider.js";
 import { scoreQuotes, DEFAULT_SCORING_CONFIG, type ScoringConfig } from "./routeScoring.js";
 import { logger } from "../lib/logger.js";
+import { BoundedTtlCache } from "../lib/boundedTtlCache.mjs";
 
 const PROVIDERS: IBridgeProvider[] = [
   new SocketBridgeProvider(),
 ];
 
 interface CacheEntry { quotes: BridgeQuoteWithScore[]; ts: number }
-const CACHE     = new Map<string, CacheEntry>();
 const CACHE_TTL = 30_000;
+const CACHE     = new BoundedTtlCache<string, CacheEntry>(256, CACHE_TTL);
 
 function cacheKey(p: BridgeQuoteParams): string {
   return `${p.fromChainId}:${p.toChainId}:${p.fromTokenAddress}:${p.toTokenAddress}:${p.amountIn}`;
