@@ -194,9 +194,7 @@ async function main() {
     }
 
     const buyerBalance = await provider.getBalance(buyer.address);
-    // submit() adds a 15% gas-limit margin, so reserve more than the 21k
-    // intrinsic cost when calculating the refund value.
-    const buyerSweepGas = 30_000n;
+    const buyerSweepGas = 21_000n;
     const buyerSweepFee = buyerSweepGas * gasPrice;
     if (buyerBalance > buyerSweepFee) {
       await submit(buyer, {
