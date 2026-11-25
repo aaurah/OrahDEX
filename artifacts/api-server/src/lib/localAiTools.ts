@@ -52,13 +52,13 @@ export function formatExplicitToolResult(
 /** Some small Qwen tags support text JSON calls but reject native tool fields. */
 export async function completeWithLocalTools(
   create: (body: any, options: any) => Promise<any>,
-  body: { messages: any[]; tools: any[]; [key: string]: any },
+  body: { messages: any[]; tools?: any[]; [key: string]: any },
   options: any,
 ) {
   try { return await create(body, options); }
   catch (error) {
     const failure = error as { status?: number; message?: string };
-    if (failure.status !== 400 || !/does not support tools/i.test(failure.message ?? "")) throw error;
+    if (failure.status !== 400 || !body.tools?.length || !/does not support tools/i.test(failure.message ?? "")) throw error;
     const { tools, tool_choice: _choice, ...plain } = body;
     return create({
       ...plain,
@@ -66,7 +66,7 @@ export async function completeWithLocalTools(
         ...body.messages,
         {
           role: "system",
-          content: `This model uses text JSON for tools. To call one tool, reply only with {"tool_call":{"name":"allowed_name","arguments":{}}}. Otherwise reply normally. Only these tools are allowed: ${JSON.stringify(tools.map(tool => tool.function))}`,
+          content: `This model uses text JSON for tools. To call one tool, reply only with {"tool_call":{"name":"allowed_name","arguments":{}}}. Otherwise reply normally. Only these tools are allowed: ${JSON.stringify((tools ?? []).map((tool: any) => tool.function))}`,
         },
       ],
     }, options);

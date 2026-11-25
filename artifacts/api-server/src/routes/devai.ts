@@ -41,44 +41,46 @@ const DEVAI_MODEL = devaiModel;
 const DEVAI_OLLAMA_SERVER_URL = devaiOllamaServerUrl;
 const githubConnectors = new ReplitConnectors();
 
+// GitHub access works either through a Replit connector (inside a Repl) or
+// through a GitHub token, which is the only option on a self-hosted box. A
+// classic PAT with `repo` scope (or a fine-grained token with Contents: read
+// and write plus Pull requests: read and write) covers DevAI's read + write.
+const DEVAI_GITHUB_TOKEN = (process.env.DEVAI_GITHUB_TOKEN || process.env.GITHUB_TOKEN || "").trim();
+const DEVAI_GITHUB_API_URL = (process.env.DEVAI_GITHUB_API_URL || "https://api.github.com").replace(/\/+$/, "");
+const devaiGitHubUsesToken = DEVAI_GITHUB_TOKEN.length > 0;
+
 type GitHubConnection = Awaited<ReturnType<ReplitConnectors["listConnections"]>>[number];
 type GitHubRequestOptions = {
   connectionId?: string;
   method?: string;
   body?: unknown;
 };
+type GitHubResponseLike = {
+  ok: boolean;
+  status: number;
+  text(): Promise<string>;
+};
 
 async function getGitHubConnection(): Promise<GitHubConnection> {
+  if (devaiGitHubUsesToken) {
+    return { id: "github-token", connector_name: "github", status: "healthy" } as GitHubConnection;
+  }
+  const noConnector = () => new Error(
+    "GitHub is not connected. Set GITHUB_TOKEN (Contents and Pull requests: read and write) on the API server to give DevAI GitHub access, or connect the GitHub integration in Replit.",
+  );
   const connections = await githubConnectors.listConnections({
     connector_names: "github",
     refresh_policy: "none",
-  });
+  }).catch(() => { throw noConnector(); });
   const connection = connections.find((item) =>
     item.connector_name === "github" &&
     (!item.status || ["healthy", "ready", "connected"].includes(item.status)),
   );
-  if (!connection) {
-    throw new Error("GitHub is not connected. Connect the GitHub integration in Replit first.");
-  }
+  if (!connection) throw noConnector();
   return connection;
 }
 
-async function githubRequest<T = any>(
-  apiPath: string,
-  options: GitHubRequestOptions = {},
-): Promise<T> {
-  const connectionId = options.connectionId ?? (await getGitHubConnection()).id;
-  const response = await githubConnectors.proxy("github", apiPath, {
-    connectionId,
-    method: options.method ?? "GET",
-    body: options.body,
-    headers: {
-      "User-Agent": "OrahDEX-DevAI/2.0",
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    signal: AbortSignal.timeout(20_000),
-  });
+async function parseGitHubResponse<T>(response: GitHubResponseLike): Promise<T> {
   const raw = await response.text();
   let payload: any = null;
   if (raw) {
@@ -95,6 +97,57 @@ async function githubRequest<T = any>(
     throw error;
   }
   return payload as T;
+}
+
+async function githubRequest<T = any>(
+  apiPath: string,
+  options: GitHubRequestOptions = {},
+): Promise<T> {
+  if (devaiGitHubUsesToken) {
+    const response = await fetch(`${DEVAI_GITHUB_API_URL}${apiPath}`, {
+      method: options.method ?? "GET",
+      headers: {
+        Authorization: `Bearer ${DEVAI_GITHUB_TOKEN}`,
+        "User-Agent": "OrahDEX-DevAI/2.0",
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: AbortSignal.timeout(20_000),
+    });
+    return parseGitHubResponse<T>(response);
+  }
+  const connectionId = options.connectionId ?? await getGitHubConnection().then(
+    (connection) => connection.id,
+    // Without a Replit connector and without a token, public repositories are
+    // still readable through the unauthenticated GitHub API.
+    () => undefined,
+  );
+  if (!connectionId) {
+    const response = await fetch(`${DEVAI_GITHUB_API_URL}${apiPath}`, {
+      method: options.method ?? "GET",
+      headers: {
+        "User-Agent": "OrahDEX-DevAI/2.0",
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+    return parseGitHubResponse<T>(response);
+  }
+  const response = await githubConnectors.proxy("github", apiPath, {
+    connectionId,
+    method: options.method ?? "GET",
+    body: options.body,
+    headers: {
+      "User-Agent": "OrahDEX-DevAI/2.0",
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  return parseGitHubResponse<T>(response);
 }
 
 function encodeGitHubPath(value: string): string {
@@ -148,7 +201,8 @@ You are a senior blockchain engineer. You write production-ready code, debug sma
 - **list_project_dir** — Browse any directory in the current OrahDEX workspace. Use to navigate the project structure before reading specific files.
 - **search_project_code** — Find the current implementation across exchange UI, API, contracts, database libraries, and docs; read matches before explaining or proposing edits.
 - **query_database** — Run a read-only SELECT query against the live OrahDEX PostgreSQL database. Use to inspect real data, schemas, order books, user counts, etc.
-- **write_project_file** — Stage a source-file change for admin review. Never apply it directly; an authenticated admin must review and approve the proposal.
+- **write_project_file** — Stage a source-file change to the live workspace for admin review. Never apply it directly; an authenticated admin must review and approve the proposal.
+- **write_github_file** — Publish a source-file change to GitHub as a **draft pull request** against the base branch (default branch when omitted). Use this when the user asks you to make a real code change: it commits on a fresh \`orahdex/devai-…\` branch, opens the PR, and returns the PR URL. It is the only GitHub write path you have — never claim a change is on the main branch or merged.
 
 ## Primary GitHub repository
 The main OrahDEX codebase lives at **github.com/aaurah/OrahDEX**. When the user asks about the codebase, repo structure, or "the code" without specifying a repo, default to \`aaurah/OrahDEX\`. Use \`list_github_repo\` first to explore, then \`read_github_file\` to read specific files.
@@ -168,7 +222,8 @@ The main OrahDEX codebase lives at **github.com/aaurah/OrahDEX**. When the user 
 - Always use **query_database** when asked about live data, table structure, or database state.
 - When proposing a code change: inspect the file first, then use write_project_file. The tool only creates a review proposal. Never claim the change is applied or published until an admin approves it.
   - Never read secrets, environment files, private keys, or hidden credential stores. Database access is read-only.
-  - Do not place real trades, broadcast blockchain transactions, commit directly to GitHub, execute shell commands, restart production, or publish changes. Admins review and apply proposals separately; the user controls publishing.
+  - Do not place real trades, broadcast blockchain transactions, push to a protected/base branch, merge pull requests, execute shell commands, restart production, or publish changes. GitHub changes go only through **write_github_file** (draft PR); workspace changes go only through **write_project_file** (admin review). The user controls merging and publishing.
+- Editing the web app: \`artifacts/bsv-dex/src\` is fully readable and editable — pages, components, hooks, styles, and the DevAI chat UI itself. Read the real file before changing it, then publish through **write_github_file** (or stage with **write_project_file** when the change should stay local for review). Never invent a component name or route you have not read.
 
 ## Self-upgrade capability
 You can propose changes to the OrahDEX source files. Your own source files are:
@@ -177,8 +232,8 @@ You can propose changes to the OrahDEX source files. Your own source files are:
 
 ### Proposing code changes:
 - Read the current file first, then use \`write_project_file\` to create a pending review proposal.
-- Never apply file changes, write to GitHub, run terminal commands, restart the live server, or publish code yourself.
-- An admin must inspect and approve a proposal in the DevAI settings page. Approval applies it to the workspace only; the user controls publishing.
+- Never apply file changes, run terminal commands, restart the live server, merge a pull request, or publish code yourself.
+- Two routes exist: \`write_github_file\` commits to a new branch and opens a draft pull request that an admin merges in GitHub; \`write_project_file\` stages a proposal an admin approves in the DevAI settings page. Approval applies it to the workspace only; the user controls merging and publishing.
 
 ## Workspace layout
 Root: ${WORKSPACE_ROOT}
@@ -454,6 +509,25 @@ const DEVAI_TOOLS: any[] = [
   {
     type: "function",
     function: {
+      name: "write_github_file",
+      description: `Publish a source-file change to GitHub as a draft pull request. Commits the content on a new orahdex/devai-* branch and opens a draft PR against the base branch — never writes to the base branch directly. Requires GitHub write access to be configured. Paths are relative to the repository root and limited to project source files.`,
+      parameters: {
+        type: "object",
+        properties: {
+          owner_repo: { type: "string", description: "owner/repo, e.g. 'aaurah/OrahDEX'" },
+          path: { type: "string", description: "Repository-relative file path, e.g. 'artifacts/bsv-dex/src/pages/DevAI.tsx'" },
+          content: { type: "string", description: "Full new file content" },
+          base: { type: "string", description: "Base branch to open the pull request against. Omit for the repository default branch." },
+          title: { type: "string", description: "Pull request title (up to 120 characters)" },
+          description: { type: "string", description: "What the change does and why, used as the commit and pull request body" },
+        },
+        required: ["owner_repo", "path", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "run_terminal",
       description: `Run a shell command in the OrahDEX workspace root (${WORKSPACE_ROOT}). Use to install packages (pnpm add), run builds, check git status, list processes, run scripts, or perform any system task. Commands run with a 60-second timeout.`,
       parameters: {
@@ -497,7 +571,10 @@ async function toolReadGithubFile(args: { owner_repo: string; path: string; bran
     if (Array.isArray(data)) return "This is a directory. Use list_github_repo to browse it.";
     return JSON.stringify(data).slice(0, 4000);
   } catch (err: any) {
-    return `Error reading GitHub file: ${err?.message ?? "GitHub connection unavailable."}`;
+    const hint = err?.status === 404
+      ? " — check owner/repo spelling, the branch ref and the path; private repositories need GITHUB_TOKEN."
+      : "";
+    return `Error reading GitHub file: ${err?.message ?? "GitHub connection unavailable."}${hint}`;
   }
 }
 
@@ -886,6 +963,87 @@ async function toolWriteProjectFile(args: { path: string; content: string; descr
   }
 }
 
+async function toolWriteGithubFile(args: {
+  owner_repo: string;
+  path: string;
+  content: string;
+  base?: string;
+  title?: string;
+  description?: string;
+}): Promise<string> {
+  if (typeof args.content !== "string" || !args.content.length) return "Content is required.";
+  if (args.content.length > 500_000) return "Content is too large: GitHub changes are limited to 500 KB per file.";
+  if (!isValidGitHubRepo(args.owner_repo)) return "Invalid GitHub repository. Use owner/repository.";
+  try { validateDevAiEditPath(args.path); }
+  catch (err: any) { return `Cannot publish this path: ${err?.message ?? "invalid path"}`; }
+  if (isCredentialLikeGitHubPath(args.path)) return "Access denied: credential-like files cannot be published.";
+  if (!devaiGitHubUsesToken) {
+    return "GitHub write access is not configured. An admin must set GITHUB_TOKEN (repo scope) on the API server before DevAI can open pull requests.";
+  }
+
+  const [owner, repo] = args.owner_repo.split("/");
+  const repoPath = `/repos/${encodeURIComponent(owner!)}/${encodeURIComponent(repo!)}`;
+  const base = (args.base ?? "").trim();
+  const title = (args.title ?? `DevAI: update ${args.path}`).trim().slice(0, 120);
+  const description = String(args.description ?? "").trim().slice(0, 4_000);
+  try {
+    const repository = await githubRequest<any>(repoPath);
+    if (repository.permissions?.push === false) {
+      return `The GitHub account behind GITHUB_TOKEN cannot push to ${args.owner_repo}. Grant write access or use another token.`;
+    }
+    const baseBranch = base || String(repository.default_branch ?? "main");
+    if (!/^[A-Za-z0-9_.\/-]+$/.test(baseBranch) || baseBranch.split("/").some((part) => part === "." || part === "..")) {
+      return "Invalid base branch name.";
+    }
+    const baseRef = await githubRequest<any>(
+      `${repoPath}/git/ref/heads/${encodeGitHubPath(baseBranch)}`,
+    );
+    const baseCommit = await githubRequest<any>(`${repoPath}/git/commits/${baseRef.object.sha}`);
+    const blob = await githubRequest<any>(`${repoPath}/git/blobs`, {
+      method: "POST",
+      body: { content: args.content, encoding: "utf-8" },
+    });
+    const tree = await githubRequest<any>(`${repoPath}/git/trees`, {
+      method: "POST",
+      body: {
+        base_tree: baseCommit.tree.sha,
+        tree: [{ path: args.path, mode: "100644", type: "blob", sha: blob.sha }],
+      },
+    });
+    const commit = await githubRequest<any>(`${repoPath}/git/commits`, {
+      method: "POST",
+      body: {
+        message: description ? `${title}\n\n${description}` : title,
+        tree: tree.sha,
+        parents: [baseRef.object.sha],
+      },
+    });
+    const headBranch = `orahdex/devai-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+    await githubRequest<any>(`${repoPath}/git/refs`, {
+      method: "POST",
+      body: { ref: `refs/heads/${headBranch}`, sha: commit.sha },
+    });
+    const pullRequest = await githubRequest<any>(`${repoPath}/pulls`, {
+      method: "POST",
+      body: {
+        title,
+        head: headBranch,
+        base: baseBranch,
+        body: description || `DevAI change to ${args.path}, opened as a draft pull request for review.`,
+        draft: true,
+      },
+    });
+    return [
+      `Opened draft pull request #${pullRequest.number}: ${pullRequest.html_url}`,
+      `Branch: ${headBranch} -> ${baseBranch}`,
+      `File: ${args.path} (${args.content.length.toLocaleString()} chars, commit ${String(commit.sha).slice(0, 7)})`,
+      "Nothing is on the base branch yet — an admin reviews and merges the pull request.",
+    ].join("\n");
+  } catch (err: any) {
+    return `GitHub publish failed: ${err?.message ?? "unknown error"}`;
+  }
+}
+
 // Allowlist of safe executable names for the DevAI terminal tool.
 // Only these binaries may be invoked — args are passed separately via execFile
 // so the shell never interprets them, preventing command injection.
@@ -1102,7 +1260,7 @@ async function executeTool(name: string, args: any, callId: string): Promise<Too
   switch (name) {
     case "read_github_file":   return { output: await toolReadGithubFile(args) };
     case "list_github_repo":   return { output: await toolListGithubRepo(args) };
-    case "write_github_file":  return { output: "Disabled: DevAI cannot commit directly to GitHub. Use an admin-reviewed source change proposal instead." };
+    case "write_github_file":  return { output: await toolWriteGithubFile(args) };
     case "execute_code":       return { output: toolExecuteCode(args) };
     case "fetch_url":          return { output: await toolFetchUrl(args) };
     case "create_file":        return {
@@ -1274,7 +1432,15 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 
     // ── Agentic tool-use loop (non-streaming) ──────────────────────────────────
     const MAX_TOOL_ROUNDS = 4;
-    const requestTools = selectExplicitlyRequestedTools(content, SAFE_DEVAI_TOOLS);
+    const requestedTools = selectExplicitlyRequestedTools(content, SAFE_DEVAI_TOOLS);
+    // Local CPU inference evaluates prompts at roughly 40 tokens/second, so the
+    // full tool catalog (~2k tokens) plus the system prompt blows the per-call
+    // budget before a plain question is even answered. Send only the schemas the
+    // user named when a local model serves the request; hosted models keep the
+    // full allowlisted catalog.
+    const requestTools = isDevaiOllamaEnabled()
+      ? requestedTools.filter(tool => content.toLowerCase().includes(tool.function.name.toLowerCase()))
+      : requestedTools;
     let toolRounds = 0;
     let finalTextFromLoop: string | null = null;
 
@@ -1285,8 +1451,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
         model: DEVAI_MODEL,
         max_tokens: DEVAI_MAX_RESPONSE_TOKENS,
         messages: chatMessages as any,
-        tools: requestTools,
-        tool_choice: "auto",
+        ...(requestTools.length ? { tools: requestTools, tool_choice: "auto" as const } : {}),
         stream: false,
         options: { num_ctx: DEVAI_CONTEXT_TOKENS },
       }, { signal: requestAbort.signal, timeout: 120_000 });
@@ -1674,6 +1839,7 @@ router.get("/admin/devai/github", requireAdminToken, async (_req, res) => {
     ]);
     res.json({
       connected: true,
+      auth: devaiGitHubUsesToken ? "token" : "replit",
       login: user.login,
       repos: repositories.map((repo) => ({
         name: repo.name,
