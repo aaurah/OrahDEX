@@ -14,7 +14,10 @@ import { logger } from "../lib/logger.js";
 import { getTopHlMarkets } from "../lib/hyperliquid.js";
 import { aiChatRateLimit } from "../middleware/aiChatRateLimit.js";
 import { BoundedMap } from "../lib/boundedMap.js";
-import { getApiOllamaStatus as getDevaiOllamaStatus } from "../lib/ollamaRuntime.js";
+import {
+  getApiOllamaStatus as getDevaiOllamaStatus,
+  getLocalOllamaProviderHealth,
+} from "../lib/ollamaRuntime.js";
 import { buildOraSystemPrompt } from "../lib/oraPrompt.js";
 
 const router = Router();
@@ -96,6 +99,7 @@ router.use(async (req, res, next) => {
   if (inference && oraLocalModelEnabled()) {
     const status = await getDevaiOllamaStatus(oraModel);
     if (!status.ready) {
+      tripCircuitBreaker(new Error(status.error ?? "Local OraAI model is not ready."));
       res.status(503).json({ error: status.error, code: status.code, model: oraModel, provider: status.provider, available: false });
       return;
     }
@@ -202,11 +206,14 @@ export function getAiProviderHealth() {
   // failures to report.  Keeping it at "starting" made /api/health return
   // "unknown" indefinitely on quiet deployments, so the public status page
   // never left "Checks Starting" until the first AI call happened.
-  const state = circuitOpen
+  const localState = getLocalOllamaProviderHealth();
+  const state = circuitOpen || aiProviderState === "degraded" || localState === "degraded"
     ? "degraded"
-    : aiProviderState === "starting"
-      ? "healthy"
-      : aiProviderState;
+    : localState === "starting"
+      ? "starting"
+      : aiProviderState === "starting"
+        ? "healthy"
+        : aiProviderState;
   return {
     name: "ai-provider",
     status: state,

@@ -125,7 +125,7 @@ export async function getDevaiOllamaStatus(model: string = devaiModel) {
     const error = !enabled
       ? "Local Ollama is disabled on this API runtime. Enable it only after checking VM capacity."
       : !modelAvailable
-        ? `Model ${model} is not installed on this API runtime. Open Admin → DevAI to install the selected tag or configure an installed tag.`
+        ? `Model ${model} is not installed on this API runtime yet. Automatic setup will retrieve it only after VM memory and disk checks pass.`
         : !enoughMemory
           ? `Local inference is blocked to protect the API: ${(requiredInferenceHeadroomBytes / 1024 ** 3).toFixed(1)} GiB free memory is required for ${model}, including API headroom.`
           : null;

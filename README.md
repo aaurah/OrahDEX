@@ -266,10 +266,12 @@ ollama pull qwen2.5-coder:1.5b # DevAI (coding model)
 | `ORA_AI_MODEL` | Tag Ora AI uses (default: same as `DEVAI_MODEL`) |
 
 Notes:
-- The tag must be pulled first; otherwise the AI endpoints answer `503 Model <tag> is not installed in local Ollama`.
+- The API starts Ollama on loopback and retrieves missing configured tags in the background. AI endpoints remain `503` until the exact model tag is installed and passes the memory check.
 - `/api/health` reports `ai-provider` as `healthy` once the local model is the provider.
 - If neither a hosted AI key nor a local model is configured, AI endpoints return `503 AI_PROVIDER_NOT_CONFIGURED`.
-- `start.mjs` autostarts `ollama serve` when `DEVAI_OLLAMA_ENABLED=true` and at least 6 GiB of memory headroom is free.
+- Ollama is started by the API runtime, not `start.mjs`. Downloads are held unless at least 6 GiB of measured memory headroom and 4 GiB of free model-disk space are available; memory uses the lower of cgroup headroom and host `MemAvailable`.
+- For Replit publishing, keep `DEVAI_OLLAMA_ENABLED`, `DEVAI_MODEL`, and `ORA_AI_MODEL` in shared runtime configuration. The selected tags are downloaded on a new VM when safe checks pass; model weights are not stored in Git.
+- The existing 2 GiB / 0.5-vCPU published machine cannot host these models safely. Use Publishing → Adjust settings → Machine configuration to choose an 8 GiB-or-larger machine, verify its displayed hourly rate, and confirm the API still has 6 GiB free after startup. More CPU improves local inference speed. Ollama avoids hosted-model API calls, but published VM compute is still charged.
 
 ---
 
