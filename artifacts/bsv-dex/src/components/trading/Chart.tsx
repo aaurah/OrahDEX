@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   createChart, ColorType, PriceScaleMode,
   CandlestickSeries, HistogramSeries, LineSeries, AreaSeries, BarSeries,
@@ -8,7 +9,7 @@ import type { Candle } from '@workspace/api-client-react';
 import { useThemeStore } from '@/store/useThemeStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import {
-  Maximize2, Minimize2, ZoomIn, ZoomOut, AlignCenter,
+  Maximize2, ZoomIn, ZoomOut, AlignCenter,
   Camera, ChevronDown, ChevronUp,
   TrendingUp, BarChart2, X,
 } from 'lucide-react';
@@ -347,6 +348,8 @@ function OrahChart({
   const chartRef  = useRef<ReturnType<typeof createChart> | null>(null);
   const subChartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
+  const fullscreenSlotRef = useRef<HTMLDivElement>(null);
+  const [fullscreenHost, setFullscreenHost] = useState<HTMLDivElement | null>(null);
   /* Always-current candles ref so crosshair callback never goes stale */
   const candlesRef = useRef<Candle[]>([]);
   /* Always-current display candles ref for live last-bar updates */
@@ -383,6 +386,7 @@ function OrahChart({
   const candleRequestVersionRef = useRef(0);
 
   const { theme } = useThemeStore();
+  const fullscreenBg = getChartColors(theme).bg;
   const { showTradingViewWatermark } = useSettingsStore();
   const [candles, setCandles]     = useState<Candle[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -435,15 +439,56 @@ function OrahChart({
     };
   }, [fullscreen]);
   useEffect(() => {
-    const syncFullscreenState = () => {
-      const isChartFullscreen = document.fullscreenElement === wrapRef.current
-        || (fullscreen && document.fullscreenElement === document.documentElement);
-      if (isChartFullscreen) setFullscreen(true);
-      else if (fullscreen) setFullscreen(false);
+    const slot = fullscreenSlotRef.current;
+    if (!slot) return;
+    const host = document.createElement('div');
+    Object.assign(host.style, {
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+      minWidth: '0',
+      minHeight: '0',
+      overflow: 'hidden',
+    });
+    slot.appendChild(host);
+    setFullscreenHost(host);
+    return () => {
+      host.remove();
     };
-    document.addEventListener('fullscreenchange', syncFullscreenState);
-    return () => document.removeEventListener('fullscreenchange', syncFullscreenState);
-  }, [fullscreen]);
+  }, []);
+  useEffect(() => {
+    const host = fullscreenHost;
+    const slot = fullscreenSlotRef.current;
+    if (!host || !slot) return;
+    if (fullscreen) {
+      Object.assign(host.style, {
+        position: 'fixed',
+        inset: '0',
+        zIndex: '2147483000',
+        width: '100vw',
+        height: '100vh',
+        minWidth: '0',
+        minHeight: '0',
+        overflow: 'hidden',
+        backgroundColor: fullscreenBg,
+      });
+      host.style.height = '100dvh';
+      document.body.appendChild(host);
+    } else {
+      Object.assign(host.style, {
+        position: 'relative',
+        inset: 'auto',
+        zIndex: 'auto',
+        width: '100%',
+        height: '100%',
+        minWidth: '0',
+        minHeight: '0',
+        overflow: 'hidden',
+        backgroundColor: 'transparent',
+      });
+      slot.appendChild(host);
+    }
+  }, [fullscreenHost, fullscreen, fullscreenBg]);
 
   /* parsed symbol */
   const parts = useMemo(() => {
@@ -822,7 +867,7 @@ function OrahChart({
     chartRef.current = chart;
     setChartReady(true);
     return () => { chart.remove(); chartRef.current = null; setChartReady(false); };
-  }, [candles.length > 0]);
+  }, [candles.length > 0, fullscreenHost]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -880,7 +925,7 @@ function OrahChart({
       if (subChartRef.current === chart) subChartRef.current = null;
       setSubReady(false);
     };
-  }, [subInd !== 'none', candles.length > 0, syncTimeScaleRange]);
+  }, [subInd !== 'none', candles.length > 0, syncTimeScaleRange, fullscreenHost]);
 
   /* ── Destroy sub chart when subInd = none ───────────────────────────── */
   useEffect(() => {
@@ -1209,73 +1254,17 @@ function OrahChart({
     return next;
   });
 
-  const exitFullscreen = async () => {
-    const activeFullscreenElement = document.fullscreenElement;
-    if (
-      activeFullscreenElement &&
-      (activeFullscreenElement === wrapRef.current || activeFullscreenElement === document.documentElement) &&
-      document.exitFullscreen
-    ) {
-      try {
-        await document.exitFullscreen();
-      } catch {
-        // Keep the CSS fallback available if the browser refuses the exit request.
-      }
-    }
-    setFullscreen(false);
-  };
+  const toggleFullscreen = () => setFullscreen((expanded) => !expanded);
 
-  const toggleFullscreen = async () => {
-    const chartElement = wrapRef.current;
-    if (!chartElement) return;
-    if (fullscreen) {
-      await exitFullscreen();
-      return;
-    }
-
-    if (typeof chartElement.requestFullscreen === "function") {
-      try {
-        await chartElement.requestFullscreen();
-        setFullscreen(true);
-        return;
-      } catch {
-        // Some browsers only allow the document root to enter fullscreen.
-      }
-    }
-    if (typeof document.documentElement.requestFullscreen === "function") {
-      try {
-        await document.documentElement.requestFullscreen();
-        setFullscreen(true);
-        return;
-      } catch {
-        // Keep the CSS fallback for browsers that deny fullscreen requests.
-      }
-    }
-    setFullscreen(true);
-  };
-
-  return (
+  const chartMarkup = (
     <div
       ref={wrapRef}
-      className={`relative flex flex-col ${fullscreen ? 'fixed inset-0 z-[9999]' : 'h-full'}`}
+      className="relative flex h-full w-full min-h-0 min-w-0 flex-col"
       style={{
         backgroundColor: col.bg,
         color: col.text,
-        ...(fullscreen ? { width: "100vw", height: "100dvh", minHeight: "100dvh" } : {}),
       }}
     >
-      {fullscreen && (
-        <button
-          onClick={() => void exitFullscreen()}
-          title="Close expanded chart"
-          aria-label="Close expanded chart"
-          className="absolute right-2 z-[10001] rounded-full border border-white/15 bg-black/75 p-2 text-white shadow-lg backdrop-blur-sm"
-          style={{ top: "calc(env(safe-area-inset-top, 0px) + 8px)" }}
-        >
-          <X className="h-4 w-4" />
-        </button>
-      )}
-
       {/* ── TOP STATS BAR ── */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b shrink-0 overflow-x-auto scrollbar-hide" style={{ borderColor: col.grid }}>
         <span className="text-xs font-black text-green-400 shrink-0">{symbol.replace(/-PERP/i, '')}</span>
@@ -1428,15 +1417,20 @@ function OrahChart({
         <button onClick={screenshot} title="Save chart image" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><Camera className="w-3.5 h-3.5" /></button>
 
         {/* Fullscreen */}
-        <button
-          onClick={() => void toggleFullscreen()}
-          title={fullscreen ? "Exit fullscreen" : "Expand chart fullscreen"}
-          aria-label={fullscreen ? "Exit fullscreen chart" : "Expand chart fullscreen"}
-          data-testid="button-chart-fullscreen"
-          className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+        <div
+          className="sticky right-0 z-20 ml-auto shrink-0 pl-1"
+          style={{ backgroundColor: col.bg, borderLeft: `1px solid ${col.grid}` }}
         >
-          {fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-        </button>
+          <button
+            onClick={toggleFullscreen}
+            title={fullscreen ? "Exit fullscreen" : "Expand chart fullscreen"}
+            aria-label={fullscreen ? "Exit fullscreen chart" : "Expand chart fullscreen"}
+            data-testid="button-chart-fullscreen"
+            className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+          >
+            {fullscreen ? <X className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
 
       {/* ── INDICATOR PANEL ── */}
@@ -1535,6 +1529,17 @@ function OrahChart({
         </div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      <div
+        ref={fullscreenSlotRef}
+        className={fullscreen ? "hidden" : "h-full w-full min-h-0 min-w-0"}
+        aria-hidden={fullscreen}
+      />
+      {fullscreenHost ? createPortal(chartMarkup, fullscreenHost) : null}
+    </>
   );
 }
 

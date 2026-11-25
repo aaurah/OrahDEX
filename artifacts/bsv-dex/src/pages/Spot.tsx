@@ -309,11 +309,14 @@ export function SpotTrading() {
   const noStoreRequest = { cache: "no-store" as const };
   const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol), { request: noStoreRequest });
   const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: candleInterval as any, limit: 300 }, { request: noStoreRequest });
-  const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, {
+  const { data: apiOrderBook, refetch: refetchOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, {
     request: noStoreRequest,
     query: { refetchInterval: 4000, staleTime: 2000 } as any,
   });
-  const { data: apiTrades }    = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 }, { request: noStoreRequest });
+  const { data: apiTrades, refetch: refetchTrades } = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 }, {
+    request: noStoreRequest,
+    query: { refetchInterval: 2000, staleTime: 1000 } as any,
+  });
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || '' },
     { query: { enabled: !!address, refetchInterval: 5000 } as any }
@@ -551,8 +554,9 @@ export function SpotTrading() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress: ownerWallet, signature, nonce, expiry }),
       });
-      // 404 = already cancelled — treat as success.
-      if (res.status === 404) return { id: orderId, status: "cancelled" };
+      if (res.status === 404) {
+        throw new Error("This order is not owned by the selected wallet. Refresh your orders and retry.");
+      }
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? "Failed to cancel order");
       return res.json();
     },
@@ -583,11 +587,11 @@ export function SpotTrading() {
     },
     onSettled: (_d, _e, vars) => {
       setCancellingIds(prev => { const n = new Set(prev); n.delete(vars.orderId); return n; });
-      // Invalidate in the background — the optimistic update already shows the
-      // correct state; a hard refetch would cause an unnecessary network round-trip
-      // and a visible list flicker. The 5-second polling interval will sync normally.
+      // Reconcile order ownership and refresh the live market views.
       queryClient.invalidateQueries({ queryKey: getGetOrdersQueryKey({ walletAddress: address || "" }), refetchType: "none" });
       if (altAddress) queryClient.invalidateQueries({ queryKey: getGetOrdersQueryKey({ walletAddress: altAddress }), refetchType: "none" });
+      void refetchOrderBook();
+      void refetchTrades();
     },
   });
 
@@ -605,7 +609,11 @@ export function SpotTrading() {
     });
   }, [apiOrders, altOrders]);
   const openOrders   = allOrders.filter((o: any) => o.status === "open");
-  const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
+  const filledOrders = allOrders.filter((o: any) =>
+    o.status === "filled" ||
+    o.status === "cancelled" ||
+    (Number(o.filledQuantity ?? 0) > 0 && !String(o.txid ?? "").startsWith("htlc-pending-"))
+  );
 
   // Market list for pair selector — base is the full mock catalogue (all chains/quotes)
   // then API data replaces any matching pair with live data.
@@ -1230,8 +1238,8 @@ export function SpotTrading() {
                     </thead>
                     <tbody className="divide-y divide-border/50">
                       {rows.map((o: any, i: number) => {
-                        const qty = Number(o.quantity);
-                        const total = Number(o.price ?? 0) * qty;
+                        const qty = Number(o.filledQuantity ?? o.quantity);
+                        const total = Number(o.total ?? (Number(o.price ?? 0) * qty));
                         return (
                           <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
                             <td className="px-3 py-1.5 text-muted-foreground">{formatDateTime(o.updatedAt ?? o.createdAt)}</td>
@@ -1278,7 +1286,11 @@ export function SpotTrading() {
                 const myTrades = (hideOtherPairs
                   ? filledOrders.filter((o: any) => o.symbol === symbol)
                   : filledOrders
-                ).filter((o: any) => o.status === "filled");
+                ).filter((o: any) =>
+                  Number(o.filledQuantity ?? 0) > 0 &&
+                  o.status !== "cancelled" &&
+                  !String(o.txid ?? "").startsWith("htlc-pending-")
+                );
                 return myTrades.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
                     {!address ? "Log in or connect wallet to view trade history." : "No filled trades yet. Place an order to get started."}
@@ -1299,9 +1311,9 @@ export function SpotTrading() {
                     </thead>
                     <tbody className="divide-y divide-border/50">
                       {myTrades.slice(0, 50).map((o: any, i: number) => {
-                        const qty   = Number(o.quantity);
+                        const qty   = Number(o.filledQuantity ?? o.quantity);
                         const px    = Number(o.price ?? 0);
-                        const total = px * qty;
+                        const total = Number(o.total ?? (px * qty));
                         return (
                           <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
                             <td className="px-3 py-1.5 text-muted-foreground">{formatDateTime(o.updatedAt ?? o.createdAt)}</td>
@@ -1547,7 +1559,12 @@ export function SpotTrading() {
                   symbol={symbol}
                   currentPrice={ticker.lastPrice}
                   externalFill={orderBookFill}
-                  onOrderPlaced={refetchOrders}
+                  onOrderPlaced={() => {
+                    void refetchOrders();
+                    void refetchAltOrders();
+                    void refetchTrades();
+                    void refetchOrderBook();
+                  }}
                   onTradeFlash={handleTradeFlash}
                   externalSwapMode={isExternalSwapMode}
                   externalSwapRate={bridgeRate ? Number(bridgeRate.rate) : 0}

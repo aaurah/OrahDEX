@@ -538,10 +538,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           expiry,
         }),
       });
-      // 404 means the order is already cancelled (desired state) — treat as success.
-      // This handles double-tap, stale cache, and races gracefully.
-      if (res.status === 404) return { id: orderId, status: "cancelled" };
-      if (!res.ok) throw new Error("Failed to cancel");
+      if (res.status === 404) {
+        throw new Error("This order is not owned by the selected wallet. Refresh your orders and retry.");
+      }
+      if (!res.ok) {
+        const details = await res.json().catch(() => ({}));
+        throw new Error(String(details?.error ?? "Failed to cancel order"));
+      }
       return res.json();
     },
     onMutate: async ({ orderId }) => {
@@ -583,6 +586,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
       queryClient.invalidateQueries({ queryKey: ["orderbook", symbol] });
+      queryClient.invalidateQueries({ queryKey: ["trades", symbol] });
       if (usesApiBalance && address) {
         void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
@@ -1108,13 +1112,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     staleTime: 240_000,
   });
 
-  const { data: orderBook } = useQuery({
+  const { data: orderBook, dataUpdatedAt: orderBookUpdatedAt } = useQuery({
     queryKey: ["orderbook", symbol],
     queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/orderbook`).then(r => r.json()),
     refetchInterval: 5000,
   });
 
-  const { data: recentTrades = [] } = useQuery({
+  const { data: recentTrades = [], dataUpdatedAt: recentTradesUpdatedAt } = useQuery({
     queryKey: ["trades", symbol],
     queryFn: async () => {
       const r = await fetch(`${BASE}/api/markets/${encodedSymbol}/trades`);
@@ -1177,12 +1181,46 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   // Fallback price for candles/orderbook when ticker hasn't loaded yet
   const fallbackPrice = lastPrice > 0 ? lastPrice : 0;
-  const chartCandles = Array.isArray(candles) ? candles : [];
+  const candleRows = Array.isArray(candles) ? candles : [];
   // Ensure order book always shows data
   const rawOB = orderBook as any;
   // Bridge pairs cannot synthesize fillable depth, but confirmed wallet-escrow
   // orders returned by the API are real and must remain visible.
   const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
+  const bestBid = Number(rawOB?.bids?.[0]?.[0] ?? 0);
+  const bestAsk = Number(rawOB?.asks?.[0]?.[0] ?? 0);
+  const bookIsHealthy =
+    hasRealOB &&
+    bestBid > 0 &&
+    bestAsk > 0 &&
+    bestBid <= bestAsk &&
+    Date.now() - orderBookUpdatedAt < 15_000;
+  const latestOrderbookTradePrice = bookIsHealthy && Date.now() - recentTradesUpdatedAt < 15_000
+    ? (Array.isArray(recentTrades) ? recentTrades : [])
+        .filter((trade: any) => {
+          const price = Number(trade?.price);
+          const txid = String(trade?.txid ?? "").toLowerCase();
+          return Number.isFinite(price) && price > 0 && !txid.startsWith("htlc-pending-");
+        })
+        .sort((a: any, b: any) => Number(b?.timestamp ?? 0) - Number(a?.timestamp ?? 0))[0]
+        ?.price ?? 0
+    : 0;
+  const chartPrice = latestOrderbookTradePrice > 0 ? Number(latestOrderbookTradePrice) : fallbackPrice;
+  const chartCandles = useMemo(() => {
+    if (!candleRows.length || !Number.isFinite(chartPrice) || chartPrice <= 0) return candleRows;
+    const last = candleRows[candleRows.length - 1];
+    const high = Number(last.high);
+    const low = Number(last.low);
+    return [
+      ...candleRows.slice(0, -1),
+      {
+        ...last,
+        close: chartPrice,
+        high: Math.max(Number.isFinite(high) && high > 0 ? high : chartPrice, chartPrice),
+        low: Math.min(Number.isFinite(low) && low > 0 ? low : chartPrice, chartPrice),
+      },
+    ];
+  }, [candleRows, chartPrice]);
   // Memoized so the mock order book (which uses Math.random) doesn't regenerate on every render
   const effectiveOrderBook = useMemo(
     () => hasRealOB ? orderBook : { bids: [], asks: [] },
@@ -2121,6 +2159,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
                             <span>Price: <span className="text-foreground font-mono">{o.price ? fmt(Number(o.price)) : "—"}</span></span>
                             <span>Qty: <span className="text-foreground font-mono">{Number(o.quantity).toFixed(4)}</span></span>
+                            {Number(o.filledQuantity ?? 0) > 0 && (
+                              <span>Filled: <span className="text-primary font-mono">{Number(o.filledQuantity).toFixed(4)}</span></span>
+                            )}
                             {o.stopPrice && (
                               <span>Stop: <span className="text-amber-400 font-mono">{fmt(Number(o.stopPrice))}</span></span>
                             )}

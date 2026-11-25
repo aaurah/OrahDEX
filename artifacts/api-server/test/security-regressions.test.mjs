@@ -65,6 +65,28 @@ test("orders route enforces external auth for recognized wallet formats", async 
   assert.match(src, /orders_wallet_nonce_uidx/);
 });
 
+test("order cancellation is wallet-signed and bound to the exact order", async () => {
+  const src = await read(ordersPath);
+
+  assert.match(src, /sameWalletAddress\(existingOrder\.walletAddress, String\(body\.walletAddress\)\)/);
+  assert.match(src, /buildOrderActionAuthMessage\(\{/);
+  assert.match(src, /action: "cancel"/);
+  assert.match(src, /verifyWalletMessageSignature\(/);
+  assert.match(src, /CANCEL_AUTH_REPLAYED/);
+  assert.match(src, /verifyEvmOrderbookCancelTx\(/);
+});
+
+test("market trade history uses canonical fills and excludes pending HTLCs", async () => {
+  const orders = await read(ordersPath);
+  const markets = await read(path.join(__dirname, "..", "src", "routes", "markets.ts"));
+
+  assert.match(orders, /db\.insert\(tradesTable\)\.values\(\{/);
+  assert.match(orders, /settlementIsPending/);
+  assert.match(markets, /\.from\(tradesTable\)/);
+  assert.match(markets, /NOT LIKE 'htlc-pending-%'/);
+  assert.match(markets, /inArray\(ordersTable\.status, \["open", "filled"\]\)/);
+});
+
 test("orders schema enforces wallet+nonce uniqueness", async () => {
   const src = await read(ordersSchemaPath);
 

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, pool, withDbRetry } from "@workspace/db";
-import { marketsTable, ordersTable } from "@workspace/db/schema";
+import { marketsTable, ordersTable, tradesTable } from "@workspace/db/schema";
 import { eq, and, desc, inArray, ne, or, sql } from "drizzle-orm";
 import { FALLBACK_PRICES, fetchGatePairPrices, fetchMarketUsdPrices } from "../lib/priceUpdater.js";
 import { fetchKeyPrices } from "./dex.js";
@@ -32,16 +32,28 @@ class TtlCache<T> {
     return e.data;
   }
   set(key: string, data: T) { this.store.set(key, { data, ts: Date.now() }); }
+  delete(key: string) { this.store.delete(key); }
 }
 
 const marketsCache    = new TtlCache<any[]>(60_000, 20);   // 60 s — matches price-updater interval
 const orderbookCache  = new TtlCache<any>(2_000, 200);     //  2 s
 const tradesCache     = new TtlCache<any[]>(5_000, 200);   //  5 s
 const tickerCache     = new TtlCache<any>(5_000, 20);      //  5 s
+const orderbookTradeCache = new TtlCache<{ healthy: boolean; price: number; timestamp: number }>(5_000, 200);
 const swapReferenceCache = new TtlCache<{
   lastPrice: number; high24h: number; low24h: number;
   priceChange24h: number; priceChangePercent24h: number;
 }>(30_000, 100);
+
+/** Clear market views immediately after an order lifecycle change. */
+export function invalidateMarketOrderCaches(rawSymbol: string): void {
+  const symbol = rawSymbol.includes("/") ? rawSymbol : rawSymbol.replace("-", "/");
+  orderbookCache.delete(`${symbol}:20`);
+  orderbookCache.delete(`${symbol}:50`);
+  tradesCache.delete(symbol);
+  tickerCache.delete(symbol);
+  orderbookTradeCache.delete(symbol);
+}
 
 // ETag store for markets — maps cacheKey → weak ETag string
 const marketsETag = new BoundedMap<string, string>(100);
@@ -760,6 +772,82 @@ async function resolveOrderbookPrice(symbol: string): Promise<number> {
   }
 }
 
+async function resolveHealthyOrderbookLastTrade(symbol: string): Promise<{
+  healthy: boolean;
+  price: number;
+  timestamp: number;
+}> {
+  const cached = orderbookTradeCache.get(symbol);
+  if (cached) return cached;
+
+  try {
+    const book = orderbookCache.get(`${symbol}:20`) ?? await fetchVerifiedEscrowOrderbook(symbol, 20);
+    const bestBid = Number(book.bids?.[0]?.[0] ?? 0);
+    const bestAsk = Number(book.asks?.[0]?.[0] ?? 0);
+    const healthy = Number.isFinite(bestBid) && bestBid > 0 &&
+      Number.isFinite(bestAsk) && bestAsk > 0 && bestBid <= bestAsk;
+
+    if (!healthy) {
+      const result = { healthy: false, price: 0, timestamp: 0 };
+      orderbookTradeCache.set(symbol, result);
+      return result;
+    }
+
+    // A filled limit order carries its execution price. Ignore synthetic
+    // liquidity and pending HTLC placeholders, which are not completed trades.
+    const tradeRowsQuery = db.select({
+        price: ordersTable.price,
+        updatedAt: ordersTable.updatedAt,
+      })
+        .from(ordersTable)
+        .where(and(
+          eq(ordersTable.symbol, symbol),
+          inArray(ordersTable.status, ["open", "filled"]),
+          eq(ordersTable.type, "limit"),
+          sql`${ordersTable.filledQuantity} > 0`,
+          sql`${ordersTable.txid} IS NOT NULL AND ${ordersTable.txid} NOT LIKE 'htlc-pending-%'`,
+          ne(ordersTable.walletAddress, BOT_ADDRESS),
+        ))
+        .orderBy(desc(ordersTable.updatedAt))
+        .limit(20);
+    const rows = await Promise.race([
+      tradeRowsQuery,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("last orderbook trade lookup timed out")), 3_000)
+      ),
+    ]) as Awaited<typeof tradeRowsQuery>;
+
+    const latestTrade = rows.find((row: any) => Number(row.price) > 0);
+    const result = {
+      healthy: true,
+      price: Number(latestTrade?.price ?? 0),
+      timestamp: latestTrade?.updatedAt instanceof Date ? latestTrade.updatedAt.getTime() : 0,
+    };
+    orderbookTradeCache.set(symbol, result);
+    return result;
+  } catch (error) {
+    logger.debug({ err: error, symbol }, "Healthy orderbook last trade unavailable");
+    const result = { healthy: false, price: 0, timestamp: 0 };
+    orderbookTradeCache.set(symbol, result);
+    return result;
+  }
+}
+
+function pinLatestCandlePrice(candles: any[], price: number): any[] {
+  if (!candles.length || !Number.isFinite(price) || price <= 0) return candles;
+  const result = candles.map(candle => ({ ...candle }));
+  const last = result[result.length - 1];
+  const high = Number(last.high);
+  const low = Number(last.low);
+  result[result.length - 1] = {
+    ...last,
+    close: price,
+    high: Math.max(Number.isFinite(high) && high > 0 ? high : price, price),
+    low: Math.min(Number.isFinite(low) && low > 0 ? low : price, price),
+  };
+  return result;
+}
+
 router.get("/markets/:symbol/ticker", async (req, res) => {
   try {
     const symbol = normSymbol(req.params.symbol);
@@ -818,15 +906,14 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
       sym           = market.symbol;
     }
 
-    const orderbookPrice = await resolveOrderbookPrice(sym);
-    if (orderbookPrice > 0) {
-      lastPrice = orderbookPrice;
+    const orderbookTrade = await resolveHealthyOrderbookLastTrade(sym);
+    if (orderbookTrade.healthy && orderbookTrade.price > 0) {
+      lastPrice = orderbookTrade.price;
       usesOrderbookPrice = true;
-      high24h = lastPrice;
-      low24h = lastPrice;
-      volume24h = 0;
-      priceChange24h = 0;
-      pctChange = 0;
+      if (!market) {
+        high24h = lastPrice;
+        low24h = lastPrice;
+      }
     } else if (market?.type === "simpleswap" || market?.type === "letsexchange") {
       // Use the same current reference series as the chart for conversion-only
       // pairs; never pin historical candles to a separate swap quote.
@@ -890,9 +977,10 @@ router.get("/markets/:symbol/history", async (req, res) => {
     } catch (_) {
       price = await resolveLiveCrossPrice(symbol, 0);
     }
-    if (!(price > 0)) price = await resolveOrderbookPrice(symbol);
-
+    const orderbookTrade = await resolveHealthyOrderbookLastTrade(symbol);
+    if (orderbookTrade.healthy && orderbookTrade.price > 0) price = orderbookTrade.price;
     let candles = await fetchFullHistoryCandles(symbol, price);
+    candles = pinLatestCandlePrice(candles, price);
 
     /* Resample daily candles into weekly/monthly for long-range chart views */
     if (resample === "1w" || resample === "1M") {
@@ -934,12 +1022,19 @@ router.get("/markets/:symbol/candles", async (req, res) => {
       sym   = market.symbol;
     }
 
+    const orderbookTrade = await resolveHealthyOrderbookLastTrade(sym);
+    const chartPrice = orderbookTrade.healthy && orderbookTrade.price > 0
+      ? orderbookTrade.price
+      : price;
     let candleSource = "unknown";
-    const candles = await fetchRealCandles(sym, price, interval, limit, (source) => {
+    const candles = await fetchRealCandles(sym, chartPrice, interval, limit, (source) => {
       candleSource = source;
     });
-    res.setHeader("X-Candle-Source", candleSource);
-    res.json(candles);
+    res.setHeader(
+      "X-Candle-Source",
+      orderbookTrade.healthy && orderbookTrade.price > 0 ? "orderbook-last-trade" : candleSource,
+    );
+    res.json(pinLatestCandlePrice(candles, chartPrice));
   } catch (err) {
     req.log.error({ err }, "Failed to get candles");
     res.status(500).json({ error: "Internal server error" });
@@ -1041,38 +1136,69 @@ router.get("/markets/:symbol/trades", async (req, res) => {
 
     const lastPrice = parseFloat(market.lastPrice);
 
-    // Fetch real filled orders for this symbol — with a 3s wall-clock limit
+    // Orderbook matching writes one canonical row per completed fill. Read that
+    // source first so partial fills and buyer/seller sides are not duplicated.
     let trades: any[];
     try {
-      const filledOrdersQuery = db
+      const recordedTradesQuery = db
         .select()
-        .from(ordersTable)
-        .where(and(eq(ordersTable.symbol, symbol), eq(ordersTable.status, "filled")))
-        .orderBy(desc(ordersTable.updatedAt))
+        .from(tradesTable)
+        .where(eq(tradesTable.symbol, symbol))
+        .orderBy(desc(tradesTable.timestamp))
         .limit(limit);
 
-      const filledOrders = await Promise.race([
-        filledOrdersQuery,
+      const recordedTrades = await Promise.race([
+        recordedTradesQuery,
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("trades db timeout")), 3000)
         ),
-      ]) as Awaited<typeof filledOrdersQuery>;
+      ]) as Awaited<typeof recordedTradesQuery>;
 
-      if (filledOrders.length > 0) {
-        // Use real trades, enriched with display fields
-        trades = filledOrders.map(o => ({
-          id:        o.id,
-          symbol:    o.symbol,
-          side:      o.side,
-          price:     parseFloat(o.price ?? market.lastPrice),
-          quantity:  parseFloat(o.quantity),
-          total:     parseFloat(o.total ?? "0"),
-          txid:      o.txid,
-          timestamp: o.updatedAt?.getTime() ?? Date.now(),
-          isBuyer:   o.side === "buy",
+      if (recordedTrades.length > 0) {
+        trades = recordedTrades.map((trade) => ({
+          id:        trade.id,
+          symbol:    trade.symbol,
+          side:      trade.side,
+          price:     parseFloat(trade.price),
+          quantity:  parseFloat(trade.quantity),
+          total:     parseFloat(trade.total),
+          txid:      trade.txid,
+          timestamp: trade.timestamp?.getTime() ?? Date.now(),
+          isBuyer:   trade.side === "buy",
         }));
       } else {
-        trades = [];
+        // Legacy compatibility for fills recorded before canonical trade rows
+        // existed. Include partial fills, but never expose an HTLC placeholder
+        // as a completed market trade.
+        const legacyFillsQuery = db
+          .select()
+          .from(ordersTable)
+          .where(and(
+            eq(ordersTable.symbol, symbol),
+            inArray(ordersTable.status, ["open", "filled"]),
+            sql`${ordersTable.filledQuantity} > 0`,
+            sql`(${ordersTable.txid} IS NULL OR ${ordersTable.txid} NOT LIKE 'htlc-pending-%')`,
+            ne(ordersTable.walletAddress, BOT_ADDRESS),
+          ))
+          .orderBy(desc(ordersTable.updatedAt))
+          .limit(limit);
+        const legacyFills = await Promise.race([
+          legacyFillsQuery,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("legacy trades db timeout")), 3000)
+          ),
+        ]) as Awaited<typeof legacyFillsQuery>;
+        trades = legacyFills.map((order) => ({
+          id:        order.id,
+          symbol:    order.symbol,
+          side:      order.side,
+          price:     parseFloat(order.price ?? market.lastPrice),
+          quantity:  parseFloat(order.filledQuantity ?? "0"),
+          total:     parseFloat(order.total ?? "0"),
+          txid:      order.txid,
+          timestamp: order.updatedAt?.getTime() ?? Date.now(),
+          isBuyer:   order.side === "buy",
+        }));
       }
     } catch {
       res.status(503).json({ error: "Trade history temporarily unavailable" });

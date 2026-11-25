@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
-import { ordersTable, marketsTable } from "@workspace/db/schema";
+import { ordersTable, marketsTable, tradesTable } from "@workspace/db/schema";
 import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { recoverMessageAddress } from "viem";
@@ -30,10 +30,12 @@ import {
 } from "../lib/evmOrderbookEscrow.js";
 import {
   buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
+  buildOrderActionAuthMessage, verifyWalletMessageSignature,
   verifyBsvWithdrawSignature, verifySolWithdrawSignature,
   issueBsvOrderChallenge, verifyBsvOrderSignature,
   issueSolOrderChallenge, verifySolOrderSignature,
 } from "../lib/walletAuth.js";
+import { invalidateMarketOrderCaches } from "./markets.js";
 
 const router: IRouter = Router();
 
@@ -48,12 +50,19 @@ const _readChallenges = new BoundedMap<string, { nonce: string; expiresAt: numbe
 const READ_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const evmRecoveryLastAttempt = new BoundedMap<string, number>(1_000);
 const EVM_RECOVERY_COOLDOWN_MS = 15_000;
+const cancelActionNonces = new BoundedMap<string, number>(10_000);
 
 // ── Wallet-format helpers ─────────────────────────────────────────────────────
 
 /** Detect EVM addresses (0x + 40 hex chars). */
 function detectIsEvmAddress(addr: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(addr);
+}
+
+function sameWalletAddress(left: string, right: string): boolean {
+  return detectIsEvmAddress(left) && detectIsEvmAddress(right)
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
 }
 
 /** Detect BSV / legacy Bitcoin / Bitcoin Cash addresses (base58 P2PKH / P2SH). */
@@ -241,7 +250,9 @@ router.get("/orders", async (req, res) => {
     const status = rawStatus;
 
     // Push all filters to the DB — never fetch all rows and slice in memory
-    const conditions = [eq(ordersTable.walletAddress, walletAddress)];
+    const conditions = [detectIsEvmAddress(walletAddress)
+      ? sql`LOWER(${ordersTable.walletAddress}) = LOWER(${walletAddress})`
+      : eq(ordersTable.walletAddress, walletAddress)];
     if (symbol) conditions.push(eq(ordersTable.symbol, symbol));
     if (status) conditions.push(eq(ordersTable.status, status));
 
@@ -903,6 +914,7 @@ router.post("/orders", async (req, res) => {
         const isBot = match.walletAddress === BOT_ADDRESS;
 
         const tradeId       = crypto.randomUUID();
+        let historyFeeRaw: bigint | null = null;
         const buyerNetwork  = side === "buy" ? networkType : (match.networkType ?? "evm");
         const sellerNetwork = side === "sell" ? networkType : (match.networkType ?? "evm");
         const buyerAddress  = side === "buy" ? body.walletAddress : match.walletAddress;
@@ -1040,7 +1052,8 @@ router.post("/orders", async (req, res) => {
               baseAmount: fillQtyStr,
               grossQuoteAmount: fillValueStr,
             });
-            totalEvmOrderbookFeeRaw += parseUnits(settled.feeAmount, LEDGER_DECIMALS);
+            historyFeeRaw = parseUnits(settled.feeAmount, LEDGER_DECIMALS);
+            totalEvmOrderbookFeeRaw += historyFeeRaw;
             fillResult = {
               txid: settled.txHash,
               wasRealBroadcast: true,
@@ -1487,6 +1500,40 @@ router.post("/orders", async (req, res) => {
             req.log.error({ err: evmErr?.message, tradeId }, "orders: EVM HTLC session creation failed");
           }
         }
+
+        // Persist one canonical row per actually settled fill. Keep pending
+        // wallet-to-wallet HTLC matches out until both assets are delivered.
+        const fillTradeTxid = escrowSettled ? (settlementTxid ?? fillResult.txid) : fillResult.txid;
+        const settlementIsPending =
+          (fillResult.settlementType === "evm_htlc" && !escrowSettled) ||
+          fillTradeTxid.startsWith("htlc-pending-");
+        if (!settlementIsPending) {
+          try {
+            const feeRaw = historyFeeRaw ?? mulDiv(
+              fillValueRaw,
+              parseUnits(feeRate.toString(), LEDGER_DECIMALS),
+              pow10(LEDGER_DECIMALS),
+              "ceil",
+            );
+            await db.insert(tradesTable).values({
+              id: tradeId,
+              symbol,
+              side,
+              price: fillPriceStr,
+              quantity: fillQtyStr,
+              total: fillValueStr,
+              fee: formatUnits(feeRaw, LEDGER_DECIMALS),
+              feeAsset: quoteAsset,
+              walletAddress: null,
+              txid: fillTradeTxid,
+              timestamp: new Date(),
+            }).onConflictDoNothing();
+          } catch (tradeRecordErr) {
+            // Settlement already succeeded. Do not turn a completed wallet/ledger
+            // transfer into an HTTP failure; retain the failure in server logs.
+            req.log.error({ err: tradeRecordErr, tradeId, symbol }, "Could not persist settled orderbook fill in market trade history");
+          }
+        }
       }
 
       // ── Release the slippage buffer after a fully-filled market buy ──────────
@@ -1593,6 +1640,7 @@ router.post("/orders", async (req, res) => {
 
     // Return the created order (re-read for updated status if matched)
     const [created] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+    invalidateMarketOrderCaches(symbol);
 
     // Derive quoteSymbol from the order symbol so the client never has to
     // parse it — required for fill notification display on all order types.
@@ -1687,7 +1735,7 @@ router.delete("/orders/:orderId", async (req, res) => {
     const [existingOrder] = await db.select().from(ordersTable)
       .where(eq(ordersTable.id, req.params.orderId))
       .limit(1);
-    if (!existingOrder || existingOrder.walletAddress.toLowerCase() !== String(body.walletAddress).toLowerCase()) {
+    if (!existingOrder || !sameWalletAddress(existingOrder.walletAddress, String(body.walletAddress))) {
       res.status(404).json({ error: "Order not found or not owned by this wallet" });
       return;
     }
@@ -1747,6 +1795,7 @@ router.delete("/orders/:orderId", async (req, res) => {
         return;
       }
       const row = rows[0]!;
+      invalidateMarketOrderCaches(String(row.symbol ?? existingOrder.symbol));
       res.json({
         id: String(row.id ?? ""),
         walletAddress: String(row.wallet_address ?? ""),
@@ -1768,17 +1817,73 @@ router.delete("/orders/:orderId", async (req, res) => {
       return;
     }
 
+    if (existingOrder.status === "cancelled") {
+      res.json(serializeOrder(existingOrder));
+      return;
+    }
+    if (existingOrder.status !== "open") {
+      res.status(409).json({
+        error: existingOrder.status === "filled"
+          ? "This order has already filled and cannot be cancelled."
+          : "This order is being matched or settled. Refresh its status before retrying cancellation.",
+        code: "ORDER_STATE_CHANGED",
+      });
+      return;
+    }
+
+    const nonce = String(body.nonce ?? "");
+    const expiry = String(body.expiry ?? "");
+    const signature = String(body.signature ?? "");
+    const expirySeconds = Number(expiry);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (
+      !signature ||
+      !/^[A-Za-z0-9-]{8,128}$/.test(nonce) ||
+      !Number.isSafeInteger(expirySeconds) ||
+      expirySeconds <= nowSeconds ||
+      expirySeconds > nowSeconds + 300
+    ) {
+      res.status(401).json({ error: "A fresh signed wallet authorization is required to cancel this order.", code: "CANCEL_AUTH_REQUIRED" });
+      return;
+    }
+    const nonceKey = `${detectIsEvmAddress(String(body.walletAddress)) ? String(body.walletAddress).toLowerCase() : String(body.walletAddress)}:${nonce}`;
+    const usedUntil = cancelActionNonces.get(nonceKey);
+    if (usedUntil && usedUntil > Date.now()) {
+      res.status(409).json({ error: "This cancellation authorization was already used. Sign a fresh request.", code: "CANCEL_AUTH_REPLAYED" });
+      return;
+    }
+    try {
+      verifyWalletMessageSignature(
+        String(body.walletAddress),
+        buildOrderActionAuthMessage({
+          walletAddress: String(body.walletAddress),
+          action: "cancel",
+          orderId: String(req.params.orderId),
+          nonce,
+          expiry,
+        }),
+        signature,
+      );
+    } catch (signatureErr: any) {
+      res.status(401).json({ error: String(signatureErr?.message ?? "Invalid cancellation signature."), code: "CANCEL_AUTH_INVALID" });
+      return;
+    }
+    cancelActionNonces.set(nonceKey, expirySeconds * 1000);
+
     const client = await pool.connect();
     let orderRow: Record<string, unknown>;
     try {
       await client.query("BEGIN");
 
       // Step 1: Mark the order cancelled (only if open and owned by this wallet)
+      const walletPredicate = detectIsEvmAddress(existingOrder.walletAddress)
+        ? "LOWER(wallet_address) = LOWER($2)"
+        : "wallet_address = $2";
       const { rows: cancelRows } = await client.query<Record<string, unknown>>(
         `UPDATE orders
          SET status = 'cancelled', updated_at = NOW()
          WHERE id = $1
-           AND wallet_address = $2
+           AND ${walletPredicate}
            AND status = 'open'
          RETURNING *`,
         [req.params.orderId, body.walletAddress],
@@ -1786,6 +1891,20 @@ router.delete("/orders/:orderId", async (req, res) => {
 
       if (!cancelRows.length) {
         await client.query("ROLLBACK");
+        const [latest] = await db.select().from(ordersTable)
+          .where(eq(ordersTable.id, req.params.orderId))
+          .limit(1);
+        if (latest && sameWalletAddress(latest.walletAddress, String(body.walletAddress))) {
+          if (latest.status === "cancelled") {
+            res.json(serializeOrder(latest));
+            return;
+          }
+          res.status(409).json({
+            error: "Order state changed while cancellation was being processed. Refresh and retry if it is still open.",
+            code: "ORDER_STATE_CHANGED",
+          });
+          return;
+        }
         res.status(404).json({ error: "Order not found or not owned by this wallet" });
         return;
       }
@@ -1834,6 +1953,7 @@ router.delete("/orders/:orderId", async (req, res) => {
     }
 
     // Return a serialized response from the raw DB row
+    invalidateMarketOrderCaches(String(orderRow!.symbol ?? ""));
     res.json({
       id:                String(orderRow!.id ?? ""),
       walletAddress:     String(orderRow!.wallet_address ?? ""),
