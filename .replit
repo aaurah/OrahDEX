@@ -10,7 +10,7 @@ id = "artifacts/bsv-dex"
 router = "application"
 deploymentTarget = "vm"
 run = ["node", "start.mjs"]
-build = ["bash", "-c", "pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/bsv-dex run build"]
+build = ["bash", "-c", "pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/bsv-dex run build && (bash scripts/pull-models.sh || echo '[models] provisioning skipped') "]
 ignorePorts = false
 
 [deployment.postBuild]
@@ -118,9 +118,13 @@ EVM_ORDERBOOK_ESCROW_ETH_DEPLOY_BLOCK = "26423727"
 EVM_ORDERBOOK_FEE_RECIPIENT = "0x67C7f23eE49B6417661748F23F743C0B274039e2"
 EVM_ORDERBOOK_ESCROW_ENABLED = "true"
 EVM_ORDERBOOK_MATCHING_ENABLED = "true"
+# Local AI: applies to the workspace AND the deployment. Weights are pulled by
+# scripts/pull-models.sh in [deployment].build, because the published
+# filesystem resets on every publish.
+DEVAI_OLLAMA_ENABLED = "true"
+DEVAI_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
+DEVAI_MODEL = "qwen2.5-coder:1.5b"
+ORA_AI_MODEL = "llama3.2:3b"
 
 [userenv.development]
 BSV_NETWORK = "main"
-DEVAI_OLLAMA_ENABLED = "true"
-DEVAI_MODEL = "qwen2.5-coder:1.5b"
-ORA_AI_MODEL = "llama3.2:3b"

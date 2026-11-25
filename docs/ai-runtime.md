@@ -36,6 +36,8 @@ Responses include a `ready` boolean and an actionable `code`, such as `OLLAMA_MO
 
 Model weights are not committed to Git or generated into the frontend. The model downloaded during workspace verification is only a local runtime cache; it is not a published provisioning solution and can disappear when that runtime is replaced. A durable published setup must provision a protected model store separately and has not been deployed by this change.
 
+Provisioning is scripted in `scripts/pull-models.sh`: it starts a temporary loopback server when none is running, pulls the exact `ORA_AI_MODEL` and `DEVAI_MODEL` tags, and skips tags already present. The `[deployment]` build in `.replit` runs it on every publish (the published filesystem resets, so the weights must be re-fetched), and `termux/bootstrap.sh` runs the same pull on a phone. The build step is best-effort: a failed pull logs `[models] provisioning skipped` and leaves the app up with AI reporting `OLLAMA_MODEL_MISSING`.
+
 ## Verification and limits
 
 The focused runtime tests exercise exact tag selection, missing/disabled/unreachable models, host versus cgroup memory checks, production headroom, measured resident-runner budgets, native stream conversion, output limits, model-service recovery, Ora's factual route boundaries, and the allowlisted Qwen tool flow.

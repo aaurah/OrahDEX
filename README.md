@@ -249,14 +249,16 @@ PORT=20180 pnpm --filter @workspace/bsv-dex run dev
 Ora AI and DevAI run without a hosted model key when a local [Ollama](https://ollama.com) model is available. Everything below is optional and documented in `.env.example`.
 
 ```bash
-# 1. Install Ollama and start the service on loopback
-curl -fsSL https://ollama.com/install.sh | sh
-OLLAMA_HOST=127.0.0.1:11434 ollama serve
+# 1. Install the Ollama service for your host
+curl -fsSL https://ollama.com/install.sh | sh   # Linux/macOS
+pkg install tur-repo && pkg install ollama      # Termux
+# Replit supplies it via [nix] packages = ["ollama"]
 
-# 2. Pull the model tag you want to use (must match the env var exactly)
-ollama pull llama3.2:3b        # Ora AI chat
-ollama pull qwen2.5-coder:1.5b # DevAI (coding model)
+# 2. Pull the tags the runtime expects (idempotent, exact-tag aware)
+bash scripts/pull-models.sh
 ```
+
+Model weights are never committed to Git: `llama3.2:3b` is a 2.0 GB blob and GitHub rejects files above 100 MB, so each runtime provisions its own copy. `scripts/pull-models.sh` is what the Replit build and `termux/bootstrap.sh` both call; it starts a temporary loopback server when none is running, skips tags already installed, and pulls `ORA_AI_MODEL` plus `DEVAI_MODEL`.
 
 | Variable | Description |
 |---|---|
