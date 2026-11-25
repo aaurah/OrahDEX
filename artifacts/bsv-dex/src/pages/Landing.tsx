@@ -136,7 +136,7 @@ function GridBackground() {
 }
 
 /* ── Live terminal card (right side of hero) ────────────────────────────── */
-function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boolean }) {
+function LiveTerminalCard({ markets, animated, loading }: { markets: any[]; animated: boolean; loading: boolean }) {
   const fmtPrice = (p: number) => {
     if (p >= 10000) return "$" + p.toLocaleString("en-US", { maximumFractionDigits: 0 });
     if (p >= 1)     return "$" + p.toFixed(2);
@@ -188,9 +188,9 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">MARKET DATA</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${rows.length ? "bg-green-400" : "bg-amber-400"} ${animated && rows.length ? "animate-pulse" : ""}`} />
-            <span className={`text-[10px] font-black uppercase tracking-widest ${rows.length ? "text-green-400" : "text-amber-400"}`}>
-              {rows.length ? "Data available" : "Unavailable"}
+            <span className={`w-1.5 h-1.5 rounded-full ${loading && !rows.length ? "bg-muted-foreground animate-pulse" : rows.length ? "bg-green-400" : "bg-amber-400"} ${animated && rows.length ? "animate-pulse" : ""}`} />
+            <span data-testid="status-live-market-data" className={`text-[10px] font-black uppercase tracking-widest ${loading && !rows.length ? "text-muted-foreground" : rows.length ? "text-green-400" : "text-amber-400"}`}>
+              {loading && !rows.length ? "Loading" : rows.length ? "Data available" : "Unavailable"}
             </span>
           </div>
         </div>
@@ -204,7 +204,11 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
 
         {/* Market rows */}
         <div>
-          {rows.length === 0 ? (
+          {loading && rows.length === 0 ? (
+            <p className="px-5 py-8 text-center text-xs text-muted-foreground animate-pulse">
+              Loading live market data…
+            </p>
+          ) : rows.length === 0 ? (
             <p className="px-5 py-8 text-center text-xs text-muted-foreground">
               Live market data is unavailable. Sample prices are not shown.
             </p>
@@ -600,7 +604,7 @@ const MKT_TABS: { id: MktTab; label: string }[] = [
   { id: "BSV",  label: "BSV" },
 ];
 
-function FeaturedMarkets({ markets }: { markets: any[] }) {
+function FeaturedMarkets({ markets, loading }: { markets: any[]; loading: boolean }) {
   const [tab, setTab] = useState<MktTab>("ALL");
 
   const filtered = useMemo(() => {
@@ -686,7 +690,16 @@ function FeaturedMarkets({ markets }: { markets: any[] }) {
 
         {/* Cards grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-          {filtered.length === 0 ? (
+          {loading && markets.length === 0 ? (
+            Array.from({ length: 6 }, (_, index) => (
+              <div
+                key={index}
+                data-testid={`market-card-skeleton-${index}`}
+                aria-hidden="true"
+                className="h-32 rounded-2xl border border-border bg-card/40 animate-pulse"
+              />
+            ))
+          ) : filtered.length === 0 ? (
             <div className="col-span-full rounded-2xl border border-border bg-card/30 px-5 py-10 text-center text-sm text-muted-foreground">
               {markets.length ? "No pairs are available in this filter." : "Market data is unavailable. No sample prices are shown."}
             </div>
@@ -778,7 +791,7 @@ export function LandingPage() {
     refetchInterval: 30_000,
   });
 
-  const { data: marketsData } = useQuery({
+  const { data: marketsData, isLoading: marketsLoading } = useQuery({
     queryKey: ["landing-markets-v1"],
     queryFn: async () => {
       const response = await fetch(
@@ -917,7 +930,11 @@ export function LandingPage() {
 
               {/* Live stats bar */}
               <div className="flex flex-wrap justify-center lg:justify-start gap-2.5">
-                <StatPill label="Market data" value={markets.length ? "Available" : "Unavailable"} />
+                <StatPill
+                  label="Market data"
+                  value={marketsLoading && !marketsData ? "Loading" : markets.length ? "Available" : "Unavailable"}
+                  color={marketsLoading && !marketsData ? "text-muted-foreground" : markets.length ? "text-green-400" : "text-amber-400"}
+                />
                 <StatPill label="Networks" value="Per route" color="text-amber-400" />
                 <StatPill label="Settlement" value="Route-specific" color="text-blue-400" />
                 <BsvBlockPill blockHeight={bsvBlock} blockHash={bsvBlockHash} />
@@ -926,13 +943,13 @@ export function LandingPage() {
 
             {/* Right: Live Terminal */}
             <div className={`hidden lg:block ${lowMotionMode ? "" : "orah-float"}`}>
-              <LiveTerminalCard markets={markets ?? []} animated={!lowMotionMode} />
+              <LiveTerminalCard markets={markets ?? []} animated={!lowMotionMode} loading={marketsLoading} />
             </div>
           </div>
 
           {/* Mobile terminal card — below content on small screens */}
           <div className="lg:hidden mt-10">
-            <LiveTerminalCard markets={markets ?? []} animated={false} />
+            <LiveTerminalCard markets={markets ?? []} animated={false} loading={marketsLoading} />
           </div>
         </div>
 
@@ -989,7 +1006,7 @@ export function LandingPage() {
       </section>
 
       {/* ── FEATURED MARKETS ──────────────────────────────────────────────── */}
-          <FeaturedMarkets markets={markets ?? []} />
+          <FeaturedMarkets markets={markets ?? []} loading={marketsLoading} />
 
       {/* ── FEATURE STRIP ─────────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-12 py-10">
