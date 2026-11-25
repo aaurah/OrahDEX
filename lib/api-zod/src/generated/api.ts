@@ -9,6 +9,72 @@ import * as zod from 'zod';
 
 
 /**
+ * @summary Selected Ora insights provider and model readiness on this API runtime
+ */
+export const GetOraInsightsRuntimeResponse = zod.object({
+  "provider": zod.enum(['local_ollama', 'openai', 'anthropic']),
+  "model": zod.string(),
+  "environment": zod.string(),
+  "ready": zod.boolean(),
+  "code": zod.string(),
+  "error": zod.string().nullable(),
+  "enabled": zod.boolean().optional(),
+  "reachable": zod.boolean().optional(),
+  "modelAvailable": zod.boolean().optional(),
+  "availableModels": zod.array(zod.string()).optional(),
+  "minimumModelHeadroomBytes": zod.number().optional(),
+  "memory": zod.object({
+  "availableBytes": zod.number(),
+  "limitBytes": zod.number()
+}).nullish()
+})
+
+
+/**
+ * @summary Selected Ora chat provider and model readiness on this API runtime
+ */
+export const GetOraChatRuntimeResponse = zod.object({
+  "provider": zod.enum(['local_ollama', 'openai', 'anthropic']),
+  "model": zod.string(),
+  "environment": zod.string(),
+  "ready": zod.boolean(),
+  "code": zod.string(),
+  "error": zod.string().nullable(),
+  "enabled": zod.boolean().optional(),
+  "reachable": zod.boolean().optional(),
+  "modelAvailable": zod.boolean().optional(),
+  "availableModels": zod.array(zod.string()).optional(),
+  "minimumModelHeadroomBytes": zod.number().optional(),
+  "memory": zod.object({
+  "availableBytes": zod.number(),
+  "limitBytes": zod.number()
+}).nullish()
+})
+
+
+/**
+ * @summary Admin-only DevAI runtime readiness and installed model tags
+ */
+export const GetDevAiRuntimeResponse = zod.object({
+  "provider": zod.enum(['local_ollama', 'openai', 'anthropic']),
+  "model": zod.string(),
+  "environment": zod.string(),
+  "ready": zod.boolean(),
+  "code": zod.string(),
+  "error": zod.string().nullable(),
+  "enabled": zod.boolean().optional(),
+  "reachable": zod.boolean().optional(),
+  "modelAvailable": zod.boolean().optional(),
+  "availableModels": zod.array(zod.string()).optional(),
+  "minimumModelHeadroomBytes": zod.number().optional(),
+  "memory": zod.object({
+  "availableBytes": zod.number(),
+  "limitBytes": zod.number()
+}).nullish()
+})
+
+
+/**
  * @summary List all conversations
  */
 export const ListAnthropicConversationsResponseItem = zod.object({

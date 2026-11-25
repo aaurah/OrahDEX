@@ -7,6 +7,9 @@ export {
   devaiOllamaServerUrl,
   isDevaiOllamaEnabled,
   getDevaiOllamaStatus,
+  getOllamaMemory,
+  minimumOllamaHeadroomBytes,
+  exactOllamaTag,
   createDevaiOllamaStream,
   type DevAiChatMessage,
 } from "./client";

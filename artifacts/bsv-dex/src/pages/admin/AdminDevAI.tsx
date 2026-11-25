@@ -8,6 +8,7 @@ import {
   GitBranch, FileCode, Clock, Download, Upload, PackageOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AiRuntimeStatus } from "@/components/AiRuntimeStatus";
 
 const SYSTEM_PROMPT_PREVIEW = `You are OrahDevAI — the developer intelligence of OrahDEX (orahdex.com), a sovereign decentralized exchange built on BSV (Bitcoin SV) settlement.
 
@@ -193,7 +194,7 @@ function DevAIModelSettings() {
   const requiredGiB = data?.minimumModelHeadroomBytes != null
     ? (data.minimumModelHeadroomBytes / 1024 ** 3).toFixed(1)
     : "6";
-  const modelReady = data?.ollamaAutostartEnabled && data?.reachable && data?.modelAvailable;
+  const modelReady = data?.ready === true;
   const enoughMemory = data?.memory?.availableBytes != null
     && data.memory.availableBytes >= (data?.minimumModelHeadroomBytes ?? 6 * 1024 ** 3);
 
@@ -228,6 +229,7 @@ function DevAIModelSettings() {
           <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin text-green-400")} />
         </button>
       </div>
+      <AiRuntimeStatus />
 
       <div className={cn(
         "flex items-start gap-3 p-3 rounded-xl border",
@@ -249,13 +251,18 @@ function DevAIModelSettings() {
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="p-3 rounded-xl bg-white/3 border border-white/5">
           <p className="text-muted-foreground">Selected model</p>
-          <p className="font-mono mt-1">{data?.model ?? "qwen2.5-coder:1.5b"}</p>
+            <p className="font-mono mt-1">{data?.model ?? "Checking…"}</p>
+            <p className="mt-1 text-muted-foreground">{data?.environment ?? "Unknown runtime"} · {data?.provider ?? "Unknown provider"}</p>
         </div>
         <div className="p-3 rounded-xl bg-white/3 border border-white/5">
           <p className="text-muted-foreground">VM memory available</p>
           <p className="font-mono mt-1">{availableGiB ? `${availableGiB} GiB` : "Unavailable"}</p>
         </div>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Installed tags: {data?.availableModels?.length ? data.availableModels.join(", ") : "None reported by this API runtime"}.
+        {" "}Set DEVAI_MODEL to an exact installed tag; OraAI can use a separate ORA_AI_MODEL.
+      </p>
 
       <p className="text-[11px] text-muted-foreground">
         Ollama autostart: {data?.ollamaAutostartEnabled ? "enabled" : "disabled"} · Model weights stay outside the repository. The runtime requires at least {requiredGiB} GiB available before starting a model.

@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AiRuntimeStatus,
   AnthropicConversation,
   AnthropicConversationInput,
   AnthropicConversationWithMessages,
@@ -88,6 +89,237 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getGetOraInsightsRuntimeUrl = () => {
+
+
+
+
+  return `/api/ai/status`
+}
+
+/**
+ * @summary Selected Ora insights provider and model readiness on this API runtime
+ */
+export const getOraInsightsRuntime = async ( options?: RequestInit): Promise<AiRuntimeStatus> => {
+
+  return customFetch<AiRuntimeStatus>(getGetOraInsightsRuntimeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOraInsightsRuntimeQueryKey = () => {
+    return [
+    `/api/ai/status`
+    ] as const;
+    }
+
+
+export const getGetOraInsightsRuntimeQueryOptions = <TData = Awaited<ReturnType<typeof getOraInsightsRuntime>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOraInsightsRuntime>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOraInsightsRuntimeQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOraInsightsRuntime>>> = ({ signal }) => getOraInsightsRuntime({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOraInsightsRuntime>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOraInsightsRuntimeQueryResult = NonNullable<Awaited<ReturnType<typeof getOraInsightsRuntime>>>
+export type GetOraInsightsRuntimeQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Selected Ora insights provider and model readiness on this API runtime
+ */
+
+export function useGetOraInsightsRuntime<TData = Awaited<ReturnType<typeof getOraInsightsRuntime>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOraInsightsRuntime>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOraInsightsRuntimeQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetOraChatRuntimeUrl = () => {
+
+
+
+
+  return `/api/anthropic/status`
+}
+
+/**
+ * @summary Selected Ora chat provider and model readiness on this API runtime
+ */
+export const getOraChatRuntime = async ( options?: RequestInit): Promise<AiRuntimeStatus> => {
+
+  return customFetch<AiRuntimeStatus>(getGetOraChatRuntimeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOraChatRuntimeQueryKey = () => {
+    return [
+    `/api/anthropic/status`
+    ] as const;
+    }
+
+
+export const getGetOraChatRuntimeQueryOptions = <TData = Awaited<ReturnType<typeof getOraChatRuntime>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOraChatRuntime>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOraChatRuntimeQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOraChatRuntime>>> = ({ signal }) => getOraChatRuntime({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOraChatRuntime>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOraChatRuntimeQueryResult = NonNullable<Awaited<ReturnType<typeof getOraChatRuntime>>>
+export type GetOraChatRuntimeQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Selected Ora chat provider and model readiness on this API runtime
+ */
+
+export function useGetOraChatRuntime<TData = Awaited<ReturnType<typeof getOraChatRuntime>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOraChatRuntime>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOraChatRuntimeQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetDevAiRuntimeUrl = () => {
+
+
+
+
+  return `/api/admin/devai/status`
+}
+
+/**
+ * @summary Admin-only DevAI runtime readiness and installed model tags
+ */
+export const getDevAiRuntime = async ( options?: RequestInit): Promise<AiRuntimeStatus> => {
+
+  return customFetch<AiRuntimeStatus>(getGetDevAiRuntimeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDevAiRuntimeQueryKey = () => {
+    return [
+    `/api/admin/devai/status`
+    ] as const;
+    }
+
+
+export const getGetDevAiRuntimeQueryOptions = <TData = Awaited<ReturnType<typeof getDevAiRuntime>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDevAiRuntime>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDevAiRuntimeQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDevAiRuntime>>> = ({ signal }) => getDevAiRuntime({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDevAiRuntime>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDevAiRuntimeQueryResult = NonNullable<Awaited<ReturnType<typeof getDevAiRuntime>>>
+export type GetDevAiRuntimeQueryError = ErrorType<void>
+
+
+/**
+ * @summary Admin-only DevAI runtime readiness and installed model tags
+ */
+
+export function useGetDevAiRuntime<TData = Awaited<ReturnType<typeof getDevAiRuntime>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDevAiRuntime>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDevAiRuntimeQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListAnthropicConversationsUrl = () => {
 

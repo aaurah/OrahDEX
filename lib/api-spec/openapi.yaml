@@ -29,6 +29,44 @@ tags:
     description: Anthropic AI chat operations
 
 paths:
+  /ai/status:
+    get:
+      operationId: getOraInsightsRuntime
+      tags: [anthropic]
+      summary: Selected Ora insights provider and model readiness on this API runtime
+      responses:
+        "200":
+          description: Runtime readiness, not a guarantee of successful inference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiRuntimeStatus"
+  /anthropic/status:
+    get:
+      operationId: getOraChatRuntime
+      tags: [anthropic]
+      summary: Selected Ora chat provider and model readiness on this API runtime
+      responses:
+        "200":
+          description: Runtime readiness, not a guarantee of successful inference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiRuntimeStatus"
+  /admin/devai/status:
+    get:
+      operationId: getDevAiRuntime
+      tags: [anthropic]
+      summary: Admin-only DevAI runtime readiness and installed model tags
+      responses:
+        "200":
+          description: Authenticated runtime readiness
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiRuntimeStatus"
+        "401":
+          description: Admin authentication required
   /anthropic/conversations:
     get:
       operationId: listAnthropicConversations
@@ -692,6 +730,43 @@ paths:
 
 components:
   schemas:
+    AiRuntimeStatus:
+      type: object
+      required: [provider, model, environment, ready, code, error]
+      properties:
+        provider:
+          type: string
+          enum: [local_ollama, openai, anthropic]
+        model:
+          type: string
+        environment:
+          type: string
+        ready:
+          type: boolean
+        code:
+          type: string
+        error:
+          type: [string, "null"]
+        enabled:
+          type: boolean
+        reachable:
+          type: boolean
+        modelAvailable:
+          type: boolean
+        availableModels:
+          type: array
+          items:
+            type: string
+        minimumModelHeadroomBytes:
+          type: number
+        memory:
+          type: [object, "null"]
+          required: [availableBytes, limitBytes]
+          properties:
+            availableBytes:
+              type: number
+            limitBytes:
+              type: number
     HealthStatus:
       type: object
       properties:

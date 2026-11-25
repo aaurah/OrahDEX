@@ -19,6 +19,22 @@ import {
 
 const router = Router();
 
+router.get("/anthropic/status", async (_req, res) => {
+  if (isDevaiOllamaEnabled()) {
+    const { availableModels: _models, ...status } = await getDevaiOllamaStatus(oraModel);
+    res.json(status);
+    return;
+  }
+  const configured = Boolean(process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY && process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL);
+  res.json({
+    provider: "anthropic", model: "claude-sonnet-4-6",
+    environment: process.env.NODE_ENV === "production" ? "production" : "development",
+    ready: false, code: configured ? "UNVERIFIED" : "AI_PROVIDER_NOT_CONFIGURED",
+    error: configured ? "Hosted provider is configured; send a message to verify a response."
+      : "Anthropic integration is not configured on this API runtime.",
+  });
+});
+
 async function getLiveMarketContext(): Promise<string> {
   try {
     const rows = await db
@@ -176,7 +192,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
     if (!convId) { res.status(400).json({ error: "Invalid id" }); return; }
 
     const { content } = req.body as { content?: string };
-    if (!content || typeof content !== "string") {
+    if (!content || typeof content !== "string" || !content.trim() || content.length > 12_000) {
       res.status(400).json({ error: "content is required" });
       return;
     }
@@ -187,10 +203,13 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
     const useLocalOllama = isDevaiOllamaEnabled();
     if (useLocalOllama) {
       const status = await getDevaiOllamaStatus(oraModel);
-      if (!status.reachable || !status.modelAvailable) {
-        res.status(503).json({ error: status.error ?? "The local AI model is not ready." });
+      if (!status.ready) {
+        res.status(503).json({ error: status.error, code: status.code, model: oraModel, provider: status.provider });
         return;
       }
+    } else if (!process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY || !process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL) {
+      res.status(503).json({ error: "Anthropic integration is not configured on this API runtime.", code: "AI_PROVIDER_NOT_CONFIGURED" });
+      return;
     }
 
     await db.insert(messages).values({ conversationId: convId, role: "user", content });
@@ -199,9 +218,9 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
       .select()
       .from(messages)
       .where(eq(messages.conversationId, convId))
-      .orderBy(asc(messages.createdAt));
+      .orderBy(desc(messages.createdAt)).limit(20);
 
-    const chatMessages = allMessages.map((m) => ({
+    const chatMessages = allMessages.reverse().map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
@@ -212,6 +231,16 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 120_000);
+    const heartbeat = setInterval(() => {
+      if (!res.destroyed) res.write(": waiting for model\n\n");
+    }, 10_000);
+    const cleanUp = () => { clearTimeout(deadline); clearInterval(heartbeat); controller.abort(); };
+    res.once("close", cleanUp);
+    res.once("finish", cleanUp);
 
     let fullResponse = "";
 
@@ -220,7 +249,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
         { role: "system", content: systemPrompt },
         ...chatMessages,
       ];
-      const stream = await createDevaiOllamaStream(ollamaMessages, 2048, oraModel);
+      const stream = await createDevaiOllamaStream(ollamaMessages, 2048, oraModel, controller.signal);
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content;
         if (text) {
@@ -234,7 +263,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
         max_tokens: 8192,
         system: systemPrompt,
         messages: chatMessages,
-      });
+      }, { signal: controller.signal });
 
       for await (const event of stream) {
         if (event.type === "content_block_delta" && event.delta.type === "text_delta") {

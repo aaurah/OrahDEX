@@ -7,11 +7,13 @@ import {
   devaiModel,
   devaiOllamaServerUrl,
   getDevaiOllamaStatus,
+  getOllamaMemory,
   isDevaiOllamaEnabled,
 } from "@workspace/integrations-openai-ai-server";
-import { eq, asc, like } from "drizzle-orm";
+import { eq, asc, desc, like } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { requireAdminToken } from "../middleware/adminAuth.js";
+import { parseLocalToolCall, completeWithLocalTools } from "../lib/localAiTools.js";
 import vm from "vm";
 import fs from "fs/promises";
 import { existsSync } from "fs";
@@ -463,31 +465,7 @@ const SAFE_DEVAI_TOOLS = DEVAI_TOOLS.filter(
 const SAFE_DEVAI_TOOL_NAMES = new Set(SAFE_DEVAI_TOOLS.map((tool) => tool.function.name));
 
 function parseLocalTextToolCall(content: string) {
-  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
-  const candidates = [fenced, content].filter((value): value is string => Boolean(value));
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate.trim()) as Record<string, unknown>;
-      const call = (parsed.tool_call && typeof parsed.tool_call === "object"
-        ? parsed.tool_call
-        : parsed) as Record<string, unknown>;
-      const name = typeof call.name === "string" ? call.name : "";
-      const rawArgs = call.arguments ?? call.parameters ?? {};
-      const args = typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
-      if (!SAFE_DEVAI_TOOL_NAMES.has(name) || !args || typeof args !== "object" || Array.isArray(args)) {
-        continue;
-      }
-      return [{
-        id: randomUUID(),
-        type: "function" as const,
-        function: { name, arguments: JSON.stringify(args) },
-      }];
-    } catch {
-      // A normal text response is not a tool call.
-    }
-  }
-  return [];
+  return parseLocalToolCall(content, SAFE_DEVAI_TOOL_NAMES);
 }
 
 // ── Tool implementations ───────────────────────────────────────────────────────
@@ -1155,27 +1133,7 @@ async function waitForLocalModelStatus(timeoutMs = 12_000) {
 }
 
 async function getRuntimeMemory() {
-  try {
-    const [currentRaw, limitRaw] = await Promise.all([
-      fs.readFile("/sys/fs/cgroup/memory.current", "utf8"),
-      fs.readFile("/sys/fs/cgroup/memory.max", "utf8"),
-    ]);
-    const currentBytes = Number(currentRaw.trim());
-    const limitBytes = Number(limitRaw.trim());
-    if (Number.isFinite(currentBytes) && Number.isFinite(limitBytes) && limitBytes > 0) {
-      return { currentBytes, limitBytes, availableBytes: Math.max(0, limitBytes - currentBytes) };
-    }
-  } catch { /* use host memory info when cgroup files are unavailable */ }
-
-  try {
-    const meminfo = await fs.readFile("/proc/meminfo", "utf8");
-    const total = Number(meminfo.match(/^MemTotal:\s+(\d+)/m)?.[1]) * 1024;
-    const available = Number(meminfo.match(/^MemAvailable:\s+(\d+)/m)?.[1]) * 1024;
-    if (Number.isFinite(total) && Number.isFinite(available)) {
-      return { currentBytes: total - available, limitBytes: total, availableBytes: available };
-    }
-  } catch { /* runtime memory metrics are optional */ }
-  return null;
+  return getOllamaMemory();
 }
 
 async function getChangeProposal(id: string) {
@@ -1247,12 +1205,13 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const content = (req.body?.content ?? "").trim();
+  const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
   if (!content) { res.status(400).json({ error: "Content is required" }); return; }
+  if (content.length > 12_000) { res.status(413).json({ error: "Content must be 12000 characters or fewer." }); return; }
 
   const modelStatus = await waitForLocalModelStatus();
-  if (!modelStatus.enabled || !modelStatus.reachable || !modelStatus.modelAvailable) {
-    res.status(503).json({ error: modelStatus.error, provider: "local_ollama" });
+  if (!modelStatus.ready) {
+    res.status(503).json({ error: modelStatus.error, code: modelStatus.code, model: DEVAI_MODEL, provider: "local_ollama" });
     return;
   }
 
@@ -1262,6 +1221,13 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
   const requestAbort = new AbortController();
+  const requestDeadline = setTimeout(() => requestAbort.abort(), 180_000);
+  requestAbort.signal.addEventListener("abort", () => {
+    if (!res.destroyed && !res.writableEnded) {
+      sse(res, { error: "DevAI timed out. Try a shorter request or check the model runtime.", code: "AI_TIMEOUT" });
+      res.end();
+    }
+  }, { once: true });
   sse(res, { status: "Starting the local model and preparing exchange context…" });
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) sse(res, { status: "The local model is still working; this can take a little while on the VM." });
@@ -1269,9 +1235,10 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
   heartbeat.unref?.();
   res.on("close", () => {
     clearInterval(heartbeat);
+    clearTimeout(requestDeadline);
     if (!res.writableEnded) requestAbort.abort();
   });
-  res.on("finish", () => clearInterval(heartbeat));
+  res.on("finish", () => { clearInterval(heartbeat); clearTimeout(requestDeadline); });
 
   try {
     await db.insert(messages).values({ conversationId: id, role: "user", content });
@@ -1280,7 +1247,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
       .select()
       .from(messages)
       .where(eq(messages.conversationId, id))
-      .orderBy(asc(messages.createdAt));
+      .orderBy(desc(messages.createdAt)).limit(6);
 
     type ChatMsg =
       | { role: "system"; content: string }
@@ -1290,7 +1257,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 
     const chatMessages: ChatMsg[] = [
       { role: "system", content: DEVAI_SYSTEM_PROMPT },
-      ...history.slice(-6).map(m => ({
+      ...history.reverse().map(m => ({
         role: m.role as "user" | "assistant",
         content: m.role === "user" ? m.content.slice(0, 1200) : m.content.slice(-1200),
       })),
@@ -1303,7 +1270,8 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 
     while (toolRounds < MAX_TOOL_ROUNDS) {
       if (requestAbort.signal.aborted) return;
-      const resp = await devaiOpenAI.chat.completions.create({
+      const resp = await completeWithLocalTools(
+        (body, options) => devaiOpenAI.chat.completions.create(body, options), {
         model: DEVAI_MODEL,
         max_tokens: DEVAI_MAX_RESPONSE_TOKENS,
         messages: chatMessages as any,
@@ -1311,7 +1279,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
         tool_choice: "auto",
         stream: false,
         options: { num_ctx: DEVAI_CONTEXT_TOKENS },
-      } as any, { signal: requestAbort.signal, timeout: 120_000 });
+      }, { signal: requestAbort.signal, timeout: 120_000 });
 
       const choice = resp.choices[0];
       const msg = choice.message;
@@ -1337,6 +1305,10 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
             continue;
           }
           const name = tc.function.name;
+          if (!SAFE_DEVAI_TOOL_NAMES.has(name)) {
+            chatMessages.push({ role: "tool", tool_call_id: tc.id, content: "Tool not allowed." });
+            continue;
+          }
           let args: any = {};
           try { args = JSON.parse(tc.function.arguments ?? "{}"); } catch { /* invalid json */ }
 
@@ -1367,7 +1339,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
     // ── Final streaming response ───────────────────────────────────────────────
     let fullResponse = "";
 
-    if (toolRounds === 0 && finalTextFromLoop !== null) {
+    if (finalTextFromLoop !== null) {
       // No tools used: stream the already-received content in chunks (avoid extra API call)
       const text = finalTextFromLoop;
       for (let i = 0; i < text.length; i += 6) {
@@ -1397,6 +1369,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
       }
     }
 
+    if (!fullResponse.trim()) throw new Error("The model returned an empty response. Try a shorter request.");
     // ── Persist final response ─────────────────────────────────────────────────
     if (fullResponse) {
       await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
@@ -1422,9 +1395,6 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 router.get("/admin/devai/status", requireAdminToken, async (_req, res) => {
   const [model, memory] = await Promise.all([getLocalModelStatus(), getRuntimeMemory()]);
   res.json({
-    provider: "local_ollama",
-    model: DEVAI_MODEL,
-    environment: process.env.NODE_ENV ?? "development",
     ollamaAutostartEnabled: isDevaiOllamaEnabled(),
     ...model,
     memory,

@@ -4,12 +4,13 @@ import { db } from "@workspace/db";
 import { conversations, messages } from "@workspace/db/schema";
 import {
   openai,
+  devaiOpenAI,
   createDevaiOllamaStream,
   oraModel,
   getDevaiOllamaStatus,
   isDevaiOllamaEnabled,
 } from "@workspace/integrations-openai-ai-server";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, desc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { getTopHlMarkets } from "../lib/hyperliquid.js";
 import { aiChatRateLimit } from "../middleware/aiChatRateLimit.js";
@@ -33,6 +34,7 @@ const aiTimeoutMs = (): number => (oraLocalModelEnabled() ? 90_000 : 15_000);
 const aiModel = (): string => oraLocalModelEnabled()
   ? oraModel
   : (process.env.AI_INTEGRATIONS_OPENAI_MODEL || "gpt-4o-mini");
+const aiClient = () => oraLocalModelEnabled() ? devaiOpenAI : openai;
 // Ollama honours `max_tokens`; the hosted provider uses `max_completion_tokens`.
 const aiTokenLimit = (maxTokens: number): Record<string, number> =>
   oraLocalModelEnabled() ? { max_tokens: maxTokens } : { max_completion_tokens: maxTokens };
@@ -65,6 +67,38 @@ router.use((_req: Request, res: Response, next: NextFunction) => {
   }, oraLocalModelEnabled() ? 120_000 : 25_000);
   res.on("finish", () => clearTimeout(deadline));
   res.on("close",  () => clearTimeout(deadline));
+  next();
+});
+
+// Readiness describes this runtime only; never infer that a configured model
+// has been installed, or that a hosted key has successfully served a request.
+router.get("/ai/status", async (_req, res) => {
+  if (oraLocalModelEnabled()) {
+    const { availableModels: _models, ...status } = await getDevaiOllamaStatus(oraModel);
+    res.json(status);
+    return;
+  }
+  const configured = Boolean(process.env.AI_INTEGRATIONS_OPENAI_API_KEY && process.env.AI_INTEGRATIONS_OPENAI_BASE_URL);
+  res.json({
+    provider: "openai", model: aiModel(),
+    environment: process.env.NODE_ENV === "production" ? "production" : "development",
+    ready: configured && aiProviderState === "healthy" && isAiAvailable(),
+    code: !configured ? "AI_PROVIDER_NOT_CONFIGURED" : aiProviderState === "starting" ? "UNVERIFIED" : isAiAvailable() ? "READY" : "AI_PROVIDER_UNAVAILABLE",
+    error: !configured ? "OpenAI integration is not configured on this API runtime."
+      : aiProviderState === "starting" ? "Provider is configured; a successful response has not been verified yet."
+        : isAiAvailable() ? null : unavailableAiResponse().error,
+  });
+});
+
+router.use(async (req, res, next) => {
+  const inference = /^\/ai\/(?:market-analysis|insights|trade-signal|portfolio-analysis|news-sentiment)$/.test(req.path);
+  if (inference && oraLocalModelEnabled()) {
+    const status = await getDevaiOllamaStatus(oraModel);
+    if (!status.ready) {
+      res.status(503).json({ error: status.error, code: status.code, model: oraModel, provider: status.provider, available: false });
+      return;
+    }
+  }
   next();
 });
 
@@ -298,16 +332,20 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
   const id = parseInt(Array.isArray(rawId) ? rawId[0] ?? "" : rawId ?? "", 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid conversation id" }); return; }
 
-  const content = (req.body?.content ?? "").trim();
+  const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
   if (!content) { res.status(400).json({ error: "Content is required" }); return; }
+  if (content.length > 12_000) { res.status(413).json({ error: "Content must be 12000 characters or fewer." }); return; }
 
   const useLocalOllama = isDevaiOllamaEnabled();
   if (useLocalOllama) {
     const status = await getDevaiOllamaStatus(aiModel());
-    if (!status.reachable || !status.modelAvailable) {
-      res.status(503).json({ error: status.error ?? "The local AI model is not ready." });
+    if (!status.ready) {
+      res.status(503).json({ error: status.error, code: status.code, provider: status.provider, model: oraModel });
       return;
     }
+  } else if (!isAiAvailable()) {
+    res.status(503).json(unavailableAiResponse());
+    return;
   }
 
   res.setHeader("Content-Type", "text/event-stream");
@@ -339,8 +377,8 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
     const history = await db.select()
       .from(messages)
       .where(eq(messages.conversationId, id))
-      .orderBy(asc(messages.createdAt));
-    const last20 = history.slice(-20);
+      .orderBy(desc(messages.createdAt)).limit(20);
+    const last20 = history.reverse();
 
     const chatMessages: Array<{ role: "user" | "assistant" | "system"; content: string }> = [
       { role: "system", content: SYSTEM_PROMPT },
@@ -356,7 +394,7 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
           max_completion_tokens: 8192,
           messages: chatMessages,
           stream: true,
-        });
+        }, { signal: AbortSignal.timeout(25_000) });
     const streamCandidate = streamResult as { [Symbol.asyncIterator]?: unknown } | null;
     if (!streamCandidate || typeof streamCandidate[Symbol.asyncIterator] !== "function") {
       throw new Error("AI provider did not return a streaming response.");
@@ -424,7 +462,7 @@ router.get("/ai/market-analysis", async (req, res) => {
 
 Keep it under 200 words. Use plain markdown. No financial advice disclaimer needed — just direct analysis.`;
 
-    const response = await openai.chat.completions.create({
+    const response = await aiClient().chat.completions.create({
       model: aiModel(),
       ...aiTokenLimit(512),
       messages: [
@@ -492,7 +530,7 @@ router.get("/ai/insights", async (_req, res) => {
       return `\n\nLive Hyperliquid perp data (now): ${lines}`;
     }).catch(() => "");
 
-    const response = await openai.chat.completions.create({
+    const response = await aiClient().chat.completions.create({
       model: aiModel(),
       ...aiTokenLimit(512),
       messages: [
@@ -567,7 +605,7 @@ router.get("/ai/trade-signal", async (req, res) => {
       ? `Should I ${action} ${symbol} right now? Give a 2-sentence risk assessment with a bullish/bearish/neutral rating. Be direct.`
       : `Give a 1-sentence directional signal for ${symbol} as of March 2026: bullish, bearish, or neutral, and why. Be extremely concise.`;
 
-    const response = await openai.chat.completions.create({
+    const response = await aiClient().chat.completions.create({
       model: aiModel(),
       ...aiTokenLimit(256),
       messages: [
@@ -692,7 +730,7 @@ Return ONLY a JSON object (no markdown, no backticks) with these exact fields:
 
 Consider: diversification, concentration risk, exposure to volatile vs stable assets, sector balance.`;
 
-    const response = await openai.chat.completions.create({
+    const response = await aiClient().chat.completions.create({
       model: aiModel(),
       ...aiTokenLimit(1024),
       ...aiJsonMode(),
@@ -779,7 +817,7 @@ Return ONLY a JSON object (no markdown, no backticks):
 
 Be specific to ${symbol}'s actual situation. Focus on: ecosystem developments, institutional flows, technical levels, macro factors. Keep each narrative under 20 words.`;
 
-    const response = await openai.chat.completions.create({
+    const response = await aiClient().chat.completions.create({
       model: aiModel(),
       ...aiTokenLimit(1024),
       ...aiJsonMode(),

@@ -5,6 +5,40 @@
  * BSV DEX Exchange API
  * OpenAPI spec version: 0.1.0
  */
+export type AiRuntimeStatusProvider = typeof AiRuntimeStatusProvider[keyof typeof AiRuntimeStatusProvider];
+
+
+export const AiRuntimeStatusProvider = {
+  local_ollama: 'local_ollama',
+  openai: 'openai',
+  anthropic: 'anthropic',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AiRuntimeStatusMemory = {
+  availableBytes: number;
+  limitBytes: number;
+} | null;
+
+export interface AiRuntimeStatus {
+  provider: AiRuntimeStatusProvider;
+  model: string;
+  environment: string;
+  ready: boolean;
+  code: string;
+  /** @nullable */
+  error: string | null;
+  enabled?: boolean;
+  reachable?: boolean;
+  modelAvailable?: boolean;
+  availableModels?: string[];
+  minimumModelHeadroomBytes?: number;
+  /** @nullable */
+  memory?: AiRuntimeStatusMemory;
+}
+
 export type HealthStatusStatus = typeof HealthStatusStatus[keyof typeof HealthStatusStatus];
 
 

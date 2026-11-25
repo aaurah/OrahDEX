@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Bot, Send, X, Minimize2, ExternalLink, RotateCcw } from "lucide-react";
 import { Link } from "wouter";
+import { AiRuntimeStatus } from "./AiRuntimeStatus";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
@@ -92,10 +93,14 @@ export function OraAIWidget() {
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streaming) return;
     const msg = text.trim();
-    setInput("");
-
+    setStreaming(true);
     const id = await ensureConversation(msg);
-    if (!id) return;
+    if (!id) {
+      setMessages(prev => [...prev, { id: String(Date.now()), role: "assistant", content: "Cannot create a chat. Check API availability and try again." }]);
+      setStreaming(false);
+      return;
+    }
+    setInput("");
 
     const userMsg: Message = { id: Date.now() + "-u", role: "user", content: msg };
     setMessages(prev => [...prev, userMsg]);
@@ -109,6 +114,7 @@ export function OraAIWidget() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: msg }),
+        signal: AbortSignal.timeout(125_000),
       });
 
       if (!res.ok || !res.body) {
@@ -217,6 +223,7 @@ export function OraAIWidget() {
             </div>
           </div>
 
+          <AiRuntimeStatus />
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 scrollbar-none">
             {messages.length === 0 ? (

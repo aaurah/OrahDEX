@@ -10,6 +10,7 @@ import {
 import { useSEO } from "@/hooks/useSEO";
 import { cn } from "@/lib/utils";
 import { getAdminHeaders } from "@/store/useAdminAuthStore";
+import { AiRuntimeStatus } from "@/components/AiRuntimeStatus";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
@@ -471,6 +472,8 @@ export function DevAIPage() {
           }
         }
       }
+    } catch {
+      setRestartError("Cannot reach the DevAI API. Check your admin session and API availability.");
     } finally {
       setLoadingConvs(false);
     }
@@ -497,7 +500,7 @@ export function DevAIPage() {
 
   const newConv = useCallback(async () => {
     const res = await fetch(`${API}/devai/conversations`, { method: "POST", headers: getAdminHeaders() });
-    if (!res.ok) return null;
+    if (!res.ok) throw new Error(res.status === 401 ? "Sign in as an admin to use DevAI." : "Could not create a DevAI session. Check API availability.");
     const conv = await res.json();
     setConvs(prev => [conv, ...prev]);
     setActiveId(conv.id);
@@ -533,13 +536,17 @@ export function DevAIPage() {
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streaming) return;
     const msg = text.trim();
-    setInput("");
-
+    setStreaming(true);
     let convId = activeId;
-    if (!convId) {
-      convId = await newConv();
-      if (!convId) return;
+    try {
+      if (!convId) convId = await newConv();
+      if (!convId) throw new Error("Could not create a DevAI session.");
+    } catch (error) {
+      setRestartError(error instanceof Error ? error.message : "DevAI API unavailable.");
+      setStreaming(false);
+      return;
     }
+    setInput("");
 
     const userMsg: Message = { id: Date.now() + "-u", role: "user", content: msg, createdAt: new Date() };
     setMessages(prev => [...prev, userMsg]);
@@ -853,6 +860,7 @@ export function DevAIPage() {
           </div>
         )}
 
+        <AiRuntimeStatus developer />
         {/* Messages / Empty state */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {isEmpty ? (
