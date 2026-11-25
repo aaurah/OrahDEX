@@ -229,13 +229,19 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
 }
 
 /* ── Share toast ── */
-function ShareToast({ visible, copied }: { visible: boolean; copied: boolean }) {
+type ShareStatus = "shared" | "copied" | "failed";
+
+function ShareToast({ visible, status }: { visible: boolean; status: ShareStatus }) {
   return (
     <div className={cn(
       "fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-foreground text-background text-sm font-semibold shadow-xl transition-all duration-300",
       visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
     )}>
-      {copied ? <><Check size={14} /> Link copied!</> : <><Share2 size={14} /> Shared!</>}
+      {status === "copied"
+        ? <><Check size={14} /> Link copied!</>
+        : status === "failed"
+          ? <><AlertCircle size={14} /> Could not share or copy link.</>
+          : <><Share2 size={14} /> Shared!</>}
     </div>
   );
 }
@@ -966,19 +972,53 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [coinInfoOpen, setCoinInfoOpen] = useState(false);
   const headerUnread = useNotificationStore((s) => s.notifications.filter(n => !n.read).length);
   const [shareToastVisible, setShareToastVisible] = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
+  const [shareStatus, setShareStatus] = useState<ShareStatus>("shared");
   const [side, setSide] = useState<Side>("buy");
 
   const handleShare = async () => {
-    const url = `${window.location.origin}${import.meta.env.BASE_URL}trade/${rawSymbol}`;
+    const url = new URL(`${BASE}/trade/${rawSymbol.replace(/\//g, "-")}`, window.location.origin).toString();
     const text = `Trade ${symbol} on OrahDEX — Trade Means DEX`;
-    if (navigator.share) {
-      try { await navigator.share({ title: `OrahDEX — ${symbol}`, text, url }); } catch {}
-      setShareCopied(false);
-    } else {
-      try { await navigator.clipboard.writeText(url); } catch {}
-      setShareCopied(true);
+    let status: ShareStatus = "failed";
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: `OrahDEX — ${symbol}`, text, url });
+        status = "shared";
+      } catch (error) {
+        // Closing the native share sheet is normal and should not show an error.
+        if ((error as DOMException)?.name === "AbortError") return;
+      }
     }
+
+    if (status !== "shared") {
+      let copied = false;
+      try {
+        if (typeof navigator.clipboard?.writeText === "function") {
+          await navigator.clipboard.writeText(url);
+          copied = true;
+        }
+      } catch {
+        // Use the selection-based fallback below in Safari and embedded browsers.
+      }
+      if (!copied) {
+        const field = document.createElement("textarea");
+        field.value = url;
+        field.setAttribute("readonly", "");
+        field.style.position = "fixed";
+        field.style.opacity = "0";
+        field.style.fontSize = "16px";
+        document.body.appendChild(field);
+        field.select();
+        field.setSelectionRange(0, field.value.length);
+        try {
+          copied = document.execCommand("copy");
+        } catch {
+          copied = false;
+        }
+        field.remove();
+      }
+      status = copied ? "copied" : "failed";
+    }
+    setShareStatus(status);
     setShareToastVisible(true);
     setTimeout(() => setShareToastVisible(false), 2200);
   };
@@ -1748,7 +1788,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           <button onClick={() => setCoinInfoOpen(true)}>
             <Info size={17} />
           </button>
-          <button onClick={handleShare}>
+          <button onClick={handleShare} aria-label={`Share ${symbol} trading page`}>
             <Share2 size={17} />
           </button>
         </div>
@@ -3302,7 +3342,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       )}
 
       {/* ── SHARE TOAST ── */}
-      <ShareToast visible={shareToastVisible} copied={shareCopied} />
+      <ShareToast visible={shareToastVisible} status={shareStatus} />
 
       {/* ── LOCK FUNDS DIALOG (confirmation + live status) ── */}
       <CrossChainSwapPanel open={atomicSwapOpen} onOpenChange={setAtomicSwapOpen} />

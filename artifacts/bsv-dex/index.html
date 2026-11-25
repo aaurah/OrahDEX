@@ -150,12 +150,21 @@ function showOrahdexBootError() {
   }
   d.textContent = window.__orahdexErrors.join("\n\n");
 }
+function isAppMounted() {
+  return Boolean(document.getElementById("root")?.childElementCount);
+}
 window.addEventListener("error", (e) => {
-  window.__orahdexErrors.push((e.message || "Error") + " @ " + (e.filename || "") + ":" + (e.lineno || ""));
+  const message = (e.message || "").trim();
+  // Safari masks many cross-origin errors as "Script error." with no source.
+  // Never replace a working app with the boot overlay for an opaque runtime error.
+  if (isAppMounted() || !message || message === "Script error.") return;
+  window.__orahdexErrors.push(message + " @ " + (e.filename || "") + ":" + (e.lineno || ""));
   showOrahdexBootError();
 });
 window.addEventListener("unhandledrejection", (e) => {
+  if (isAppMounted()) return;
   const r = e.reason;
+  if (r && r.name === "AbortError") return;
   window.__orahdexErrors.push("Unhandled promise rejection: " + (r && (r.stack || r.message) || String(r)));
   showOrahdexBootError();
 });

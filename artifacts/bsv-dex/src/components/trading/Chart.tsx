@@ -352,7 +352,8 @@ function OrahChart({
   const [fullscreenHost, setFullscreenHost] = useState<HTMLDivElement | null>(null);
   const touchScrubbingRef = useRef(false);
   const lastTouchCandleRef = useRef<number | null>(null);
-  const lastHapticAtRef = useRef(0);
+  const lastFeedbackAtRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const candlePulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /* Always-current candles ref so crosshair callback never goes stale */
   const candlesRef = useRef<Candle[]>([]);
@@ -418,6 +419,39 @@ function OrahChart({
   const [candleStepPulse, setCandleStepPulse] = useState(false);
   const [ticker, setTicker]       = useState<{ last: number; change: number; high: number; low: number; vol: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const getCandleAudioContext = () => {
+    if (typeof window === 'undefined') return null;
+    const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextConstructor) return null;
+    if (!audioContextRef.current) audioContextRef.current = new AudioContextConstructor();
+    return audioContextRef.current;
+  };
+  const unlockCandleAudio = () => {
+    const context = getCandleAudioContext();
+    if (context?.state === 'suspended') void context.resume().catch(() => {});
+  };
+  const playCandleSound = () => {
+    const context = audioContextRef.current;
+    if (!context || context.state === 'closed') return;
+    const play = () => {
+      if (context.state !== 'running') return;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const now = context.currentTime;
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(740, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.003);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.04);
+    };
+    if (context.state === 'running') play();
+    else void context.resume().then(play).catch(() => {});
+  };
 
   /* Keep effectiveIntervalRef current; reset autoInterval on parent-driven interval change */
   const effectiveInterval = autoInterval ?? interval;
@@ -496,6 +530,9 @@ function OrahChart({
   }, [fullscreenHost, fullscreen, fullscreenBg]);
   useEffect(() => () => {
     if (candlePulseTimerRef.current) clearTimeout(candlePulseTimerRef.current);
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      void audioContextRef.current.close().catch(() => {});
+    }
   }, []);
 
   /* parsed symbol */
@@ -868,15 +905,16 @@ function OrahChart({
       if (touchScrubbingRef.current && Number.isFinite(candleTime)) {
         if (lastTouchCandleRef.current !== null && candleTime !== lastTouchCandleRef.current) {
           const now = performance.now();
-          if (now - lastHapticAtRef.current >= 70) {
+          if (now - lastFeedbackAtRef.current >= 80) {
             try {
               if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-                navigator.vibrate(8);
+                navigator.vibrate(18);
               }
             } catch {
               // Vibration is optional and unavailable in some mobile browsers.
             }
-            lastHapticAtRef.current = now;
+            playCandleSound();
+            lastFeedbackAtRef.current = now;
           }
           setCandleStepPulse(true);
           if (candlePulseTimerRef.current) clearTimeout(candlePulseTimerRef.current);
@@ -1508,6 +1546,7 @@ function OrahChart({
             if (event.pointerType === 'touch') {
               touchScrubbingRef.current = true;
               lastTouchCandleRef.current = null;
+              unlockCandleAudio();
             }
           }}
           onPointerUp={() => {
