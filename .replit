@@ -11,6 +11,7 @@ router = "application"
 deploymentTarget = "vm"
 run = ["node", "start.mjs"]
 build = ["bash", "-c", "pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/bsv-dex run build"]
+ignorePorts = false
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
