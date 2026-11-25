@@ -434,6 +434,16 @@ function OrahChart({
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, [fullscreen]);
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      const isChartFullscreen = document.fullscreenElement === wrapRef.current
+        || (fullscreen && document.fullscreenElement === document.documentElement);
+      if (isChartFullscreen) setFullscreen(true);
+      else if (fullscreen) setFullscreen(false);
+    };
+    document.addEventListener('fullscreenchange', syncFullscreenState);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreenState);
+  }, [fullscreen]);
 
   /* parsed symbol */
   const parts = useMemo(() => {
@@ -720,6 +730,22 @@ function OrahChart({
     observer.observe(element);
     return () => observer.disconnect();
   }, [applyPendingChartFit, chartReady]);
+
+  // Fullscreen changes the chart viewport after the browser finishes its
+  // transition. Refit after that resize so candles use the newly available
+  // width instead of staying compressed in the old visible range.
+  useEffect(() => {
+    if (!chartReady) return;
+    fitPendingRef.current = true;
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => applyPendingChartFit());
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame) cancelAnimationFrame(secondFrame);
+    };
+  }, [fullscreen, chartReady, applyPendingChartFit]);
 
   /* ── Live last-bar update — fires on every ticker tick ───────────────────
      Calls series.update() instead of setData() so only the last bar redraws */
@@ -1183,11 +1209,64 @@ function OrahChart({
     return next;
   });
 
+  const exitFullscreen = async () => {
+    const activeFullscreenElement = document.fullscreenElement;
+    if (
+      activeFullscreenElement &&
+      (activeFullscreenElement === wrapRef.current || activeFullscreenElement === document.documentElement) &&
+      document.exitFullscreen
+    ) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // Keep the CSS fallback available if the browser refuses the exit request.
+      }
+    }
+    setFullscreen(false);
+  };
+
+  const toggleFullscreen = async () => {
+    const chartElement = wrapRef.current;
+    if (!chartElement) return;
+    if (fullscreen) {
+      await exitFullscreen();
+      return;
+    }
+
+    if (typeof chartElement.requestFullscreen === "function") {
+      try {
+        await chartElement.requestFullscreen();
+        setFullscreen(true);
+        return;
+      } catch {
+        // Some browsers only allow the document root to enter fullscreen.
+      }
+    }
+    if (typeof document.documentElement.requestFullscreen === "function") {
+      try {
+        await document.documentElement.requestFullscreen();
+        setFullscreen(true);
+        return;
+      } catch {
+        // Keep the CSS fallback for browsers that deny fullscreen requests.
+      }
+    }
+    setFullscreen(true);
+  };
+
   return (
-    <div ref={wrapRef} className={`relative flex flex-col ${fullscreen ? 'fixed inset-0 z-[9999]' : 'h-full'}`} style={{ backgroundColor: col.bg, color: col.text }}>
+    <div
+      ref={wrapRef}
+      className={`relative flex flex-col ${fullscreen ? 'fixed inset-0 z-[9999]' : 'h-full'}`}
+      style={{
+        backgroundColor: col.bg,
+        color: col.text,
+        ...(fullscreen ? { width: "100vw", height: "100dvh", minHeight: "100dvh" } : {}),
+      }}
+    >
       {fullscreen && (
         <button
-          onClick={() => setFullscreen(false)}
+          onClick={() => void exitFullscreen()}
           title="Close expanded chart"
           aria-label="Close expanded chart"
           className="absolute right-2 z-[10001] rounded-full border border-white/15 bg-black/75 p-2 text-white shadow-lg backdrop-blur-sm"
@@ -1349,7 +1428,13 @@ function OrahChart({
         <button onClick={screenshot} title="Save chart image" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><Camera className="w-3.5 h-3.5" /></button>
 
         {/* Fullscreen */}
-        <button onClick={() => setFullscreen(p => !p)} title="Fullscreen" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}>
+        <button
+          onClick={() => void toggleFullscreen()}
+          title={fullscreen ? "Exit fullscreen" : "Expand chart fullscreen"}
+          aria-label={fullscreen ? "Exit fullscreen chart" : "Expand chart fullscreen"}
+          data-testid="button-chart-fullscreen"
+          className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+        >
           {fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
         </button>
       </div>
