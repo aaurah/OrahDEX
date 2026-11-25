@@ -25,7 +25,14 @@ import { existsSync } from "fs";
 import path from "path";
 import { exec, spawn } from "child_process";
 import { fileURLToPath } from "url";
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createHash,
+  randomUUID,
+  randomBytes,
+  createCipheriv,
+  createDecipheriv,
+  scryptSync,
+} from "node:crypto";
 
 const router = Router();
 const DEVAI_CHANGE_PREFIX = "devai_change_proposal:";
@@ -45,9 +52,74 @@ const githubConnectors = new ReplitConnectors();
 // through a GitHub token, which is the only option on a self-hosted box. A
 // classic PAT with `repo` scope (or a fine-grained token with Contents: read
 // and write plus Pull requests: read and write) covers DevAI's read + write.
-const DEVAI_GITHUB_TOKEN = (process.env.DEVAI_GITHUB_TOKEN || process.env.GITHUB_TOKEN || "").trim();
+// The token may come from the environment or from the DevAI admin settings,
+// where it is stored AES-256-GCM encrypted in platform_settings.
+const DEVAI_GITHUB_ENV_TOKEN = (process.env.DEVAI_GITHUB_TOKEN || process.env.GITHUB_TOKEN || "").trim();
 const DEVAI_GITHUB_API_URL = (process.env.DEVAI_GITHUB_API_URL || "https://api.github.com").replace(/\/+$/, "");
-const devaiGitHubUsesToken = DEVAI_GITHUB_TOKEN.length > 0;
+const DEVAI_GITHUB_SETTINGS_KEY = "devai_github_token";
+const DEVAI_GITHUB_TOKEN_CACHE_MS = 30_000;
+
+function githubTokenSecret(): string | null {
+  const secret = (process.env.DEVAI_GITHUB_SECRET || process.env.EVM_WALLET_SECRET || "").trim();
+  return secret.length >= 16 ? secret : null;
+}
+
+function encryptGitHubToken(plain: string): string {
+  const secret = githubTokenSecret();
+  if (!secret) throw new Error("A secret is required to encrypt the GitHub token at rest.");
+  const salt = randomBytes(32);
+  const key = scryptSync(secret, salt, 32) as Buffer;
+  const iv = randomBytes(16);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const enc = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  return [salt.toString("hex"), iv.toString("hex"), cipher.getAuthTag().toString("hex"), enc.toString("hex")].join(":");
+}
+
+function decryptGitHubToken(stored: string): string | null {
+  const secret = githubTokenSecret();
+  if (!secret) return null;
+  const [saltHex, ivHex, tagHex, encHex] = stored.split(":");
+  if (!saltHex || !ivHex || !tagHex || !encHex) return null;
+  try {
+    const key = scryptSync(secret, Buffer.from(saltHex, "hex"), 32) as Buffer;
+    const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"), { authTagLength: 16 });
+    decipher.setAuthTag(Buffer.from(tagHex, "hex"));
+    return Buffer.concat([decipher.update(Buffer.from(encHex, "hex")), decipher.final()]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+type StoredGitHubToken = { token: string; hint: string; login?: string };
+
+async function readStoredGitHubToken(): Promise<StoredGitHubToken | null> {
+  try {
+    const [row] = await db.select().from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, DEVAI_GITHUB_SETTINGS_KEY)).limit(1);
+    if (!row) return null;
+    const parsed = JSON.parse(row.value) as { token?: string; hint?: string; login?: string };
+    const token = parsed?.token ? decryptGitHubToken(parsed.token) : null;
+    return token ? { token, hint: parsed.hint ?? token.slice(-4), login: parsed.login } : null;
+  } catch {
+    return null;
+  }
+}
+
+let cachedGitHubToken: { token: string | null; at: number } | null = null;
+
+async function resolveGitHubToken(): Promise<string | null> {
+  if (DEVAI_GITHUB_ENV_TOKEN) return DEVAI_GITHUB_ENV_TOKEN;
+  if (cachedGitHubToken && Date.now() - cachedGitHubToken.at < DEVAI_GITHUB_TOKEN_CACHE_MS) {
+    return cachedGitHubToken.token;
+  }
+  const stored = await readStoredGitHubToken();
+  cachedGitHubToken = { token: stored?.token ?? null, at: Date.now() };
+  return cachedGitHubToken.token;
+}
+
+function invalidateGitHubTokenCache() {
+  cachedGitHubToken = null;
+}
 
 type GitHubConnection = Awaited<ReturnType<ReplitConnectors["listConnections"]>>[number];
 type GitHubRequestOptions = {
@@ -62,7 +134,7 @@ type GitHubResponseLike = {
 };
 
 async function getGitHubConnection(): Promise<GitHubConnection> {
-  if (devaiGitHubUsesToken) {
+  if (await resolveGitHubToken()) {
     return { id: "github-token", connector_name: "github", status: "healthy" } as GitHubConnection;
   }
   const noConnector = () => new Error(
@@ -103,11 +175,12 @@ async function githubRequest<T = any>(
   apiPath: string,
   options: GitHubRequestOptions = {},
 ): Promise<T> {
-  if (devaiGitHubUsesToken) {
+  const token = await resolveGitHubToken();
+  if (token) {
     const response = await fetch(`${DEVAI_GITHUB_API_URL}${apiPath}`, {
       method: options.method ?? "GET",
       headers: {
-        Authorization: `Bearer ${DEVAI_GITHUB_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "User-Agent": "OrahDEX-DevAI/2.0",
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -977,8 +1050,8 @@ async function toolWriteGithubFile(args: {
   try { validateDevAiEditPath(args.path); }
   catch (err: any) { return `Cannot publish this path: ${err?.message ?? "invalid path"}`; }
   if (isCredentialLikeGitHubPath(args.path)) return "Access denied: credential-like files cannot be published.";
-  if (!devaiGitHubUsesToken) {
-    return "GitHub write access is not configured. An admin must set GITHUB_TOKEN (repo scope) on the API server before DevAI can open pull requests.";
+  if (!(await resolveGitHubToken())) {
+    return "GitHub write access is not configured. An admin must save a GitHub token in the DevAI settings page (Contents and Pull requests: write) before DevAI can open pull requests.";
   }
 
   const [owner, repo] = args.owner_repo.split("/");
@@ -1828,6 +1901,97 @@ router.post("/admin/devai/change-proposals/:id/reject", requireAdminToken, async
 });
 
 // ── GitHub browsing and review-gated draft PRs ─────────────────────────────────
+router.get("/admin/devai/github/token", requireAdminToken, async (_req, res) => {
+  try {
+    const stored = await readStoredGitHubToken();
+    const envToken = DEVAI_GITHUB_ENV_TOKEN || null;
+    res.json({
+      configured: Boolean(envToken || stored),
+      source: envToken ? "env" : stored ? "settings" : null,
+      hint: envToken ? `…${envToken.slice(-4)}` : stored ? `…${stored.hint}` : null,
+      login: stored?.login ?? null,
+      canStore: Boolean(githubTokenSecret()),
+      writeEnabled: Boolean(envToken || stored),
+    });
+  } catch {
+    res.status(500).json({ error: "Could not read the stored GitHub token." });
+  }
+});
+
+router.put("/admin/devai/github/token", requireAdminToken, async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!token) { res.status(400).json({ error: "Paste a GitHub token first." }); return; }
+  if (token.length > 500 || /\s/.test(token)) {
+    res.status(400).json({ error: "That does not look like a GitHub token (no spaces, max 500 characters)." });
+    return;
+  }
+  const secret = githubTokenSecret();
+  if (!secret) {
+    res.status(409).json({
+      error: "Set DEVAI_GITHUB_SECRET (or EVM_WALLET_SECRET) on the API server so the token can be encrypted at rest.",
+    });
+    return;
+  }
+
+  let login: string | undefined;
+  try {
+    const response = await fetch(`${DEVAI_GITHUB_API_URL}/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "User-Agent": "OrahDEX-DevAI/2.0",
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const payload = await response.json().catch(() => null) as { login?: string; message?: string } | null;
+    if (!response.ok) {
+      res.status(response.status === 401 ? 401 : 502).json({
+        error: response.status === 401
+          ? "GitHub rejected this token (bad credentials). Check that it copied fully and has not expired."
+          : `GitHub could not validate the token (${response.status}${payload?.message ? `: ${payload.message}` : ""}).`,
+      });
+      return;
+    }
+    if (typeof payload?.login === "string") login = payload.login;
+  } catch (err: any) {
+    res.status(502).json({ error: `GitHub could not be reached to validate the token: ${err?.message ?? "network error"}` });
+    return;
+  }
+
+  try {
+    const value = JSON.stringify({
+      token: encryptGitHubToken(token),
+      hint: token.slice(-4),
+      login,
+      savedAt: new Date().toISOString(),
+    });
+    await db.insert(platformSettingsTable)
+      .values({ key: DEVAI_GITHUB_SETTINGS_KEY, value, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: platformSettingsTable.key,
+        set: { value, updatedAt: new Date() },
+      });
+    invalidateGitHubTokenCache();
+    logger.info({ login, hint: token.slice(-4) }, "DevAI: GitHub token saved from admin settings");
+    res.json({ ok: true, login, hint: `…${token.slice(-4)}`, source: "settings" });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "DevAI: failed to store the GitHub token");
+    res.status(500).json({ error: "GitHub validated the token, but it could not be stored. Check the API logs." });
+  }
+});
+
+router.delete("/admin/devai/github/token", requireAdminToken, async (_req, res) => {
+  try {
+    await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, DEVAI_GITHUB_SETTINGS_KEY));
+    invalidateGitHubTokenCache();
+    logger.info("DevAI: stored GitHub token removed");
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Could not remove the stored GitHub token." });
+  }
+});
+
 router.get("/admin/devai/github", requireAdminToken, async (_req, res) => {
   try {
     const connection = await getGitHubConnection();
@@ -1837,9 +2001,11 @@ router.get("/admin/devai/github", requireAdminToken, async (_req, res) => {
         connectionId: connection.id,
       }),
     ]);
+    const stored = DEVAI_GITHUB_ENV_TOKEN ? null : await readStoredGitHubToken();
     res.json({
       connected: true,
-      auth: devaiGitHubUsesToken ? "token" : "replit",
+      auth: "token",
+      tokenSource: DEVAI_GITHUB_ENV_TOKEN ? "env" : stored ? "settings" : null,
       login: user.login,
       repos: repositories.map((repo) => ({
         name: repo.name,
