@@ -500,7 +500,11 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
 app.use((_req: Request, res: Response, next: NextFunction) => {
   // AI image generation (gpt-image-1) can take 90–120 s — give it extra headroom.
   const isAiImage = _req.path === "/social/ai/image" && _req.method === "POST";
-  const ms = isAiImage ? 120_000 : (_req.method === "GET" ? 30_000 : 60_000);
+  // Local Ollama can spend ~30 s loading a cold model before it starts replying.
+  // Keep this outer deadline aligned with the longer AI-route/model budgets.
+  const isLocalAiRequest = process.env.DEVAI_OLLAMA_ENABLED === "true"
+    && /^\/(?:api\/)?(?:ai|anthropic)(?:\/|$)/.test(_req.path);
+  const ms = isAiImage || isLocalAiRequest ? 120_000 : (_req.method === "GET" ? 30_000 : 60_000);
   const timer = setTimeout(() => {
     if (!res.headersSent) {
       res.status(503).json({ error: "Request timeout" });
