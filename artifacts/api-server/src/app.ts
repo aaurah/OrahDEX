@@ -840,12 +840,14 @@ hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB fa
 const SERVER_START_TIME = Date.now();
 
 async function healthHandler(_req: any, res: any) {
-  // During the first 45 s, return 200 unconditionally. The DB connection pool
-  // may not have warmed up yet and background services haven't run their first
-  // tick — a premature "dead" verdict would cause deployment health checks to
-  // fail and restart the instance, making the problem worse.
+  // During the first 15 s, report "starting" unconditionally. Background
+  // services have not run their first tick yet, and a premature "dead" verdict
+  // would fail deployment health checks and restart the instance. This window
+  // used to be 45 s, which kept the status page on "Checks Starting" for that
+  // long after every restart even though the API was already serving traffic
+  // seconds in; the worker registry reports its own boot state after this.
   const uptimeSec = (Date.now() - SERVER_START_TIME) / 1000;
-  if (uptimeSec < 45) {
+  if (uptimeSec < 15) {
     return res.status(200).json({
       status: "starting",
       uptime: Math.floor(uptimeSec),

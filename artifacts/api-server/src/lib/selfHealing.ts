@@ -54,13 +54,17 @@ export function resetServiceHealth(name: string): boolean {
 }
 
 /**
- * Upper bound on how long a service may report "starting" before its first
- * tick.  Without a bound, workers with long intervals (the funding cycle fires
- * every 8 h) reported "starting" for their entire first interval, which pinned
- * the public status page at "Checks Starting" / "Degraded" for hours even
- * though nothing was wrong.
+ * How long a freshly registered worker may report "starting".
+ *
+ * This used to be the service's whole first-run window (up to 5 min, because a
+ * 4 h sync legitimately does not fire sooner). Twelve long-interval workers
+ * therefore reported "starting" for minutes after every API restart, and
+ * /api/health answered "unknown" while the API was already serving traffic —
+ * the status page sat on "Checks Starting" long after a restart had finished.
+ * A worker that has not ticked yet is only "starting" during the boot window;
+ * afterwards it is on schedule (not due yet), which is healthy.
  */
-const STARTUP_GRACE_CAP_MS = 5 * 60_000;
+const STARTING_WINDOW_MS = 10_000;
 
 export function getHealthReport(): ServiceHealth[] {
   const now = Date.now();
@@ -68,18 +72,14 @@ export function getHealthReport(): ServiceHealth[] {
     const staleSinceMs = e.lastRunAt ? now - e.lastRunAt.getTime() : null;
     const staleness    = staleSinceMs ?? 0;   // null = never run yet → not stale
 
-    // How long the first scheduled run may legitimately take: the caller's
-    // startup delay when it set one, otherwise one jittered interval (+20 %).
-    const firstRunWindowMs = Math.min(
-      Math.max(30_000, e.initialDelayMs, e.intervalMs * 1.3),
-      STARTUP_GRACE_CAP_MS,
-    );
-
     let status: ServiceHealth["status"] = "healthy";
-    // No tick yet is only "starting" while the first run is still due; after
-    // that the service is simply on schedule (a 8 h cycle has not fired yet),
-    // not unhealthy.
-    if (!e.lastRunAt)                                                 status = now - e.registeredAt < firstRunWindowMs ? "starting" : "healthy";
+    if (!e.lastRunAt) {
+      // Boot window only: a service whose first run is not due yet (8 h
+      // funding cycle, 4 h catalog sync) is not "starting", it is idle.
+      if (now - e.registeredAt < STARTING_WINDOW_MS) {
+        status = "starting";
+      }
+    }
     else if (e.consecutiveFails >= 10)                                status = "dead";
     else if (e.lastRunAt && staleness > e.intervalMs * 5)            status = "dead";
     else if (e.consecutiveFails >= 3)                                 status = "degraded";

@@ -51,7 +51,7 @@ async function getLiveMarketContext(): Promise<string> {
       })
       .from(marketsTable)
       .orderBy(desc(marketsTable.volume24h))
-      .limit(30);
+      .limit(12);
 
     if (!rows.length) return "Live market data unavailable right now.";
 
@@ -61,7 +61,7 @@ async function getLiveMarketContext(): Promise<string> {
       return `${m.symbol}: $${Number(m.lastPrice ?? 0).toLocaleString("en-US", { maximumFractionDigits: 6 })} ${arrow}${Math.abs(change).toFixed(2)}% | Vol: $${Number(m.volume24h ?? 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
     });
 
-    return `LIVE ORAHDEX MARKET DATA (top 30 by volume, updated now):\n${lines.join("\n")}`;
+    return `LIVE ORAHDEX MARKET DATA (top 12 by volume, updated now):\n${lines.join("\n")}`;
   } catch (err) {
     logger.warn({ err }, "Failed to fetch live market data for Ora AI context");
     return "Live market data temporarily unavailable.";
@@ -220,7 +220,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
         { role: "system", content: systemPrompt },
         ...chatMessages,
       ];
-      const stream = await createDevaiOllamaStream(ollamaMessages, 2048, oraModel, controller.signal);
+      const stream = await createDevaiOllamaStream(ollamaMessages, 512, oraModel, controller.signal);
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content;
         if (text) {

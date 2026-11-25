@@ -111,7 +111,9 @@ test("ready Ora streaming uses its exact selected model and finite output budget
     assert.equal(request.model, "chat-model:3b");
     assert.equal(request.options.num_predict, 1024);
     assert.equal(request.options.num_ctx, 2048);
-    assert.equal(request.keep_alive, "30s");
+    // The model is kept resident between messages: a 30s keep-alive made every
+    // chat after a short pause pay a 4-7s reload on this CPU-only host.
+    assert.equal(request.keep_alive, "30m");
   } finally { globalThis.fetch = tags; }
 });
 

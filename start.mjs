@@ -42,9 +42,14 @@ function startOptionalOllama() {
       OLLAMA_HOST: "127.0.0.1:11434",
       OLLAMA_MODELS: modelsDir,
       OLLAMA_NUM_PARALLEL: "1",
-      OLLAMA_MAX_LOADED_MODELS: "1",
-      OLLAMA_KEEP_ALIVE: "30s",
+      // Ora (llama3.2:3b) and DevAI (qwen2.5-coder:1.5b) are ~3 GB together and
+      // the 6 GiB headroom check above already guards memory, so keep both
+      // resident: with 1 loaded model every Ora<->DevAI switch paid a reload.
+      OLLAMA_MAX_LOADED_MODELS: "2",
+      // 30s evicted the model between messages (~4-7s reload on CPU).
+      OLLAMA_KEEP_ALIVE: "30m",
       OLLAMA_CONTEXT_LENGTH: "2048",
+      OLLAMA_FLASH_ATTENTION: "1",
     },
   });
   ollamaProc.on("error", (err) => console.error("[ollama] Local model service could not start:", err.message));
@@ -101,9 +106,11 @@ start(
   { PORT: FRONTEND_PORT, API_PORT }
 );
 
-// Wait until the exchange services have had time to boot, then check the
-// remaining cgroup headroom before starting any local model process.
-setTimeout(startOptionalOllama, 30_000).unref();
+// Give the exchange services a moment to boot, then check the remaining cgroup
+// headroom before starting any local model process. The wait used to be 30s,
+// which left AI features unusable for the first half minute after a start even
+// though the model server itself only needs a few MB until a model is loaded.
+setTimeout(startOptionalOllama, 3_000).unref();
 
 process.on("SIGTERM", () => { ollamaProc?.kill("SIGTERM"); process.exit(0); });
 process.on("SIGINT",  () => { ollamaProc?.kill("SIGTERM"); process.exit(0); });
