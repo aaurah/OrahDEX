@@ -65,7 +65,7 @@ Source: attached static review of `aaurah/OrahDEX` at the reported Main revision
 - Preview checks: personal API-key endpoint `410`, unauthenticated withdrawal history `401`, public BSV relay `410`, legacy v1 relay `410`.
 - The SAST path-traversal alert in the mobile artifact is a false positive: platform input is restricted to `ios`/`android`, paths are resolved inside the static root, and traversal tests pass. The SAST redirect alert is constrained to HTTPS URLs from a fixed logo-host allowlist.
 - HoundDog's three “encryption key sent to output” alerts point to logs of the public deployer address, not a private key.
-- Dependency scanning reports the `elliptic@6.6.1` advisory. The workspace already applies `patches/elliptic@6.6.1.patch` to preserve RFC 6979 nonce byte length, but the scanner does not account for the local patch and the registry has no newer upstream release. Keep this finding open for upstream fix/independent crypto review.
+- Dependency scanning still reports the `elliptic@6.6.1` advisory, but the workspace applies `patches/elliptic@6.6.1.patch` to preserve RFC 6979 nonce byte length and includes a P-521 leading-zero regression test. The registry still has no fixed upstream release, so scanners report the vulnerable version despite the local code fix. Treat this as locally mitigated, not scanner-cleared; retain the patch and test until an upstream fix or independent crypto review is available.
 
 ## Not performed
 
