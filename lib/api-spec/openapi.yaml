@@ -759,6 +759,12 @@ components:
             type: string
         minimumModelHeadroomBytes:
           type: number
+        requiredInferenceHeadroomBytes:
+          type: number
+          description: Additional free host memory required for this exact model, including the API reserve.
+        residentModelBytes:
+          type: number
+          description: Verified reusable CPU memory of the exact selected Ollama runner.
         memory:
           type: [object, "null"]
           required: [availableBytes, limitBytes]

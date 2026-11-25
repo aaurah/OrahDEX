@@ -93,10 +93,33 @@ export async function getDevaiOllamaStatus(model: string = devaiModel) {
     if (!response.ok) {
       return { ...base, reachable: false, modelAvailable: false, ready: false, availableModels: [] as string[], code: "OLLAMA_UNREACHABLE", error: "Ollama returned an error. Check the model service on this API VM." };
     }
-    const data = await response.json() as { models?: Array<{ name?: string }> };
+    const data = await response.json() as { models?: Array<{ name?: string; size?: number }> };
     const models = (data.models ?? []).map((item) => item.name ?? "").filter(Boolean);
-    const modelAvailable = models.some((name) => exactOllamaTag(name) === exactOllamaTag(model));
-    const enoughMemory = memory !== null && memory.availableBytes >= minimumModelHeadroomBytes;
+    const selected = data.models?.find(item => item.name && exactOllamaTag(item.name) === exactOllamaTag(model));
+    const modelAvailable = Boolean(selected);
+    const reserveBytes = (process.env.NODE_ENV === "production" ? 2 : 1) * 1024 ** 3;
+    const modelSize = Number(selected?.size);
+    // Keep startup/download admission separate from inference: do not demand a
+    // second full model allocation when the exact selected runner is resident.
+    const estimatedModelBytes = Number.isFinite(modelSize) && modelSize > 0
+      ? Math.ceil(modelSize * 1.5 + 0.5 * 1024 ** 3)
+      : minimumModelHeadroomBytes - reserveBytes;
+    let residentModelBytes = 0;
+    if (modelAvailable) {
+      try {
+        const ps = await fetch(`${devaiOllamaServerUrl}/api/ps`, { signal: AbortSignal.timeout(1800) });
+        if (ps.ok) {
+          const loaded = await ps.json() as { models?: Array<{ name?: string; size?: number; size_vram?: number }> };
+          const resident = loaded.models?.find(item => item.name && exactOllamaTag(item.name) === exactOllamaTag(model));
+          // GPU allocations do not replenish host-memory headroom. Never give
+          // credit for another model, missing metrics, or an unbounded value.
+          const cpuBytes = Number(resident?.size) - Number(resident?.size_vram ?? 0);
+          if (Number.isFinite(cpuBytes) && cpuBytes > 0) residentModelBytes = Math.min(cpuBytes, estimatedModelBytes);
+        }
+      } catch { /* Treat an unverifiable runner as a cold load. */ }
+    }
+    const requiredInferenceHeadroomBytes = reserveBytes + Math.max(0, estimatedModelBytes - residentModelBytes);
+    const enoughMemory = memory !== null && memory.availableBytes >= requiredInferenceHeadroomBytes;
     const code = !enabled ? "OLLAMA_DISABLED" : !modelAvailable ? "OLLAMA_MODEL_MISSING"
       : !enoughMemory ? "OLLAMA_INSUFFICIENT_MEMORY" : "READY";
     const error = !enabled
@@ -104,12 +127,14 @@ export async function getDevaiOllamaStatus(model: string = devaiModel) {
       : !modelAvailable
         ? `Model ${model} is not installed on this API runtime. Open Admin → DevAI to install the selected tag or configure an installed tag.`
         : !enoughMemory
-          ? `Local inference is blocked to protect the API: ${(minimumModelHeadroomBytes / 1024 ** 3).toFixed(1)} GiB free memory is required.`
+          ? `Local inference is blocked to protect the API: ${(requiredInferenceHeadroomBytes / 1024 ** 3).toFixed(1)} GiB free memory is required for ${model}, including API headroom.`
           : null;
     return {
       ...base,
       reachable: true,
       modelAvailable,
+      requiredInferenceHeadroomBytes,
+      residentModelBytes,
       availableModels: models,
       ready: code === "READY", code, error,
     };

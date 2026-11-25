@@ -35,6 +35,10 @@ export interface AiRuntimeStatus {
   modelAvailable?: boolean;
   availableModels?: string[];
   minimumModelHeadroomBytes?: number;
+  /** Additional free host memory required for this exact model, including the API reserve. */
+  requiredInferenceHeadroomBytes?: number;
+  /** Verified reusable CPU memory of the exact selected Ollama runner. */
+  residentModelBytes?: number;
   /** @nullable */
   memory?: AiRuntimeStatusMemory;
 }

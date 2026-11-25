@@ -19,6 +19,36 @@ export function parseLocalToolCall(content: string, allowedNames: ReadonlySet<st
   return [];
 }
 
+/**
+ * A user explicitly naming a DevAI tool is an unambiguous routing hint. Pass
+ * only those requested schemas to small local models; this avoids drowning a
+ * simple single-file lookup in every exchange/GitHub/database tool definition.
+ */
+export function selectExplicitlyRequestedTools<T extends { function: { name: string } }>(
+  content: string,
+  tools: readonly T[],
+): T[] {
+  const lower = content.toLowerCase();
+  const explicitlyRequested = tools.filter(tool =>
+    lower.includes(tool.function.name.toLowerCase()),
+  );
+  return explicitlyRequested.length ? explicitlyRequested : [...tools];
+}
+
+/** For a user-requested single tool, return its verified data without a slow,
+ * second model call that could fabricate a summary or time out after success. */
+export function formatExplicitToolResult(
+  content: string,
+  selectedToolNames: readonly string[],
+  executedToolName: string,
+  output: string,
+): string | null {
+  const explicitlySelected = selectedToolNames.length === 1
+    && content.toLowerCase().includes(selectedToolNames[0]!.toLowerCase())
+    && selectedToolNames[0] === executedToolName;
+  return explicitlySelected ? `Verified result from ${executedToolName}:\n${output}` : null;
+}
+
 /** Some small Qwen tags support text JSON calls but reject native tool fields. */
 export async function completeWithLocalTools(
   create: (body: any, options: any) => Promise<any>,

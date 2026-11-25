@@ -14,7 +14,7 @@ const temporary = await mkdtemp(path.join(tmpdir(), "orah-ai-test-"));
 const bundle = path.join(temporary, "client.cjs");
 await build({
   stdin: {
-    contents: 'export * from "./lib/integrations-openai-ai-server/src/client.ts"; export * from "./artifacts/api-server/src/lib/localAiTools.ts";',
+    contents: 'export * from "./lib/integrations-openai-ai-server/src/client.ts"; export * from "./artifacts/api-server/src/lib/localAiTools.ts"; export * from "./artifacts/api-server/src/lib/oraPrompt.ts";',
     resolveDir: root,
   },
   bundle: true, platform: "node", format: "cjs", outfile: bundle, logLevel: "silent",
@@ -42,7 +42,9 @@ function setup(models = ["qwen2.5-coder:1.5b"], freeGiB = 7) {
     if (file === "/proc/meminfo") return `MemTotal: 8388608 kB\nMemAvailable: ${freeGiB * 1024 ** 2} kB\n`;
     return originalRead(file, ...args);
   };
-  globalThis.fetch = async () => new Response(JSON.stringify({ models: models.map(name => ({ name })) }));
+  globalThis.fetch = async url => new Response(JSON.stringify({
+    models: String(url).endsWith("/api/ps") ? [] : models.map(name => ({ name })),
+  }));
 }
 
 test("model tags match exactly, with only the documented :latest expansion", async () => {
@@ -96,7 +98,7 @@ test("ready Ora streaming uses its exact selected model and finite output budget
   const tags = globalThis.fetch;
   let request;
   globalThis.fetch = async (url, options) => {
-    if (String(url).endsWith("/api/tags")) return tags(url, options);
+    if (/\/api\/(tags|ps)$/.test(String(url))) return tags(url, options);
     assert.match(String(url), /\/api\/chat$/);
     request = JSON.parse(options.body);
     return new Response('{"message":{"content":"Hello"},"done":false}\n{"done":true}');
@@ -111,6 +113,30 @@ test("ready Ora streaming uses its exact selected model and finite output budget
     assert.equal(request.options.num_ctx, 2048);
     assert.equal(request.keep_alive, "30s");
   } finally { globalThis.fetch = tags; }
+});
+
+test("inference budgets exact model size and credits only that runner's measured CPU allocation", async () => {
+  setup(["qwen2.5-coder:1.5b"], 3.1);
+  let resident = [];
+  globalThis.fetch = async url => new Response(JSON.stringify({
+    models: String(url).endsWith("/api/ps") ? resident : [{name:"qwen2.5-coder:1.5b", size:986062089}],
+  }));
+  let status = await client.getDevaiOllamaStatus();
+  assert.equal(status.ready, true);
+  assert.ok(status.requiredInferenceHeadroomBytes < status.minimumModelHeadroomBytes);
+  setup(["qwen2.5-coder:1.5b"], 1.3);
+  globalThis.fetch = async url => new Response(JSON.stringify({
+    models: String(url).endsWith("/api/ps") ? resident : [{name:"qwen2.5-coder:1.5b", size:986062089}],
+  }));
+  assert.equal((await client.getDevaiOllamaStatus()).ready, false);
+  resident = [{name:"another-model:1.5b", size:2 * 1024 ** 3, size_vram:0}];
+  assert.equal((await client.getDevaiOllamaStatus()).ready, false);
+  resident = [{name:"qwen2.5-coder:1.5b", size:2 * 1024 ** 3, size_vram:2 * 1024 ** 3}];
+  assert.equal((await client.getDevaiOllamaStatus()).ready, false);
+  resident = [{name:"qwen2.5-coder:1.5b", size:2 * 1024 ** 3, size_vram:0}];
+  status = await client.getDevaiOllamaStatus();
+  assert.equal(status.ready, true);
+  assert.equal(status.requiredInferenceHeadroomBytes, 1024 ** 3);
 });
 
 test("DevAI accepts explicit allowlisted Qwen JSON tool calls and rejects shell calls", () => {
@@ -144,4 +170,46 @@ test("DevAI retries only unsupported native tools through its same-model JSON fl
   await assert.rejects(client.completeWithLocalTools(async () => {
     throw Object.assign(new Error("model out of memory"), { status: 500 });
   }, { messages: [], tools: [] }, {}), /out of memory/);
+});
+
+test("DevAI narrows explicitly requested tools while preserving allowlisted defaults", () => {
+  const tools = [
+    { function: { name: "read_project_file" } },
+    { function: { name: "query_database" } },
+    { function: { name: "search_project_code" } },
+  ];
+  assert.deepEqual(
+    client.selectExplicitlyRequestedTools("Use read_project_file to read package.json", tools),
+    [tools[0]],
+  );
+  assert.deepEqual(
+    client.selectExplicitlyRequestedTools("Inspect project implementation", tools),
+    tools,
+  );
+});
+
+test("an explicit one-tool request returns its verified result without another model call", () => {
+  const output = 'File package.json: {"name":"workspace"}';
+  assert.match(
+    client.formatExplicitToolResult("Use read_project_file to read package.json", ["read_project_file"], "read_project_file", output),
+    /"name":"workspace"/,
+  );
+  assert.equal(
+    client.formatExplicitToolResult("Please explore the repo", ["read_project_file"], "read_project_file", output),
+    null,
+  );
+  assert.equal(
+    client.formatExplicitToolResult("Use read_project_file and fetch_url", ["read_project_file", "fetch_url"], "read_project_file", output),
+    null,
+  );
+});
+
+test("Ora's shared context distinguishes BSV settlement, EVM execution, and wallet versus trading balances", () => {
+  const prompt = client.buildOraSystemPrompt("BSV/USDT: supplied quote");
+  assert.match(prompt, /does not mean every OrahDEX trade/);
+  assert.match(prompt, /Direct EVM swaps use the selected EVM network/);
+  assert.match(prompt, /wallet balance is not automatically/);
+  assert.match(prompt, /never invent prices or execution status/);
+  assert.match(prompt, /BSV\/USDT: supplied quote/);
+  assert.doesNotMatch(prompt, /every trade settles on BSV|every trade finalizes on-chain|March 2026/);
 });

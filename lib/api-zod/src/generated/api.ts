@@ -23,6 +23,8 @@ export const GetOraInsightsRuntimeResponse = zod.object({
   "modelAvailable": zod.boolean().optional(),
   "availableModels": zod.array(zod.string()).optional(),
   "minimumModelHeadroomBytes": zod.number().optional(),
+  "requiredInferenceHeadroomBytes": zod.number().optional().describe('Additional free host memory required for this exact model, including the API reserve.'),
+  "residentModelBytes": zod.number().optional().describe('Verified reusable CPU memory of the exact selected Ollama runner.'),
   "memory": zod.object({
   "availableBytes": zod.number(),
   "limitBytes": zod.number()
@@ -45,6 +47,8 @@ export const GetOraChatRuntimeResponse = zod.object({
   "modelAvailable": zod.boolean().optional(),
   "availableModels": zod.array(zod.string()).optional(),
   "minimumModelHeadroomBytes": zod.number().optional(),
+  "requiredInferenceHeadroomBytes": zod.number().optional().describe('Additional free host memory required for this exact model, including the API reserve.'),
+  "residentModelBytes": zod.number().optional().describe('Verified reusable CPU memory of the exact selected Ollama runner.'),
   "memory": zod.object({
   "availableBytes": zod.number(),
   "limitBytes": zod.number()
@@ -67,6 +71,8 @@ export const GetDevAiRuntimeResponse = zod.object({
   "modelAvailable": zod.boolean().optional(),
   "availableModels": zod.array(zod.string()).optional(),
   "minimumModelHeadroomBytes": zod.number().optional(),
+  "requiredInferenceHeadroomBytes": zod.number().optional().describe('Additional free host memory required for this exact model, including the API reserve.'),
+  "residentModelBytes": zod.number().optional().describe('Verified reusable CPU memory of the exact selected Ollama runner.'),
   "memory": zod.object({
   "availableBytes": zod.number(),
   "limitBytes": zod.number()

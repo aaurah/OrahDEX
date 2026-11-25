@@ -16,7 +16,11 @@ When local inference is disabled, Ora chat uses the explicitly configured Anthro
 
 ## Memory safety
 
-Local inference and downloads require the existing free-memory thresholds: **3.5 GiB in development and 6 GiB in production**. Readiness uses the lower of cgroup headroom and Linux `MemAvailable`. They can differ substantially; Ollama can reject a load even when cgroup accounting alone appears to allow it.
+Service startup and model downloads retain their free-memory thresholds: **3.5 GiB in development and 6 GiB in production**. Readiness uses the lower of cgroup headroom and Linux `MemAvailable`. They can differ substantially; Ollama can reject a load even when cgroup accounting alone appears to allow it.
+
+Inference admission is separate: it reserves 1 GiB for the development API (2 GiB in production), plus a conservative estimate of the selected model's weights, context, and runner overhead. Only the exact selected model's verified resident CPU allocation can reduce that estimate; another model or a GPU allocation gives no credit. Missing model-size metadata falls back to the startup-sized budget, and missing runner metadata is treated as a cold load. The estimate is not a guarantee; Ollama can still reject inference, which must be reported to the user.
+
+Readiness requests can retry loopback Ollama startup after temporary memory pressure clears, without an API restart. Recovery is single-flight, has a one-minute spawn cooldown, preserves all memory checks, and is development-only. The published launcher still owns production startup.
 
 Do not bypass these checks, raise Node's heap without budgeting total RAM, or attempt to load an untagged larger model to work around a missing small tag. The API and frontend also need memory. A published 2 GB VM cannot meet the local inference threshold.
 
@@ -34,8 +38,10 @@ Model weights are not committed to Git or generated into the frontend. The model
 
 ## Verification and limits
 
-The focused runtime tests exercise exact tag selection, missing/disabled/unreachable models, host versus cgroup memory checks, production headroom, native stream conversion, output limits, and the allowlisted Qwen tool fallback.
+The focused runtime tests exercise exact tag selection, missing/disabled/unreachable models, host versus cgroup memory checks, production headroom, measured resident-runner budgets, native stream conversion, output limits, model-service recovery, Ora's factual route boundaries, and the allowlisted Qwen tool flow.
 
-Live testing downloaded `qwen2.5-coder:1.5b`, but Ollama refused inference because model memory requirements exceeded available host memory. After restarting the API, the autostart guard correctly kept Ollama stopped due to insufficient free memory. A real generated Ora/DevAI answer is **not verified on this VM**. Do not describe these changes as working live inference until an adequately provisioned runtime completes both prompts and a safe DevAI tool call.
+Live preview verification used the installed `qwen2.5-coder:1.5b`: Ora streamed a real response distinguishing BSV settlement from EVM swaps, and authenticated DevAI returned a real `read_project_file` call, its actual tool output, and a completed response. Test conversations and the temporary admin session were deleted/revoked. Preview `/api/health` returned HTTP 200. Readiness is model-aware and may return to unavailable when available memory drops below the cold-load or resident-model budget.
 
-API and web typechecks and the frontend build passed. The API workflow rebuilt and started successfully. The full API suite has an unrelated existing failure in the public worker-health regression: it expects a no-first-run worker to be `starting`, while the current worker implementation uses startup grace handling. This task does not change worker scheduling or that test.
+The `llama3.2:3b` model shown in another VM's report is not installed in this Replit runtime; do not silently change the selected model or claim the deployments are equivalent. The preview's Qwen model weights remain a runtime-local cache. This change was not published, and published AI endpoints were not verified.
+
+API and web typechecks, the API build, and focused tests passed. A prior full API suite run surfaced an unrelated existing public worker-health test mismatch: it expects a no-first-run worker to be `starting`, while the current implementation applies startup-grace handling. This task does not change worker scheduling or that test.
