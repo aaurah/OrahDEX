@@ -5,6 +5,7 @@ import { conversations, messages, platformSettingsTable } from "@workspace/db/sc
 import {
   devaiOpenAI,
   devaiModel,
+  devaiOllamaRemote,
   devaiOllamaServerUrl,
   getOllamaMemory,
   isDevaiOllamaEnabled,
@@ -1280,7 +1281,7 @@ async function getLocalModelStatus() {
 async function waitForLocalModelStatus(timeoutMs = 12_000) {
   const deadline = Date.now() + timeoutMs;
   let status = await getLocalModelStatus();
-  while (status.enabled && !status.reachable && Date.now() < deadline) {
+  while (!devaiOllamaRemote && status.enabled && !status.reachable && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     status = await getLocalModelStatus();
   }
@@ -1366,7 +1367,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 
   const modelStatus = await waitForLocalModelStatus();
   if (!modelStatus.ready) {
-    res.status(503).json({ error: modelStatus.error, code: modelStatus.code, model: DEVAI_MODEL, provider: "local_ollama" });
+    res.status(503).json({ error: modelStatus.error, code: modelStatus.code, model: DEVAI_MODEL, provider: modelStatus.provider });
     return;
   }
 
@@ -1383,9 +1384,15 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
       res.end();
     }
   }, { once: true });
-  sse(res, { status: "Starting the local model and preparing exchange context…" });
+  const modelStatusText = devaiOllamaRemote
+    ? "Connecting securely to the Termux model and preparing exchange context…"
+    : "Starting the local model and preparing exchange context…";
+  const heartbeatText = devaiOllamaRemote
+    ? "The Termux model is still working; keep the phone awake and connected."
+    : "The local model is still working; this can take a little while on the VM.";
+  sse(res, { status: modelStatusText });
   const heartbeat = setInterval(() => {
-    if (!res.writableEnded) sse(res, { status: "The local model is still working; this can take a little while on the VM." });
+    if (!res.writableEnded) sse(res, { status: heartbeatText });
   }, 10_000);
   heartbeat.unref?.();
   res.on("close", () => {
@@ -1567,16 +1574,27 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 
 // ── GET /admin/devai/status ────────────────────────────────────────────────────
 router.get("/admin/devai/status", requireAdminToken, async (_req, res) => {
-  const [model, memory] = await Promise.all([getLocalModelStatus(), getRuntimeMemory()]);
+  const [model, memory] = await Promise.all([
+    getLocalModelStatus(),
+    devaiOllamaRemote ? Promise.resolve(null) : getRuntimeMemory(),
+  ]);
   res.json({
-    ollamaAutostartEnabled: isDevaiOllamaEnabled(),
+    ollamaAutostartEnabled: isDevaiOllamaEnabled() && !devaiOllamaRemote,
+    remoteOllamaEnabled: devaiOllamaRemote,
     ...model,
     memory,
-    minimumModelHeadroomBytes: DEVAI_MIN_OLLAMA_HEADROOM_BYTES,
+    minimumModelHeadroomBytes: devaiOllamaRemote ? null : DEVAI_MIN_OLLAMA_HEADROOM_BYTES,
   });
 });
 
 router.post("/admin/devai/model/pull", requireAdminToken, async (_req, res) => {
+  if (devaiOllamaRemote) {
+    res.status(409).json({
+      error: "Model downloads are disabled through the public tunnel. Install the selected model on the Termux Ollama host, then retry.",
+      provider: "remote_ollama",
+    });
+    return;
+  }
   const memory = await getRuntimeMemory();
   const requiredHeadroom = DEVAI_MIN_OLLAMA_HEADROOM_BYTES;
   if (!memory || memory.availableBytes < requiredHeadroom) {

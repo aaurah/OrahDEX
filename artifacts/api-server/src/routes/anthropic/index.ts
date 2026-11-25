@@ -262,12 +262,12 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
     if (!res.headersSent) {
       res.status(localOllama ? 503 : 500).json({
         error: localOllama
-          ? "Local Ollama could not complete this chat. Check Admin → DevAI for model status."
+          ? "Ollama could not complete this chat. Check Admin → DevAI for model status."
           : "AI request failed",
       });
     } else {
       const message = localOllama
-        ? "Local Ollama could not complete this chat. Check Admin → DevAI for model status."
+        ? "Ollama could not complete this chat. Check Admin → DevAI for model status."
         : "AI stream error. Please try again.";
       res.write(`data: ${JSON.stringify({ content: message })}\n\n`);
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);

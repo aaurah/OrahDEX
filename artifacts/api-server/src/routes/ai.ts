@@ -405,7 +405,7 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
     if (!useLocalOllama) tripCircuitBreaker(err);
     logger.error({ err: err?.message }, "AI chat error");
     const fallback = useLocalOllama
-      ? "Local Ollama could not complete this chat. Check Admin → DevAI for model status, then try again."
+      ? "Ollama could not complete this chat. Check Admin → DevAI for model status, then try again."
       : FALLBACK_CHAT;
     res.write(`data: ${JSON.stringify({ content: fallback })}\n\n`);
     try {

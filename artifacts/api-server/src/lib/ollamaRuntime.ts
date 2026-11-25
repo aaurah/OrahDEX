@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   devaiModel,
+  devaiOllamaAccessHeaders,
+  devaiOllamaRemote,
   devaiOllamaServerUrl,
   getDevaiOllamaStatus as inspectOllama,
   getOllamaMemory,
@@ -58,7 +60,8 @@ export function getLocalOllamaProviderHealth(): "starting" | "healthy" | "degrad
 async function getInstalledModels(): Promise<Set<string> | null> {
   try {
     const response = await fetch(`${devaiOllamaServerUrl}/api/tags`, {
-      signal: AbortSignal.timeout(1800),
+      headers: devaiOllamaAccessHeaders(),
+      signal: AbortSignal.timeout(devaiOllamaRemote ? 5000 : 1800),
     });
     if (!response.ok) return null;
     const data = await response.json() as { models?: Array<{ name?: string }> };
@@ -89,6 +92,7 @@ async function getModelDiskAvailableBytes(): Promise<number | null> {
 }
 
 async function ensureModelsInstalled(): Promise<void> {
+  if (devaiOllamaRemote) return;
   if (provisioning || Date.now() < nextProvisionAttemptAt) return provisioning ?? undefined;
   provisioning = (async () => {
     provisionRetryDelayMs = OLLAMA_RETRY_DELAY_MS;
@@ -148,6 +152,7 @@ async function ensureModelsInstalled(): Promise<void> {
 }
 
 async function recoverOllama(): Promise<boolean> {
+  if (devaiOllamaRemote) return false;
   if (starting) return starting;
   if (!isDevaiOllamaEnabled() || Date.now() < nextAttemptAt) return false;
   starting = (async () => {
@@ -198,6 +203,7 @@ async function recoverOllama(): Promise<boolean> {
 export async function getApiOllamaStatus(model?: string) {
   const status = await inspectOllama(model);
   recordModelReadiness(model ?? devaiModel, status.ready);
+  if (devaiOllamaRemote) return status;
   const enoughStartupMemory = status.memory
     && status.memory.availableBytes >= status.minimumModelHeadroomBytes;
   if (status.enabled && enoughStartupMemory) {

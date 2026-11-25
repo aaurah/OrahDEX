@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { readFile } from "node:fs/promises";
+import { isIP } from "node:net";
 
 if (!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || !process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
   console.warn(
@@ -20,15 +21,63 @@ export const devaiModel = (process.env.DEVAI_MODEL || "qwen2.5-coder:1.5b").trim
 // code-tuned model; both run on the same local Ollama service.
 export const oraModel = (process.env.ORA_AI_MODEL || devaiModel).trim() || devaiModel;
 export const devaiOllamaBaseUrl = (process.env.DEVAI_OLLAMA_BASE_URL || "http://127.0.0.1:11434/v1").replace(/\/+$/, "");
-const devaiUrl = new URL(devaiOllamaBaseUrl);
-if (
-  devaiUrl.protocol !== "http:"
-  || !["127.0.0.1", "localhost", "::1", "[::1]"].includes(devaiUrl.hostname)
-  || (devaiUrl.port && devaiUrl.port !== "11434")
-  || devaiUrl.username
-  || devaiUrl.password
-) {
-  throw new Error("DEVAI_OLLAMA_BASE_URL must point to a local loopback Ollama service.");
+export const devaiOllamaRemote = process.env.DEVAI_OLLAMA_REMOTE === "true";
+
+export function validateDevaiOllamaConfig(
+  baseUrl: string,
+  remote: boolean,
+  accessClientId: string | undefined,
+  accessClientSecret: string | undefined,
+): URL {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new Error("DEVAI_OLLAMA_BASE_URL must be a valid URL.");
+  }
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const localHost = ["127.0.0.1", "localhost", "::1"].includes(hostname) || hostname.endsWith(".localhost");
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error("DEVAI_OLLAMA_BASE_URL cannot contain credentials, a query, or a fragment.");
+  }
+
+  if (remote) {
+    if (
+      url.protocol !== "https:"
+      || localHost
+      || isIP(hostname)
+      || (url.port && url.port !== "443")
+      || url.pathname.replace(/\/+$/, "") !== "/v1"
+    ) {
+      throw new Error("Remote Ollama must use an HTTPS hostname on port 443 with the /v1 path.");
+    }
+    if (!accessClientId?.trim() || !accessClientSecret?.trim()) {
+      throw new Error("Remote Ollama requires Cloudflare Access service-token credentials.");
+    }
+    return url;
+  }
+
+  if (
+    url.protocol !== "http:"
+    || !localHost
+    || (url.port && url.port !== "11434")
+    || url.pathname.replace(/\/+$/, "") !== "/v1"
+  ) {
+    throw new Error("Local DEVAI_OLLAMA_BASE_URL must point to loopback Ollama on port 11434 with the /v1 path.");
+  }
+  return url;
+}
+
+const accessClientId = process.env.CF_ACCESS_CLIENT_ID;
+const accessClientSecret = process.env.CF_ACCESS_CLIENT_SECRET;
+validateDevaiOllamaConfig(devaiOllamaBaseUrl, devaiOllamaRemote, accessClientId, accessClientSecret);
+
+export function devaiOllamaAccessHeaders(): Record<string, string> {
+  if (!devaiOllamaRemote) return {};
+  return {
+    "CF-Access-Client-Id": accessClientId!.trim(),
+    "CF-Access-Client-Secret": accessClientSecret!.trim(),
+  };
 }
 
 export const devaiOllamaServerUrl = devaiOllamaBaseUrl.replace(/\/v1$/, "");
@@ -36,6 +85,7 @@ export const devaiOllamaServerUrl = devaiOllamaBaseUrl.replace(/\/v1$/, "");
 export const devaiOpenAI = new OpenAI({
   apiKey: "ollama-local",
   baseURL: devaiOllamaBaseUrl,
+  defaultHeaders: devaiOllamaAccessHeaders(),
   timeout: 120_000,
   maxRetries: 0,
 });
@@ -79,19 +129,35 @@ export const exactOllamaTag = (model: string) =>
 
 export async function getDevaiOllamaStatus(model: string = devaiModel) {
   const enabled = isDevaiOllamaEnabled();
-  const memory = await getOllamaMemory();
-  const minimumModelHeadroomBytes = minimumOllamaHeadroomBytes();
+  const remote = devaiOllamaRemote;
+  const memory = remote ? null : await getOllamaMemory();
+  const minimumModelHeadroomBytes = remote ? 0 : minimumOllamaHeadroomBytes();
   const base = {
-    enabled, model, provider: "local_ollama" as const,
+    enabled, model, provider: remote ? "remote_ollama" as const : "local_ollama" as const,
+    remote,
     environment: process.env.NODE_ENV === "production" ? "production" : "development",
     memory, minimumModelHeadroomBytes,
   };
   try {
     const response = await fetch(`${devaiOllamaServerUrl}/api/tags`, {
-      signal: AbortSignal.timeout(1800),
+      headers: devaiOllamaAccessHeaders(),
+      signal: AbortSignal.timeout(remote ? 5000 : 1800),
     });
     if (!response.ok) {
-      return { ...base, reachable: false, modelAvailable: false, ready: false, availableModels: [] as string[], code: "OLLAMA_UNREACHABLE", error: "Ollama returned an error. Check the model service on this API VM." };
+      const accessRejected = remote && (response.status === 401 || response.status === 403);
+      return {
+        ...base,
+        reachable: false,
+        modelAvailable: false,
+        ready: false,
+        availableModels: [] as string[],
+        code: accessRejected ? "OLLAMA_REMOTE_AUTH_FAILED" : "OLLAMA_UNREACHABLE",
+        error: accessRejected
+          ? "Cloudflare Access rejected the model request. Check the Access Service Auth policy and Replit service-token secrets."
+          : remote
+            ? "The protected remote Ollama host returned an error."
+            : "Ollama returned an error. Check the model service on this API VM.",
+      };
     }
     const data = await response.json() as { models?: Array<{ name?: string; size?: number }> };
     const models = (data.models ?? []).map((item) => item.name ?? "").filter(Boolean);
@@ -105,9 +171,12 @@ export async function getDevaiOllamaStatus(model: string = devaiModel) {
       ? Math.ceil(modelSize * 1.5 + 0.5 * 1024 ** 3)
       : minimumModelHeadroomBytes - reserveBytes;
     let residentModelBytes = 0;
-    if (modelAvailable) {
+    if (modelAvailable && !remote) {
       try {
-        const ps = await fetch(`${devaiOllamaServerUrl}/api/ps`, { signal: AbortSignal.timeout(1800) });
+        const ps = await fetch(`${devaiOllamaServerUrl}/api/ps`, {
+          headers: devaiOllamaAccessHeaders(),
+          signal: AbortSignal.timeout(1800),
+        });
         if (ps.ok) {
           const loaded = await ps.json() as { models?: Array<{ name?: string; size?: number; size_vram?: number }> };
           const resident = loaded.models?.find(item => item.name && exactOllamaTag(item.name) === exactOllamaTag(model));
@@ -119,13 +188,15 @@ export async function getDevaiOllamaStatus(model: string = devaiModel) {
       } catch { /* Treat an unverifiable runner as a cold load. */ }
     }
     const requiredInferenceHeadroomBytes = reserveBytes + Math.max(0, estimatedModelBytes - residentModelBytes);
-    const enoughMemory = memory !== null && memory.availableBytes >= requiredInferenceHeadroomBytes;
+    const enoughMemory = remote || (memory !== null && memory.availableBytes >= requiredInferenceHeadroomBytes);
     const code = !enabled ? "OLLAMA_DISABLED" : !modelAvailable ? "OLLAMA_MODEL_MISSING"
       : !enoughMemory ? "OLLAMA_INSUFFICIENT_MEMORY" : "READY";
     const error = !enabled
       ? "Local Ollama is disabled on this API runtime. Enable it only after checking VM capacity."
       : !modelAvailable
-        ? `Model ${model} is not installed on this API runtime yet. Automatic setup will retrieve it only after VM memory and disk checks pass.`
+        ? remote
+          ? `Model ${model} is not installed on the remote Ollama host. Install it on the Termux host, then retry.`
+          : `Model ${model} is not installed on this API runtime yet. Automatic setup will retrieve it only after VM memory and disk checks pass.`
         : !enoughMemory
           ? `Local inference is blocked to protect the API: ${(requiredInferenceHeadroomBytes / 1024 ** 3).toFixed(1)} GiB free memory is required for ${model}, including API headroom.`
           : null;
@@ -133,13 +204,13 @@ export async function getDevaiOllamaStatus(model: string = devaiModel) {
       ...base,
       reachable: true,
       modelAvailable,
-      requiredInferenceHeadroomBytes,
-      residentModelBytes,
+      requiredInferenceHeadroomBytes: remote ? null : requiredInferenceHeadroomBytes,
+      residentModelBytes: remote ? null : residentModelBytes,
       availableModels: models,
       ready: code === "READY", code, error,
     };
   } catch {
-    const insufficientMemory = !memory || memory.availableBytes < minimumModelHeadroomBytes;
+    const insufficientMemory = !remote && (!memory || memory.availableBytes < minimumModelHeadroomBytes);
     return {
       ...base,
       reachable: false,
@@ -149,7 +220,9 @@ export async function getDevaiOllamaStatus(model: string = devaiModel) {
       error: !enabled ? "Local Ollama chat is disabled on this API runtime."
         : insufficientMemory
           ? `Ollama is stopped and VM memory is too low to start it safely. At least ${(minimumModelHeadroomBytes / 1024 ** 3).toFixed(1)} GiB free is required; increase runtime capacity or free memory first.`
-          : "Ollama is not reachable on this API VM. Start its loopback service after checking memory capacity.",
+          : remote
+            ? "The protected remote Ollama host is unreachable. Check the Cloudflare Tunnel, Access policy, and service-token settings."
+            : "Ollama is not reachable on this API VM. Start its loopback service after checking memory capacity.",
     };
   }
 }
@@ -167,7 +240,7 @@ export async function createDevaiOllamaStream(
   // may ignore them, leaving a much larger server-default context allocated.
   const response = await fetch(`${devaiOllamaServerUrl}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...devaiOllamaAccessHeaders() },
     body: JSON.stringify({
       model, messages, stream: true, keep_alive: "30m",
       // num_batch 1024 measured ~6% faster prompt evaluation than the 512
