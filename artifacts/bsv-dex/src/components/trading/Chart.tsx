@@ -350,6 +350,10 @@ function OrahChart({
   const wrapRef   = useRef<HTMLDivElement>(null);
   const fullscreenSlotRef = useRef<HTMLDivElement>(null);
   const [fullscreenHost, setFullscreenHost] = useState<HTMLDivElement | null>(null);
+  const touchScrubbingRef = useRef(false);
+  const lastTouchCandleRef = useRef<number | null>(null);
+  const lastHapticAtRef = useRef(0);
+  const candlePulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /* Always-current candles ref so crosshair callback never goes stale */
   const candlesRef = useRef<Candle[]>([]);
   /* Always-current display candles ref for live last-bar updates */
@@ -411,6 +415,7 @@ function OrahChart({
   const [chartReady, setChartReady] = useState(false);
   const [subReady, setSubReady]   = useState(false);
   const [hoverInfo, setHoverInfo] = useState<{ o:number;h:number;l:number;c:number;v:number;t:number } | null>(null);
+  const [candleStepPulse, setCandleStepPulse] = useState(false);
   const [ticker, setTicker]       = useState<{ last: number; change: number; high: number; low: number; vol: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -489,6 +494,9 @@ function OrahChart({
       slot.appendChild(host);
     }
   }, [fullscreenHost, fullscreen, fullscreenBg]);
+  useEffect(() => () => {
+    if (candlePulseTimerRef.current) clearTimeout(candlePulseTimerRef.current);
+  }, []);
 
   /* parsed symbol */
   const parts = useMemo(() => {
@@ -856,6 +864,26 @@ function OrahChart({
     /* Crosshair subscription → OHLCV hover info (uses ref to avoid stale closure) */
     chart.subscribeCrosshairMove(param => {
       if (!param.time || !param.point) { setHoverInfo(null); return; }
+      const candleTime = Number(param.time);
+      if (touchScrubbingRef.current && Number.isFinite(candleTime)) {
+        if (lastTouchCandleRef.current !== null && candleTime !== lastTouchCandleRef.current) {
+          const now = performance.now();
+          if (now - lastHapticAtRef.current >= 70) {
+            try {
+              if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                navigator.vibrate(8);
+              }
+            } catch {
+              // Vibration is optional and unavailable in some mobile browsers.
+            }
+            lastHapticAtRef.current = now;
+          }
+          setCandleStepPulse(true);
+          if (candlePulseTimerRef.current) clearTimeout(candlePulseTimerRef.current);
+          candlePulseTimerRef.current = setTimeout(() => setCandleStepPulse(false), 100);
+        }
+        lastTouchCandleRef.current = candleTime;
+      }
       const live = candlesRef.current;
       const idx = live.findIndex(c => Number(c.time) === Number(param.time));
       if (idx >= 0) {
@@ -1473,7 +1501,28 @@ function OrahChart({
             </p>
           </div>
         )}
-        <div ref={mainRef} className="w-full h-full" />
+        <div
+          ref={mainRef}
+          className="w-full h-full"
+          onPointerDown={(event) => {
+            if (event.pointerType === 'touch') {
+              touchScrubbingRef.current = true;
+              lastTouchCandleRef.current = null;
+            }
+          }}
+          onPointerUp={() => {
+            touchScrubbingRef.current = false;
+            lastTouchCandleRef.current = null;
+          }}
+          onPointerCancel={() => {
+            touchScrubbingRef.current = false;
+            lastTouchCandleRef.current = null;
+          }}
+          onPointerLeave={() => {
+            touchScrubbingRef.current = false;
+            lastTouchCandleRef.current = null;
+          }}
+        />
         {/* Watermark — top-left corner */}
         {!loading && (
           <div className="absolute top-3 left-3 pointer-events-none z-[5]">
@@ -1494,7 +1543,11 @@ function OrahChart({
         {hoverInfo && (
           <div
             className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-3 py-1 text-[10px] font-mono pointer-events-none"
-            style={{ background: `${col.bg}e8`, borderBottom: `1px solid ${col.grid}` }}
+            style={{
+              background: candleStepPulse ? 'rgba(74, 222, 128, 0.1)' : `${col.bg}e8`,
+              borderBottom: `1px solid ${candleStepPulse ? '#4ade80' : col.grid}`,
+              transition: 'background-color 80ms ease, border-color 80ms ease',
+            }}
           >
             <span>O <span className="font-bold" style={{ color: hoverInfo.c >= hoverInfo.o ? '#0ecb81' : '#f6465d' }}>{pPrefix}{fmtPrice(hoverInfo.o, lastP)}</span></span>
             <span>H <span className="font-bold text-green-400">{pPrefix}{fmtPrice(hoverInfo.h, lastP)}</span></span>
