@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useSupportChat } from "@/hooks/useSupportChat";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -107,11 +108,17 @@ export function SupportPage() {
   const [faqCategory, setFaqCategory] = useState("all");
   const [faqs] = useState(DEFAULT_FAQS);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<{ role: "user" | "support"; text: string; ts: number }[]>([
-    { role: "support", text: "Hi! Welcome to OrahDEX Support. How can I help you today?", ts: Date.now() },
-  ]);
   const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
+  const supportChat = useSupportChat(chatOpen, address, address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Guest");
+  const chatMessages = [
+    { role: "support" as const, text: "Hi! Welcome to OrahDEX Support. Send us a message and our team will reply here.", ts: 0 },
+    ...supportChat.messages.map(message => ({
+      role: message.senderRole === "customer" ? "user" as const : "support" as const,
+      text: message.text,
+      ts: new Date(message.createdAt).getTime(),
+    })),
+  ];
+  const chatLoading = supportChat.sending;
 
   const filteredFaqs = faqs.filter(f => {
     const matchCat = faqCategory === "all" || f.category === faqCategory;
@@ -150,31 +157,13 @@ export function SupportPage() {
   };
 
   const sendChat = async () => {
-    if (!chatInput.trim() || chatLoading) return;
     const userMsg = chatInput.trim();
-    setChatInput("");
-    setChatMessages(m => [...m, { role: "user", text: userMsg, ts: Date.now() }]);
-    addNotification({
-      type:  "support",
-      title: "Live Chat Message",
-      body:  `${address ? address.slice(0, 10) + "…" : "Anonymous"} · ${userMsg.slice(0, 80)}${userMsg.length > 80 ? "…" : ""}`,
-    });
-    setChatLoading(true);
+    if (!userMsg || chatLoading) return;
     try {
-      const convRes = await fetch(`${BASE}/api/ai/conversations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "Support Chat" }) });
-      const conv = await convRes.json();
-      const msgRes = await fetch(`${BASE}/api/ai/conversations/${conv.id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: "user", content: userMsg }),
-      });
-      const msgData = await msgRes.json();
-      const reply = msgData?.reply ?? msgData?.content ?? "Our support team will get back to you shortly.";
-      setChatMessages(m => [...m, { role: "support", text: reply, ts: Date.now() }]);
-    } catch {
-      setChatMessages(m => [...m, { role: "support", text: "We've received your message. A support agent will respond within 24 hours.", ts: Date.now() }]);
-    } finally {
-      setChatLoading(false);
+      await supportChat.sendMessage(userMsg);
+      setChatInput("");
+    } catch (err: any) {
+      toast({ title: "Could not send support message", description: err.message, variant: "destructive" });
     }
   };
 
@@ -215,7 +204,7 @@ export function SupportPage() {
               {
                 icon: MessageCircle,
                 title: "Live Chat",
-                desc: "Chat with Ora AI or escalate to a human agent",
+                desc: "Chat directly with our support team",
                 action: () => setChatOpen(true),
                 cta: "Start Chat",
                 color: "text-primary",

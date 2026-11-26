@@ -7,6 +7,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useLocation } from "wouter";
+import { useSupportChat } from "@/hooks/useSupportChat";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -248,7 +249,7 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
       label: "Support",
       icon: Headphones,
       color: "text-amber-400",
-      description: "AI support & human escalation",
+      description: "Private chat with OrahDEX Support",
     },
     {
       id: "system",
@@ -288,10 +289,22 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
   const reconnectDelayRef = useRef(2000);
 
   const activeChannel = channels[activeChannelIdx]!;
-  const msgs = messagesByChannel[activeChannel.channelKey] ?? [];
 
   /* Derived display name */
   const displayName = pseudonym || (address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "anon");
+  const supportChat = useSupportChat(open && activeChannel.id === "support", address, displayName);
+  const supportMessages: ChatMessage[] = supportChat.messages.map(message => ({
+    id: message.id,
+    channel: "support",
+    wallet: message.senderRole === "customer" ? address || "anonymous" : "support",
+    displayName: message.senderName,
+    role: message.senderRole === "customer" ? "trader" : "support",
+    text: message.text,
+    ts: new Date(message.createdAt).getTime(),
+  }));
+  const msgs = activeChannel.id === "support"
+    ? supportMessages
+    : messagesByChannel[activeChannel.channelKey] ?? [];
 
   /* ── SSE subscription with reconnection ──────────────────────────────── */
   const subscribeToChannel = useCallback((channelKey: string) => {
@@ -336,6 +349,16 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
   /* Subscribe when channel changes or chat opens */
   useEffect(() => {
     if (!open) return;
+    if (activeChannel.id === "support") {
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      evtSourceRef.current?.close();
+      evtSourceRef.current = null;
+      return () => {
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+        evtSourceRef.current?.close();
+        evtSourceRef.current = null;
+      };
+    }
     reconnectDelayRef.current = 2000;
     subscribeToChannel(activeChannel.channelKey);
     setUnreadByChannel(prev => ({ ...prev, [activeChannel.channelKey]: 0 }));
@@ -361,6 +384,18 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
     if (!text || sending || oraStreaming) return;
     setInput("");
     setError(null);
+
+    if (activeChannel.id === "support") {
+      setSending(true);
+      try {
+        await supportChat.sendMessage(text);
+      } catch (err: any) {
+        setError(err?.message ?? "Could not send support message.");
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
 
     /* Ora AI channel — stream from AI endpoint */
     if (activeChannel.id === "ora") {
@@ -617,7 +652,7 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
           <MessageBubble
             key={msg.id}
             msg={msg}
-            isMine={!!address && msg.wallet === address}
+            isMine={activeChannel.id === "support" ? msg.role === "trader" : !!address && msg.wallet === address}
           />
         ))}
 
@@ -637,11 +672,11 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
       </div>
 
       {/* ── Error banner ──────────────────────────────────────────────────── */}
-      {error && (
+      {(activeChannel.id === "support" ? supportChat.error || error : error) && (
         <div className="mx-3 mb-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[11px]">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          {error}
-          <button onClick={() => setError(null)} className="ml-auto"><X className="w-3.5 h-3.5" /></button>
+          {activeChannel.id === "support" ? supportChat.error || error : error}
+          <button onClick={() => { setError(null); supportChat.clearError(); }} className="ml-auto"><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
 

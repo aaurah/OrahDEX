@@ -126,6 +126,7 @@ const AdminLEIncome          = lazy(() => import("@/pages/admin/LEIncome").then(
 const AdminProfits           = lazy(() => import("@/pages/admin/Profits").then(m => ({ default: m.AdminProfits })));
 const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
 const AdminSupportInbox      = lazy(() => import("@/pages/admin/SupportInbox").then(m => ({ default: m.AdminSupportInbox })));
+const AdminSupportChats      = lazy(() => import("@/pages/admin/SupportChats").then(m => ({ default: m.AdminSupportChats })));
 const SupportThreadPage      = lazy(() => import("@/pages/SupportThread").then(m => ({ default: m.SupportThread })));
 const AdminApiMonitor        = lazy(() => import("@/pages/admin/ApiMonitor").then(m => ({ default: m.ApiMonitor })));
 const AdminTradeAnalytics    = lazy(() => import("@/pages/admin/TradeAnalytics").then(m => ({ default: m.AdminTradeAnalytics })));
@@ -548,6 +549,7 @@ function Router() {
       <Route path="/admin/logs">        <AdminRoute><AdminLogsPage /></AdminRoute></Route>
       <Route path="/admin/support">         <AdminRoute><AdminSupportSettings /></AdminRoute></Route>
       <Route path="/admin/support/inbox">  <AdminRoute><AdminSupportInbox /></AdminRoute></Route>
+      <Route path="/admin/support/chats">  <AdminRoute><AdminSupportChats /></AdminRoute></Route>
       <Route path="/admin/api-monitor"><AdminRoute><AdminApiMonitor /></AdminRoute></Route>
       <Route path="/admin/trade-analytics"><AdminRoute><AdminTradeAnalytics /></AdminRoute></Route>
       <Route path="/admin/le-income">     <AdminRoute><AdminLEIncome /></AdminRoute></Route>

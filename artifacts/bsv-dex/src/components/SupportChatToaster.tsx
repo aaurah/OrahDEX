@@ -2,9 +2,12 @@ import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useNotificationStore } from "@/store/useNotificationStore";
+import { useSupportChatStore } from "@/store/useSupportChatStore";
+import { adminFetch } from "@/lib/adminFetch";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const SEEN_KEY = "orahdex:admin:support_chat_seen_ids";
+const PRIVATE_SEEN_KEY = "orahdex:admin:private_support_chat_seen_v1";
 
 function loadSeen(): Set<string> {
   try {
@@ -22,6 +25,20 @@ function saveSeen(set: Set<string>) {
   } catch {}
 }
 
+function loadPrivateSeen(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PRIVATE_SEEN_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
+}
+
+function savePrivateSeen(seen: Record<string, string>) {
+  try {
+    const entries = Object.entries(seen).slice(-300);
+    localStorage.setItem(PRIVATE_SEEN_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {}
+}
+
 interface ChatMsg {
   id: string;
   channel: string;
@@ -30,6 +47,15 @@ interface ChatMsg {
   role: string;
   text: string;
   ts: number;
+}
+
+interface PrivateChatSummary {
+  id: string;
+  displayName: string;
+  lastMessageId: string;
+  lastMessageRole: "customer" | "support";
+  lastMessagePreview: string;
+  unread: boolean;
 }
 
 /**
@@ -41,9 +67,59 @@ export function SupportChatToaster() {
   const [location, navigate] = useLocation();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
+  const setUnreadCount = useSupportChatStore(state => state.setUnreadCount);
   const seenRef = useRef<Set<string>>(loadSeen());
+  const privateSeenRef = useRef<Record<string, string>>(loadPrivateSeen());
   const initRef = useRef(false);
+  const privateInitRef = useRef(false);
   const esRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    if (!location.startsWith("/admin")) return;
+    let active = true;
+    const pollPrivateChats = async () => {
+      try {
+        const response = await adminFetch("/api/admin/support/chats");
+        if (!response.ok || !active) return;
+        const chats: PrivateChatSummary[] = await response.json();
+        setUnreadCount(chats.filter(chat => chat.unread).length);
+        let emitted = 0;
+        for (const chat of chats) {
+          if (!chat.lastMessageId) continue;
+          const previousId = privateSeenRef.current[chat.id];
+          const isNew = previousId ? previousId !== chat.lastMessageId : !privateInitRef.current && chat.unread;
+          if (chat.lastMessageRole === "customer" && isNew && emitted < 3) {
+            const preview = chat.lastMessagePreview.length > 90
+              ? `${chat.lastMessagePreview.slice(0, 90)}…`
+              : chat.lastMessagePreview;
+            toast({ title: `New support message from ${chat.displayName || "Guest"}`, description: preview });
+            addNotification({
+              type: "support",
+              title: `Live support: ${chat.displayName || "Guest"}`,
+              body: preview,
+              href: "/admin/support/chats",
+            });
+            try {
+              if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+                new Notification(`OrahDEX support — ${chat.displayName || "Guest"}`, { body: preview });
+              }
+            } catch {}
+            emitted++;
+          }
+          privateSeenRef.current[chat.id] = chat.lastMessageId;
+        }
+        privateInitRef.current = true;
+        savePrivateSeen(privateSeenRef.current);
+      } catch { /* Admin inbox polling can retry on the next interval. */ }
+    };
+
+    void pollPrivateChats();
+    const timer = window.setInterval(pollPrivateChats, 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [location, toast, addNotification, setUnreadCount]);
 
   useEffect(() => {
     if (!location.startsWith("/admin")) {

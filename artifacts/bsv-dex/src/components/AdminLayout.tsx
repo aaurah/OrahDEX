@@ -8,10 +8,11 @@ import {
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, Search, ArrowDownToLine,
   Landmark, Plug2, Printer, Database, Link2, Shuffle,
   PanelLeftClose, PanelLeftOpen, Bell, Zap, Settings,
-  Stethoscope, Signal, BarChart3, BookOpen, Server,
+  Stethoscope, Signal, BarChart3, BookOpen, Server, MessageCircle,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
+import { useSupportChatStore } from "@/store/useSupportChatStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { cn } from "@/lib/utils";
@@ -71,6 +72,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Support", icon: Headphones, color: "text-cyan-400",
     items: [
       { href: "/admin/support/inbox", label: "Support Inbox", icon: Inbox },
+      { href: "/admin/support/chats", label: "Live Chats", icon: MessageCircle },
       { href: "/admin/support",       label: "Support Settings", icon: Headphones },
       { href: "/admin/mail",          label: "Email Inbox", icon: Mail },
     ],
@@ -212,6 +214,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
   const { email, logout } = useAdminAuthStore();
   const { adminUnreadCount } = useTicketReadStore();
+  const supportChatUnreadCount = useSupportChatStore(state => state.unreadCount);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("admin_sidebar_collapsed") === "1"; } catch { return false; }
@@ -374,7 +377,9 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             <div className="space-y-0.5">
               {primaryItems.map(item => {
                 const active = isActive(item);
-                const showUnread = item.href === "/admin/support/inbox" && adminUnreadCount > 0;
+                const unreadCount = item.href === "/admin/support/inbox" ? adminUnreadCount
+                  : item.href === "/admin/support/chats" ? supportChatUnreadCount : 0;
+                const showUnread = unreadCount > 0;
                 return (
                   <Link key={item.href} href={item.href} onClick={() => setMobileSidebarOpen(false)}
                     title={item.label}
@@ -430,7 +435,9 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                     <div className="space-y-0.5 ml-1">
                       {group.items.map(item => {
                         const active = isActive(item);
-                        const showUnread = item.href === "/admin/support/inbox" && adminUnreadCount > 0;
+                        const unreadCount = item.href === "/admin/support/inbox" ? adminUnreadCount
+                          : item.href === "/admin/support/chats" ? supportChatUnreadCount : 0;
+                        const showUnread = unreadCount > 0;
                         return (
                           <Link key={item.href} href={item.href} onClick={() => setMobileSidebarOpen(false)}
                             className={cn(
@@ -446,7 +453,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                             </div>
                             {showUnread ? (
                               <span className="text-[9px] font-black min-w-[18px] text-center px-1.5 py-0.5 rounded-full bg-red-500 text-white tabular-nums shadow-lg shadow-red-500/30">
-                                {adminUnreadCount > 99 ? "99+" : adminUnreadCount}
+                                {unreadCount > 99 ? "99+" : unreadCount}
                               </span>
                             ) : active ? (
                               <ChevronRight className="w-3 h-3 shrink-0 text-primary/60" />
@@ -541,8 +548,8 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
               <span className="text-[10px] text-green-400 font-semibold">Operational</span>
             </div>
-            {adminUnreadCount > 0 && (
-              <Link href="/admin/support/inbox" className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
+            {(adminUnreadCount + supportChatUnreadCount) > 0 && (
+              <Link href={supportChatUnreadCount > 0 ? "/admin/support/chats" : "/admin/support/inbox"} className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
                 <Bell className="w-4 h-4" />
                 <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 shadow-sm shadow-red-500/50" />
               </Link>
