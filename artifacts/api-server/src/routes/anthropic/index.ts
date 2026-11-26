@@ -240,6 +240,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
         oraModel,
         controller.signal,
         previewOraLimit("ORA_AI_CONTEXT_TOKENS", 2048, 512, 2048),
+        previewOraLimit("ORA_AI_NUM_BATCH", 1024, 128, 1024),
       );
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content;
