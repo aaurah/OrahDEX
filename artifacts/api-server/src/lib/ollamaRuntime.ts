@@ -175,7 +175,7 @@ async function recoverOllama(): Promise<boolean> {
         OLLAMA_HOST,
         OLLAMA_MODELS: process.env.OLLAMA_MODELS || path.join(os.homedir(), ".ollama", "models"),
         OLLAMA_NUM_PARALLEL: "1",
-        OLLAMA_MAX_LOADED_MODELS: "2",
+        OLLAMA_MAX_LOADED_MODELS: "1",
         OLLAMA_KEEP_ALIVE: "30m",
         OLLAMA_CONTEXT_LENGTH: "2048",
         OLLAMA_FLASH_ATTENTION: "1",

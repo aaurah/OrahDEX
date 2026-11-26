@@ -400,7 +400,7 @@ function DevAIModelSettings() {
       </div>
       <p className="text-xs text-muted-foreground">
         Installed tags: {data?.availableModels?.length ? data.availableModels.join(", ") : "None reported by this API runtime"}.
-        {" "}Set DEVAI_MODEL to an exact installed tag; OraAI can use a separate ORA_AI_MODEL.
+        {" "}Set ORA_AI_MODEL to the same exact tag as DEVAI_MODEL to share one downloaded model and save disk space.
       </p>
 
       <p className="text-[11px] text-muted-foreground">
