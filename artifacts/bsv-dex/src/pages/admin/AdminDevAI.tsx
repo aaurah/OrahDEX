@@ -389,7 +389,7 @@ function DevAIModelSettings() {
       {data?.unsafeMemoryOverride && (
         <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-[11px] text-red-200">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
-          <span>Unsafe low-memory override is active. Starting this model may exhaust RAM and stop the production API.</span>
+          <span>Unsafe low-memory override is active. Starting this model may exhaust RAM and stop the API.</span>
         </div>
       )}
 

@@ -98,7 +98,7 @@ export interface DevAiChatMessage {
 export const isDevaiOllamaEnabled = () => process.env.DEVAI_OLLAMA_ENABLED === "true";
 
 export const isUnsafeOllamaMemoryOverrideEnabled = () =>
-  process.env.NODE_ENV === "production" && process.env.DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE === "true";
+  process.env.DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE === "true";
 
 export const minimumOllamaHeadroomBytes = () =>
   isUnsafeOllamaMemoryOverrideEnabled()

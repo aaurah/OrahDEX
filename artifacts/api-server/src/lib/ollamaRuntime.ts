@@ -34,10 +34,10 @@ const modelReadiness = new Map<string, boolean>();
 let providerHealth: "starting" | "healthy" | "degraded" =
   isDevaiOllamaEnabled() ? "starting" : "degraded";
 
-if (process.env.NODE_ENV === "production" && process.env.DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE === "true") {
+if (process.env.DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE === "true") {
   logger.warn(
-    { minimumFreeGiB: 0.5 },
-    "Unsafe low-memory Ollama override is active; model inference may OOM-kill the production API",
+    { environment: process.env.NODE_ENV, minimumFreeGiB: 0.5 },
+    "Unsafe low-memory Ollama override is active; model inference may OOM-kill the API",
   );
 }
 
