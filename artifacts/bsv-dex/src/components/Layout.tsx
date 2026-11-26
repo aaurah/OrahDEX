@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, BellOff, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Download, Droplets, Headphones, MessageCircle, ArrowUpDown, TrendingUp, Search, Moon as MoonIcon, Filter, Bot, Code2, Blocks } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, BellOff, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Download, Droplets, Headphones, MessageCircle, ArrowUpDown, TrendingUp, Search, Moon as MoonIcon, Filter, Bot, Code2, Blocks, BookOpen } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -41,6 +41,7 @@ const NAV_LINKS = [
 ];
 
 const NAV_MORE = [
+  { href: "/tutorials", label: "Tutorials", icon: BookOpen },
   { href: "/explorer", label: "Orah Explorer", icon: Blocks },
   { href: "/ora-ai",    label: "Ora AI",    icon: Bot },
   { href: "/devai",       label: "DevAI",   icon: Code2 },
@@ -468,7 +469,8 @@ export function Layout({ children }: { children: ReactNode }) {
                 {NAV_MORE.map(({ href, label, icon: Icon }) => (
                   <Link key={href} href={href}
                     className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                    onClick={() => setShowMoreNav(false)}>
+                    onClick={() => setShowMoreNav(false)}
+                    data-testid={href === "/tutorials" ? "link-nav-tutorials" : undefined}>
                     <Icon className="w-3.5 h-3.5 shrink-0" />
                     {label}
                   </Link>
@@ -970,6 +972,7 @@ export function Layout({ children }: { children: ReactNode }) {
                         key={link.href}
                         href={link.href}
                         onClick={() => setIsMobileMenuOpen(false)}
+                        data-testid={link.href === "/tutorials" ? "link-drawer-tutorials" : undefined}
                         className={cn(
                           "flex items-center gap-3 px-3 py-2 rounded-xl font-medium transition-all text-sm",
                           isActive

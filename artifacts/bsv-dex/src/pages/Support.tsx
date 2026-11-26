@@ -248,6 +248,17 @@ export function SupportPage() {
               </div>
             ))}
           </div>
+          <div className="mt-5">
+            <Link
+              href="/tutorials"
+              data-testid="link-support-tutorial-library"
+              className="inline-flex items-center gap-2 rounded-xl border border-primary/25 bg-primary/8 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <BookOpen className="h-4 w-4" />
+              Browse step-by-step tutorials
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
       </section>
 

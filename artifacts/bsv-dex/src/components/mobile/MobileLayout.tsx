@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Image, Target, TrendingUp, Copy, Waves, Users, Wallet, Flame, Blocks } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Image, Target, TrendingUp, Copy, Waves, Users, Wallet, Flame, Blocks, BookOpen } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -23,6 +23,7 @@ const NAV_TABS = [
   { path: "/copy",                       matchPrefix: "/copy",       label: "Copy Trade", Icon: Copy },
   { path: "/wallet",                     matchPrefix: "/wallet",     label: "Wallet",     Icon: Briefcase },
   { path: "/settings",                   matchPrefix: "/settings",   label: "Settings",   Icon: Settings },
+  { path: "/tutorials",                  matchPrefix: "/tutorials",  label: "Guides",     Icon: BookOpen },
 ];
 
 const THEME_CYCLE: Theme[] = ["dark", "light", "amoled", "system"];
@@ -141,6 +142,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
                   key={tab.path}
                   ref={el => { tabRefs.current[i] = el; }}
                   onClick={() => navigate(tab.path)}
+                  data-testid={tab.path === "/tutorials" ? "button-mobile-guides" : undefined}
                   className={`
                     flex items-center gap-1.5 shrink-0 rounded-full px-3 py-1.5
                     text-[11px] font-semibold transition-all active:scale-95

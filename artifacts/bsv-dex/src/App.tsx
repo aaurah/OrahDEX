@@ -68,6 +68,7 @@ const TermsOfService  = lazy(() => import("@/pages/TermsOfService").then(m => ({
 const PrivacyPolicy   = lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ default: m.PrivacyPolicy })));
 const WhitePaper      = lazy(() => import("@/pages/WhitePaper").then(m => ({ default: m.WhitePaper })));
 const SupportPage     = lazy(() => import("@/pages/Support").then(m => ({ default: m.SupportPage })));
+const TutorialsPage   = lazy(() => import("@/pages/Tutorials").then(m => ({ default: m.TutorialsPage })));
 const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ default: m.WebSettings })));
 const StatusPage      = lazy(() => import("@/pages/StatusPage").then(m => ({ default: m.StatusPage })));
 
@@ -592,6 +593,9 @@ function Router() {
       </Route>
       <Route path="/support">
         <Suspense fallback={<PageSkeleton />}><SupportPage /></Suspense>
+      </Route>
+      <Route path="/tutorials">
+        <Suspense fallback={<PageSkeleton />}><TutorialsPage /></Suspense>
       </Route>
       <Route path="/support/thread/:id">
         {(params) => (
