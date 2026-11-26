@@ -97,8 +97,13 @@ export interface DevAiChatMessage {
 
 export const isDevaiOllamaEnabled = () => process.env.DEVAI_OLLAMA_ENABLED === "true";
 
+export const isUnsafeOllamaMemoryOverrideEnabled = () =>
+  process.env.NODE_ENV === "production" && process.env.DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE === "true";
+
 export const minimumOllamaHeadroomBytes = () =>
-  (process.env.NODE_ENV === "development" ? 3.5 : 6) * 1024 ** 3;
+  isUnsafeOllamaMemoryOverrideEnabled()
+    ? 0.5 * 1024 ** 3
+    : (process.env.NODE_ENV === "development" ? 3.5 : 6) * 1024 ** 3;
 
 export async function getOllamaMemory() {
   let cgroupMemory: { availableBytes: number; limitBytes: number } | null = null;
@@ -130,11 +135,13 @@ export const exactOllamaTag = (model: string) =>
 export async function getDevaiOllamaStatus(model: string = devaiModel) {
   const enabled = isDevaiOllamaEnabled();
   const remote = devaiOllamaRemote;
+  const unsafeMemoryOverride = isUnsafeOllamaMemoryOverrideEnabled();
   const memory = remote ? null : await getOllamaMemory();
   const minimumModelHeadroomBytes = remote ? 0 : minimumOllamaHeadroomBytes();
   const base = {
     enabled, model, provider: remote ? "remote_ollama" as const : "local_ollama" as const,
     remote,
+    unsafeMemoryOverride,
     environment: process.env.NODE_ENV === "production" ? "production" : "development",
     memory, minimumModelHeadroomBytes,
   };
@@ -188,7 +195,9 @@ export async function getDevaiOllamaStatus(model: string = devaiModel) {
       } catch { /* Treat an unverifiable runner as a cold load. */ }
     }
     const requiredInferenceHeadroomBytes = reserveBytes + Math.max(0, estimatedModelBytes - residentModelBytes);
-    const enoughMemory = remote || (memory !== null && memory.availableBytes >= requiredInferenceHeadroomBytes);
+    const enoughMemory = remote || (memory !== null && memory.availableBytes >= (
+      unsafeMemoryOverride ? minimumModelHeadroomBytes : requiredInferenceHeadroomBytes
+    ));
     const code = !enabled ? "OLLAMA_DISABLED" : !modelAvailable ? "OLLAMA_MODEL_MISSING"
       : !enoughMemory ? "OLLAMA_INSUFFICIENT_MEMORY" : "READY";
     const error = !enabled
@@ -198,7 +207,9 @@ export async function getDevaiOllamaStatus(model: string = devaiModel) {
           ? `Model ${model} is not installed on the remote Ollama host. Install it on the Termux host, then retry.`
           : `Model ${model} is not installed on this API runtime yet. Automatic setup will retrieve it only after VM memory and disk checks pass.`
         : !enoughMemory
-          ? `Local inference is blocked to protect the API: ${(requiredInferenceHeadroomBytes / 1024 ** 3).toFixed(1)} GiB free memory is required for ${model}, including API headroom.`
+          ? unsafeMemoryOverride
+            ? `Even with the unsafe override, at least ${(minimumModelHeadroomBytes / 1024 ** 3).toFixed(1)} GiB free memory is required.`
+            : `Local inference is blocked to protect the API: ${(requiredInferenceHeadroomBytes / 1024 ** 3).toFixed(1)} GiB free memory is required for ${model}, including API headroom.`
           : null;
     return {
       ...base,

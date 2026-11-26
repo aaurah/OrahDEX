@@ -362,7 +362,7 @@ function DevAIModelSettings() {
         </div>
         <div>
           <p className="text-sm font-bold">Local Ollama Model</p>
-          <p className="text-xs text-muted-foreground">DevAI uses a loopback-only model, not a hosted AI integration</p>
+          <p className="text-xs text-muted-foreground">OraAI and DevAI share a loopback-only model</p>
         </div>
         <button onClick={() => refetch()} disabled={isFetching} className="ml-auto p-2 rounded-lg hover:bg-white/5 text-muted-foreground">
           <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin text-green-400")} />
@@ -386,6 +386,12 @@ function DevAIModelSettings() {
           </p>
         </div>
       </div>
+      {data?.unsafeMemoryOverride && (
+        <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-[11px] text-red-200">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+          <span>Unsafe low-memory override is active. Starting this model may exhaust RAM and stop the production API.</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="p-3 rounded-xl bg-white/3 border border-white/5">

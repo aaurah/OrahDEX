@@ -34,6 +34,13 @@ const modelReadiness = new Map<string, boolean>();
 let providerHealth: "starting" | "healthy" | "degraded" =
   isDevaiOllamaEnabled() ? "starting" : "degraded";
 
+if (process.env.NODE_ENV === "production" && process.env.DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE === "true") {
+  logger.warn(
+    { minimumFreeGiB: 0.5 },
+    "Unsafe low-memory Ollama override is active; model inference may OOM-kill the production API",
+  );
+}
+
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 function recordModelReadiness(model: string, ready: boolean): void {
