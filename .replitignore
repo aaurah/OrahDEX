@@ -3,3 +3,6 @@
 
 # No need to store the pnpm store twice.
 .local
+
+# Ollama weights are downloaded by the runtime, not bundled with the app.
+.ollama-models/

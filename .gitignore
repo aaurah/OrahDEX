@@ -52,6 +52,9 @@ Thumbs.db
 # Canvas assets (large binary files — not needed in repo)
 .canvas/assets/
 
+# Local Ollama weights — large runtime cache, never source or deployment data
+/.ollama-models/
+
 # Environment variables & secrets — NEVER commit these
 .env
 .env.*
