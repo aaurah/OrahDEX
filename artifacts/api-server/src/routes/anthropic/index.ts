@@ -21,6 +21,14 @@ import {
 
 const router = Router();
 
+function previewOraLimit(name: string, fallback: number, min: number, max: number): number {
+  if (process.env.NODE_ENV !== "development") return fallback;
+  const configured = Number(process.env[name]);
+  return Number.isInteger(configured) && configured >= min && configured <= max
+    ? configured
+    : fallback;
+}
+
 router.get("/anthropic/status", async (_req, res) => {
   if (isDevaiOllamaEnabled()) {
     const { availableModels: _models, ...status } = await getDevaiOllamaStatus(oraModel);
@@ -37,7 +45,7 @@ router.get("/anthropic/status", async (_req, res) => {
   });
 });
 
-async function getLiveMarketContext(): Promise<string> {
+async function getLiveMarketContext(maxPairs = 12): Promise<string> {
   try {
     const rows = await db
       .select({
@@ -52,7 +60,7 @@ async function getLiveMarketContext(): Promise<string> {
       })
       .from(marketsTable)
       .orderBy(desc(marketsTable.volume24h))
-      .limit(12);
+      .limit(maxPairs);
 
     if (!rows.length) return "Live market data unavailable right now.";
 
@@ -191,14 +199,17 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
       .select()
       .from(messages)
       .where(eq(messages.conversationId, convId))
-      .orderBy(desc(messages.createdAt)).limit(20);
+      .orderBy(desc(messages.createdAt))
+      .limit(previewOraLimit("ORA_AI_HISTORY_MESSAGES", 20, 2, 20));
 
     const chatMessages = allMessages.reverse().map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
 
-    const marketContext = await getLiveMarketContext();
+    const marketContext = await getLiveMarketContext(
+      previewOraLimit("ORA_AI_MARKET_CONTEXT_PAIRS", 12, 1, 12),
+    );
     const systemPrompt = buildSystemPrompt(marketContext);
 
     res.setHeader("Content-Type", "text/event-stream");
@@ -223,7 +234,13 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
         ...chatMessages,
       ];
       inferenceStarted = true;
-      const stream = await createDevaiOllamaStream(ollamaMessages, 512, oraModel, controller.signal);
+      const stream = await createDevaiOllamaStream(
+        ollamaMessages,
+        512,
+        oraModel,
+        controller.signal,
+        previewOraLimit("ORA_AI_CONTEXT_TOKENS", 2048, 512, 2048),
+      );
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content;
         if (text) {

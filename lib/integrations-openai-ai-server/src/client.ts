@@ -243,10 +243,12 @@ export async function createDevaiOllamaStream(
   maxTokens = 2048,
   model: string = devaiModel,
   signal?: AbortSignal,
+  numCtx = 2048,
 ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
   const status = await getDevaiOllamaStatus(model);
   if (!status.ready) throw new Error(status.error ?? "Local model is not ready.");
 
+  const contextLength = Number.isInteger(numCtx) && numCtx >= 512 && numCtx <= 32768 ? numCtx : 2048;
   // Context/keep-alive are native Ollama options. The OpenAI-compatible route
   // may ignore them, leaving a much larger server-default context allocated.
   const response = await fetch(`${devaiOllamaServerUrl}/api/chat`, {
@@ -257,7 +259,7 @@ export async function createDevaiOllamaStream(
       // num_batch 1024 measured ~6% faster prompt evaluation than the 512
       // default on this CPU-only host; the larger batch costs no extra memory
       // for these small models.
-      options: { num_ctx: 2048, num_predict: Math.min(maxTokens, 1024), num_batch: 1024 },
+      options: { num_ctx: contextLength, num_predict: Math.min(maxTokens, 1024), num_batch: 1024 },
     }),
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
   });
