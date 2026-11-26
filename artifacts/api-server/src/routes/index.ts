@@ -78,6 +78,14 @@ import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { BSV_NET, getBsvNetworkConfig, type BsvNetwork } from "../lib/bsvNetworkConfig.js";
 import { randomBytes } from "node:crypto";
 import { issueWalletRequestChallenge, verifyWalletRequestProof, type WalletRequestResource } from "../lib/walletRequestAuth.js";
+import {
+  ApiKeyConfigurationError,
+  createPersonalApiKey,
+  listPersonalApiKeys,
+  normalizePersonalApiKeyInput,
+  personalApiKeyRequestContext,
+  revokePersonalApiKey,
+} from "../lib/personalApiKeys.js";
 import rateLimit from "express-rate-limit";
 import crypto from "node:crypto";
 import { fetchPublicJson } from "../lib/safePublicFetch.js";
@@ -799,18 +807,24 @@ const walletRequestChallengeLimiter = rateLimit({
 
 router.post("/wallet-request/challenge", walletRequestChallengeLimiter, async (req, res) => {
   try {
-    const { walletAddress, resource, method } = req.body ?? {};
+    const { walletAddress, resource, method, resourceId, context } = req.body ?? {};
     if (
       typeof walletAddress !== "string" ||
-      !["withdrawal-history", "notifications", "social-notifications"].includes(resource)
+      !["withdrawal-history", "notifications", "social-notifications", "personal-api-keys"].includes(resource)
     ) {
       res.status(400).json({ error: "walletAddress and a supported resource are required." });
       return;
     }
+    const normalizedMethod = String(method ?? "").toUpperCase();
+    const canonicalContext = resource === "personal-api-keys" && normalizedMethod === "POST"
+      ? personalApiKeyRequestContext(context)
+      : undefined;
     const challenge = await issueWalletRequestChallenge({
       walletAddress,
       resource: resource as WalletRequestResource,
-      method: String(method ?? ""),
+      method: normalizedMethod,
+      ...(typeof resourceId === "string" ? { resourceId } : {}),
+      ...(canonicalContext ? { context: canonicalContext } : {}),
     });
     res.setHeader("Cache-Control", "no-store");
     res.json(challenge);
@@ -887,18 +901,103 @@ setInterval(() => {
 
 /* ─── USER API KEYS ───────────────────────────────────────────────────────── */
 
-// These personal-key endpoints previously trusted a caller-supplied wallet,
-// stored plaintext keys in an in-memory Map, and generated keys that the API
-// authenticator did not recognize. Fail closed until durable, signed key
-// management can be delivered as one complete feature.
-const personalApiKeysUnavailable = (_req: any, res: any) => {
-  res.status(410).json({
-    error: "Personal API keys are temporarily unavailable while secure wallet authorization and key storage are being implemented.",
-  });
-};
-router.get("/user/api-keys", personalApiKeysUnavailable);
-router.post("/user/api-keys", personalApiKeysUnavailable);
-router.delete("/user/api-keys/:id", personalApiKeysUnavailable);
+router.get("/user/api-keys", async (req, res) => {
+  const walletAddress = String(req.query.walletAddress ?? "").trim();
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required." });
+    return;
+  }
+  try {
+    await verifyWalletRequestProof({
+      walletAddress,
+      resource: "personal-api-keys",
+      method: "GET",
+      challengeId: req.header("x-wallet-auth-challenge"),
+      signature: req.header("x-wallet-auth-signature"),
+    });
+  } catch (err: any) {
+    res.status(401).json({ error: err?.message ?? "Wallet authorization failed." });
+    return;
+  }
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ keys: await listPersonalApiKeys(walletAddress) });
+  } catch (err: any) {
+    req.log.error({ err }, "personal-api-keys: list failed");
+    res.status(503).json({ error: "Personal API keys are temporarily unavailable." });
+  }
+});
+
+router.post("/user/api-keys", async (req, res) => {
+  const walletAddress = typeof req.body?.walletAddress === "string" ? req.body.walletAddress.trim() : "";
+  let input;
+  try {
+    if (!walletAddress) throw new Error("walletAddress is required.");
+    input = normalizePersonalApiKeyInput(req.body);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message ?? "Invalid API key details." });
+    return;
+  }
+  try {
+    await verifyWalletRequestProof({
+      walletAddress,
+      resource: "personal-api-keys",
+      method: "POST",
+      context: personalApiKeyRequestContext(input),
+      challengeId: req.header("x-wallet-auth-challenge"),
+      signature: req.header("x-wallet-auth-signature"),
+    });
+  } catch (err: any) {
+    res.status(401).json({ error: err?.message ?? "Wallet authorization failed." });
+    return;
+  }
+  try {
+    const created = await createPersonalApiKey(walletAddress, input);
+    res.setHeader("Cache-Control", "no-store");
+    res.status(201).json({ ...created, oneTimeReveal: true });
+  } catch (err: any) {
+    req.log.error({ err }, "personal-api-keys: create failed");
+    if (err instanceof ApiKeyConfigurationError) {
+      res.status(503).json({ error: err.message, code: err.code });
+      return;
+    }
+    res.status(503).json({ error: "Personal API keys are temporarily unavailable." });
+  }
+});
+
+router.delete("/user/api-keys/:id", async (req, res) => {
+  const walletAddress = String(req.query.walletAddress ?? "").trim();
+  const id = String(req.params.id ?? "");
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required." });
+    return;
+  }
+  try {
+    await verifyWalletRequestProof({
+      walletAddress,
+      resource: "personal-api-keys",
+      method: "DELETE",
+      resourceId: id,
+      challengeId: req.header("x-wallet-auth-challenge"),
+      signature: req.header("x-wallet-auth-signature"),
+    });
+  } catch (err: any) {
+    res.status(401).json({ error: err?.message ?? "Wallet authorization failed." });
+    return;
+  }
+  try {
+    const revoked = await revokePersonalApiKey(id, walletAddress);
+    if (!revoked) {
+      res.status(404).json({ error: "API key not found for this wallet." });
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true });
+  } catch (err: any) {
+    req.log.error({ err }, "personal-api-keys: revoke failed");
+    res.status(503).json({ error: "Personal API keys are temporarily unavailable." });
+  }
+});
 
 /* ─── INTERNAL EVM WALLET (auto-provisioned for BSV users) ──────────────────
  *

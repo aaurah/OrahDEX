@@ -5,7 +5,10 @@ import { signBsvChallengeFromAddress } from "@/lib/walletSigner";
 export type WalletRequestResource =
   | "withdrawal-history"
   | "notifications"
-  | "social-notifications";
+  | "social-notifications"
+  | "personal-api-keys";
+
+export type WalletRequestMethod = "GET" | "POST" | "DELETE";
 
 async function signMessage(
   address: string,
@@ -37,7 +40,9 @@ export async function walletRequestAuthHeaders(params: {
   network: string;
   provider?: string;
   resource: WalletRequestResource;
-  method: "GET" | "DELETE";
+  method: WalletRequestMethod;
+  resourceId?: string;
+  context?: Record<string, unknown>;
 }): Promise<Record<string, string>> {
   const challengeResponse = await fetch(`${API_BASE}/wallet-request/challenge`, {
     method: "POST",
@@ -46,6 +51,8 @@ export async function walletRequestAuthHeaders(params: {
       walletAddress: params.address,
       resource: params.resource,
       method: params.method,
+      ...(params.resourceId ? { resourceId: params.resourceId } : {}),
+      ...(params.context ? { context: params.context } : {}),
     }),
   });
   const challenge = await challengeResponse.json().catch(() => ({}));

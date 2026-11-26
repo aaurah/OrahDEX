@@ -2,7 +2,13 @@ openapi: 3.1.0
 info:
   title: Api
   version: 0.1.0
-  description: BSV DEX Exchange API
+  description: >-
+    OrahDEX API. Public market-data routes can be called without a key.
+    Personal API keys are optional credentials accepted in X-API-Key or
+    Authorization: Bearer headers. They apply per-key request limits and
+    enforce the selected read, trading, or full scope. Wallet signatures are
+    still required for sensitive trading and withdrawal actions; admin routes
+    still require admin authorization. Never put API keys in URLs.
 servers:
   - url: /api
     description: Base API path
@@ -27,6 +33,8 @@ tags:
     description: OHLCV candlestick data
   - name: anthropic
     description: Anthropic AI chat operations
+  - name: personal-api-keys
+    description: Wallet-owned personal API key management
 
 paths:
   /ai/status:
@@ -728,8 +736,228 @@ paths:
                 items:
                   $ref: "#/components/schemas/WalletTransaction"
 
+  /wallet-request/challenge:
+    post:
+      operationId: issueWalletRequestChallenge
+      tags: [wallet]
+      summary: Issue a short-lived wallet-signature challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletRequestChallengeInput"
+      responses:
+        "200":
+          description: Single-use challenge to sign
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletRequestChallenge"
+        "400":
+          description: Unsupported resource or action
+  /user/api-keys:
+    get:
+      operationId: listPersonalApiKeys
+      tags: [personal-api-keys]
+      summary: List keys owned by a wallet
+      description: Requires X-Wallet-Auth-Challenge and X-Wallet-Auth-Signature headers from a fresh challenge bound to this wallet and request.
+      parameters:
+        - in: query
+          name: walletAddress
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Wallet-Auth-Challenge
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Wallet-Auth-Signature
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Safe key metadata; raw keys are never returned by list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalApiKeyListResponse"
+        "401":
+          description: Wallet proof missing, invalid, expired, or already used
+    post:
+      operationId: createPersonalApiKey
+      tags: [personal-api-keys]
+      summary: Create a wallet-owned API key
+      description: Requires a fresh wallet signature bound to the normalized key name, permission, and rate limit. The raw key is returned once.
+      parameters:
+        - in: header
+          name: X-Wallet-Auth-Challenge
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Wallet-Auth-Signature
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PersonalApiKeyCreateRequest"
+      responses:
+        "201":
+          description: Created key with one-time raw credential reveal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalApiKeyCreateResponse"
+        "400":
+          description: Invalid key details
+        "401":
+          description: Wallet proof missing, invalid, expired, or already used
+        "503":
+          description: API key secret or database is unavailable
+  /user/api-keys/{id}:
+    delete:
+      operationId: revokePersonalApiKey
+      tags: [personal-api-keys]
+      summary: Revoke a key owned by a wallet
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: walletAddress
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Wallet-Auth-Challenge
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Wallet-Auth-Signature
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Key revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonalApiKeyOperationResponse"
+        "401":
+          description: Wallet proof missing, invalid, expired, or already used
+        "404":
+          description: Key not owned by this wallet
+
 components:
   schemas:
+    WalletRequestChallengeInput:
+      type: object
+      required: [walletAddress, resource, method]
+      properties:
+        walletAddress:
+          type: string
+        resource:
+          type: string
+          enum: [withdrawal-history, notifications, social-notifications, personal-api-keys]
+        method:
+          type: string
+          enum: [GET, POST, DELETE]
+        resourceId:
+          type: string
+          description: Required for DELETE personal-api-keys challenges
+        context:
+          type: object
+          description: Required for key-creation challenges; contains name, permission, and rateLimit
+          additionalProperties: true
+    WalletRequestChallenge:
+      type: object
+      required: [challengeId, message]
+      properties:
+        challengeId:
+          type: string
+        message:
+          type: string
+    PersonalApiKey:
+      type: object
+      required: [id, name, permission, rateLimit, keyPreview, status, createdAt, lastUsedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        permission:
+          type: string
+          enum: [read, trading, full]
+        rateLimit:
+          type: integer
+          minimum: 10
+          maximum: 200
+        keyPreview:
+          type: string
+        status:
+          type: string
+          enum: [active, revoked]
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: [string, "null"]
+          format: date-time
+    PersonalApiKeyListResponse:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonalApiKey"
+    PersonalApiKeyCreateRequest:
+      type: object
+      required: [walletAddress, name, permission, rateLimit]
+      properties:
+        walletAddress:
+          type: string
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        permission:
+          type: string
+          enum: [read, trading, full]
+        rateLimit:
+          type: integer
+          minimum: 10
+          maximum: 200
+    PersonalApiKeyCreateResponse:
+      type: object
+      required: [key, apiKey, oneTimeReveal]
+      properties:
+        key:
+          type: string
+          description: Raw API key, returned once only
+        apiKey:
+          $ref: "#/components/schemas/PersonalApiKey"
+        oneTimeReveal:
+          type: boolean
+          const: true
+    PersonalApiKeyOperationResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
     AiRuntimeStatus:
       type: object
       required: [provider, model, environment, ready, code, error]
@@ -1728,3 +1956,9 @@ components:
           type: string
       required:
         - error
+  securitySchemes:
+    PersonalApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: "Optional personal API key. Authorization: Bearer is also accepted."

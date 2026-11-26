@@ -11,6 +11,7 @@ export {
   GetCandlesParams,
   GetOrderBookParams,
   GetRecentTradesParams,
+  RevokePersonalApiKeyParams,
 } from "./generated/api";
 export * from './generated/api';
 export * from './generated/types';

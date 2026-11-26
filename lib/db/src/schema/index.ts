@@ -31,3 +31,4 @@ export * from "./fundingRates";
 export * from "./evmToBsvSwaps";
 export * from "./overlayRecords";
 export * from "./orderbookQuoteCandles";
+export * from "./userApiKeys";

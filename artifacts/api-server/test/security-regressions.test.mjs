@@ -29,6 +29,9 @@ const webhookHandlersPath = path.join(__dirname, "..", "src", "webhookHandlers.t
 const safeFetchPath = path.join(__dirname, "..", "src", "lib", "safePublicFetch.ts");
 const evmHtlcPath = path.join(__dirname, "..", "src", "lib", "evmHtlc.ts");
 const apiKeyAuthPath = path.join(__dirname, "..", "src", "middleware", "apiKeyAuth.ts");
+const personalApiKeysPath = path.join(__dirname, "..", "src", "lib", "personalApiKeys.ts");
+const walletRequestAuthPath = path.join(__dirname, "..", "src", "lib", "walletRequestAuth.ts");
+const userApiKeysPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "UserApiKeysSecure.tsx");
 const portfolioAnalysisPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "AiPortfolioAnalysis.tsx");
 const emailInboxPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "EmailInbox.tsx");
 const htlcDeployPath = path.join(__dirname, "..", "..", "..", "contracts", "deploy.ts");
@@ -276,14 +279,53 @@ test("withdrawal history and notification reads require single-use wallet proofs
   assert.match(socialSrc, /verifyWalletRequestProof[\s\S]*resource:\s*"social-notifications"/);
 });
 
-test("unsafe personal API-key CRUD endpoints are disabled and legacy plaintext keys fail closed", async () => {
-  const [routesSrc, authSrc] = await Promise.all([read(routesIndexPath), read(apiKeyAuthPath)]);
-  assert.match(routesSrc, /router\.get\("\/user\/api-keys", personalApiKeysUnavailable\)/);
-  assert.match(routesSrc, /router\.post\("\/user\/api-keys", personalApiKeysUnavailable\)/);
-  assert.match(routesSrc, /router\.delete\("\/user\/api-keys\/:id", personalApiKeysUnavailable\)/);
-  assert.match(authSrc, /keyHash/);
-  assert.doesNotMatch(authSrc, /k\.key\s*===\s*presented/);
-  assert.match(authSrc, /MAX_BUFFERED_API_KEYS/);
+test("personal API-key CRUD is wallet-authorized and reveals raw keys only at creation", async () => {
+  const [routesSrc, serviceSrc, challengeSrc, uiSrc] = await Promise.all([
+    read(routesIndexPath),
+    read(personalApiKeysPath),
+    read(walletRequestAuthPath),
+    read(userApiKeysPath),
+  ]);
+  assert.match(routesSrc, /router\.get\("\/user\/api-keys"/);
+  assert.match(routesSrc, /router\.post\("\/user\/api-keys"/);
+  assert.match(routesSrc, /router\.delete\("\/user\/api-keys\/:id"/);
+  assert.match(routesSrc, /resource:\s*"personal-api-keys"/);
+  assert.match(routesSrc, /personalApiKeyRequestContext/);
+  assert.match(challengeSrc, /DELETE FROM platform_settings[\s\S]*RETURNING value/);
+  assert.match(challengeSrc, /stored\.context !== params\.context/);
+  assert.match(serviceSrc, /createHmac\("sha256"/);
+  assert.match(serviceSrc, /keyHash:\s*hashPersonalApiKey\(key\)/);
+  assert.doesNotMatch(serviceSrc, /key:\s*key,/);
+  assert.match(serviceSrc, /keyPreview/);
+  assert.match(uiSrc, /oneTimeReveal/);
+  assert.match(uiSrc, /Shown once/);
+  assert.doesNotMatch(uiSrc, /queryFn:\s*async\s*\(\)\s*=>\s*\[\]/);
+});
+
+test("personal API keys enforce scopes, owner matching, and durable per-key limits", async () => {
+  const [authSrc, serviceSrc, ordersSrc, withdrawalsSrc] = await Promise.all([
+    read(apiKeyAuthPath),
+    read(personalApiKeysPath),
+    read(ordersPath),
+    read(withdrawalPath),
+  ]);
+  assert.match(authSrc, /authenticatePersonalApiKey/);
+  assert.match(authSrc, /checkPersonalApiKeyScope/);
+  assert.match(authSrc, /sameWalletAddress/);
+  assert.match(authSrc, /status\(429\)/);
+  assert.match(authSrc, /\/api\/orders/);
+  assert.match(serviceSrc, /rate_window_calls = CASE/);
+  assert.match(serviceSrc, /WHERE key_hash = \$1 AND status = 'active'/);
+  assert.match(ordersSrc, /verifyWalletMessageSignature\(/);
+  assert.match(withdrawalsSrc, /verifyWithdrawSignature|verifyBsvWithdrawSignature|verifySolWithdrawSignature/);
+});
+
+test("wallet authorization preserves case-sensitive addresses and binds key-creation details", async () => {
+  const challengeSrc = await read(walletRequestAuthPath);
+  assert.match(challengeSrc, /return \/\^0x\[0-9a-fA-F\]\{40\}\$\/\.test\(trimmed\) \? trimmed\.toLowerCase\(\) : trimmed/);
+  assert.match(challengeSrc, /Request: \$\{params\.context\}/);
+  assert.match(challengeSrc, /resourceId/);
+  assert.match(challengeSrc, /personal-api-keys/);
 });
 
 test("public transaction relays are disabled instead of proxying or fabricating broadcasts", async () => {

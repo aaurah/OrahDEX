@@ -4,6 +4,13 @@ import { db, pool } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import {
+  ApiKeyConfigurationError,
+  authenticatePersonalApiKey,
+  PersonalApiKeyRateLimitError,
+  sameWalletAddress,
+  type PersonalApiKeyPermission,
+} from "../lib/personalApiKeys.js";
 
 export const API_KEYS_DB_KEY = "admin_api_keys_list";
 
@@ -158,9 +165,98 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      apiKey?: { id: string; name: string; type: "public" | "private"; rateLimit: number };
+      apiKey?: {
+        id: string;
+        name: string;
+        type: "public" | "private" | "personal";
+        rateLimit: number;
+        permission?: PersonalApiKeyPermission;
+        ownerWallet?: string;
+        ownerWalletKey?: string;
+      };
     }
   }
+}
+
+function requestPath(req: Request): string {
+  try {
+    return new URL(req.originalUrl, "http://orahdex.local").pathname.replace(/\/+$/, "") || "/";
+  } catch {
+    return req.path.replace(/\/+$/, "") || "/";
+  }
+}
+
+function privateWalletForRequest(req: Request, path: string): string | null {
+  if (path === "/api/orders" && req.method === "GET") {
+    return typeof req.query.walletAddress === "string" ? req.query.walletAddress : null;
+  }
+  if (path.startsWith("/api/withdrawals/") && req.method === "GET") {
+    return decodeURIComponent(path.slice("/api/withdrawals/".length));
+  }
+  if ((path === "/api/notifications" || path === "/api/social/notifications") &&
+      (req.method === "GET" || req.method === "DELETE")) {
+    return typeof req.query.address === "string" ? req.query.address : null;
+  }
+  return null;
+}
+
+function isPersonalWalletRoute(path: string, method: string): boolean {
+  return (path === "/api/orders" && method === "GET") ||
+    (path.startsWith("/api/withdrawals/") && method === "GET") ||
+    ((path === "/api/notifications" || path === "/api/social/notifications") &&
+      (method === "GET" || method === "DELETE"));
+}
+
+function tradingOrderWrite(path: string, method: string): boolean {
+  return (path === "/api/orders" && method === "POST") ||
+    (/^\/api\/orders\/[^/]+$/.test(path) && method === "DELETE");
+}
+
+function fullAccessWrite(path: string, method: string): boolean {
+  return tradingOrderWrite(path, method) ||
+    (path === "/api/withdrawals" && method === "POST") ||
+    ((path === "/api/notifications" || path === "/api/social/notifications") && method === "DELETE");
+}
+
+function checkPersonalApiKeyScope(req: Request, permission: PersonalApiKeyPermission, ownerWalletKey: string): string | null {
+  const path = requestPath(req);
+  // Key-management operations always need their own one-time wallet proof;
+  // an API key never substitutes for that challenge.
+  if (path === "/api/wallet-request/challenge" || path.startsWith("/api/user/api-keys")) return null;
+
+  if (isPersonalWalletRoute(path, req.method)) {
+    const privateWallet = privateWalletForRequest(req, path);
+    if (
+      permission !== "full" ||
+      !privateWallet ||
+      !sameWalletAddress(privateWallet, ownerWalletKey)
+    ) {
+      return "This API key cannot access another wallet's account data.";
+    }
+  } else if (path.startsWith("/api/orders/") && req.method === "GET") {
+    // An order-id lookup has no wallet parameter to bind to the key owner.
+    return "This API key cannot access an order without wallet ownership context.";
+  }
+
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return null;
+
+  const walletAddress = req.body?.walletAddress;
+  if (tradingOrderWrite(path, req.method) || (permission === "full" && path === "/api/withdrawals" && req.method === "POST")) {
+    if (typeof walletAddress !== "string" || !sameWalletAddress(walletAddress, ownerWalletKey)) {
+      return "This API key can only be used with its owner's wallet.";
+    }
+  }
+  if (permission === "trading" && tradingOrderWrite(path, req.method)) return null;
+  if (permission === "full" && fullAccessWrite(path, req.method)) {
+    if (path === "/api/notifications" || path === "/api/social/notifications") {
+      const address = typeof req.query.address === "string" ? req.query.address : "";
+      if (!address || !sameWalletAddress(address, ownerWalletKey)) {
+        return "This API key can only be used with its owner's wallet.";
+      }
+    }
+    return null;
+  }
+  return "This API key's permission does not allow this request.";
 }
 
 /**
@@ -191,7 +287,7 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction): 
   if (req.apiKey) return next();
   res.status(401).json({
     error: "API key required. Include your key in the Authorization header: Authorization: Bearer <your-key>. " +
-           "Keys can be created in the OrahDEX admin panel.",
+           "Personal keys can be created in Settings → API Access.",
   });
 }
 
@@ -201,6 +297,45 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
     (req.header("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
 
   if (!presented || !presented.startsWith("orah_")) return next();
+
+  if (presented.startsWith("orah_user_")) {
+    try {
+      const personalKey = await authenticatePersonalApiKey(presented);
+      if (!personalKey) {
+        res.status(401).json({ error: "Invalid or revoked personal API key." });
+        return;
+      }
+      const scopeError = checkPersonalApiKeyScope(req, personalKey.permission, personalKey.ownerWalletKey);
+      if (scopeError) {
+        res.status(403).json({ error: scopeError });
+        return;
+      }
+      req.apiKey = {
+        id: personalKey.id,
+        name: personalKey.name,
+        type: "personal",
+        rateLimit: personalKey.rateLimit,
+        permission: personalKey.permission,
+        ownerWallet: personalKey.ownerWallet,
+        ownerWalletKey: personalKey.ownerWalletKey,
+      };
+      next();
+      return;
+    } catch (err) {
+      if (err instanceof PersonalApiKeyRateLimitError) {
+        res.setHeader("Retry-After", "60");
+        res.status(429).json({ error: err.message, limit: err.limit, window: "1 minute" });
+        return;
+      }
+      if (err instanceof ApiKeyConfigurationError) {
+        res.status(503).json({ error: err.message, code: err.code });
+        return;
+      }
+      logger.error({ err }, "apiKeyAuth: personal key verification unavailable");
+      res.status(503).json({ error: "Personal API key verification is temporarily unavailable. Retry shortly." });
+      return;
+    }
+  }
 
   try {
     const keys = await getCachedKeys();

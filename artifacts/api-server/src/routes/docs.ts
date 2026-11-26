@@ -11,7 +11,7 @@ const OPENAPI_SPEC = {
     description:
       "Multi-chain DEX — spot & futures markets, cross-chain swaps, BSV integration, passkey wallets, and more.\n\n" +
       "**Base paths**\n- `/api` — primary REST API\n- `/v1` — routing / quote engine\n- `/tv` — TradingView UDF compatibility\n\n" +
-      "Most endpoints require an `Authorization: Bearer <api-key>` header.",
+      "Public market-data routes can be called without an API key. Personal API keys are optional credentials accepted in `X-API-Key` or `Authorization: Bearer <api-key>` headers; they apply per-key request limits and enforce their selected read/trading/full scope. Trading, withdrawal, and other signed wallet actions still require the existing wallet authorization. Admin routes still require admin authorization. Never send an API key in a URL or query parameter.",
     contact: { name: "OrahDEX", url: "https://orahdex.io" },
     license: { name: "Proprietary" },
   },
@@ -21,6 +21,7 @@ const OPENAPI_SPEC = {
   ],
   tags: [
     { name: "Health",      description: "Liveness probes" },
+    { name: "API Keys",    description: "Wallet-owned personal API key management" },
     { name: "Markets",     description: "Pairs, tickers, OHLCV candles" },
     { name: "Tokens",      description: "Token metadata and prices (v1)" },
     { name: "Quote",       description: "Swap quote and routing engine (v1)" },
@@ -46,6 +47,70 @@ const OPENAPI_SPEC = {
       get: {
         tags: ["Health"], summary: "Public platform settings", operationId: "getPublicSettings",
         responses: { "200": { description: "Whitelisted settings object", content: { "application/json": { schema: { type: "object" } } } } },
+      },
+    },
+    "/api/wallet-request/challenge": {
+      post: {
+        tags: ["API Keys"], summary: "Issue a single-use wallet signature challenge", operationId: "issueWalletRequestChallenge",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", required: ["walletAddress", "resource", "method"], properties: {
+            walletAddress: { type: "string" },
+            resource: { type: "string", enum: ["withdrawal-history", "notifications", "social-notifications", "personal-api-keys"] },
+            method: { type: "string", enum: ["GET", "POST", "DELETE"] },
+            resourceId: { type: "string", description: "Required when revoking a personal API key." },
+            context: { type: "object", description: "For key creation, include the exact name, permission, and rateLimit." },
+          } } } },
+        },
+        responses: {
+          "200": { description: "Short-lived challenge to sign", content: { "application/json": { schema: { type: "object", required: ["challengeId", "message"], properties: { challengeId: { type: "string" }, message: { type: "string" } } } } } },
+          "400": { description: "Unsupported or invalid challenge request" },
+        },
+      },
+    },
+    "/api/user/api-keys": {
+      get: {
+        tags: ["API Keys"], summary: "List keys owned by a wallet", operationId: "listPersonalApiKeys",
+        parameters: [
+          { in: "query", name: "walletAddress", required: true, schema: { type: "string" } },
+          { in: "header", name: "X-Wallet-Auth-Challenge", required: true, schema: { type: "string" } },
+          { in: "header", name: "X-Wallet-Auth-Signature", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "Safe key metadata; raw keys are never returned by list", content: { "application/json": { schema: { type: "object", required: ["keys"], properties: { keys: { type: "array", items: { $ref: "#/components/schemas/PersonalApiKey" } } } } } } },
+          "401": { description: "Wallet proof is missing, invalid, expired, or already used" },
+        },
+      },
+      post: {
+        tags: ["API Keys"], summary: "Create a wallet-owned API key", operationId: "createPersonalApiKey",
+        description: "The wallet signature binds the exact key name, permission, and rate limit. The raw key is returned once.",
+        parameters: [
+          { in: "header", name: "X-Wallet-Auth-Challenge", required: true, schema: { type: "string" } },
+          { in: "header", name: "X-Wallet-Auth-Signature", required: true, schema: { type: "string" } },
+        ],
+        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/PersonalApiKeyCreateRequest" } } } },
+        responses: {
+          "201": { description: "Created key with one-time raw credential reveal", content: { "application/json": { schema: { $ref: "#/components/schemas/PersonalApiKeyCreateResponse" } } } },
+          "400": { description: "Invalid key details" },
+          "401": { description: "Wallet proof is missing, invalid, expired, or already used" },
+          "503": { description: "Secret or database is unavailable" },
+        },
+      },
+    },
+    "/api/user/api-keys/{id}": {
+      delete: {
+        tags: ["API Keys"], summary: "Revoke a key owned by a wallet", operationId: "revokePersonalApiKey",
+        parameters: [
+          { in: "path", name: "id", required: true, schema: { type: "string" } },
+          { in: "query", name: "walletAddress", required: true, schema: { type: "string" } },
+          { in: "header", name: "X-Wallet-Auth-Challenge", required: true, schema: { type: "string" } },
+          { in: "header", name: "X-Wallet-Auth-Signature", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "Key revoked", content: { "application/json": { schema: { type: "object", required: ["success"], properties: { success: { type: "boolean" } } } } } },
+          "401": { description: "Wallet proof is missing, invalid, expired, or already used" },
+          "404": { description: "Key not owned by this wallet" },
+        },
       },
     },
 
@@ -218,6 +283,39 @@ const OPENAPI_SPEC = {
   },
   components: {
     schemas: {
+      PersonalApiKey: {
+        type: "object",
+        required: ["id", "name", "permission", "rateLimit", "keyPreview", "status", "createdAt", "lastUsedAt"],
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          permission: { type: "string", enum: ["read", "trading", "full"] },
+          rateLimit: { type: "integer", minimum: 10, maximum: 200 },
+          keyPreview: { type: "string" },
+          status: { type: "string", enum: ["active", "revoked"] },
+          createdAt: { type: "string", format: "date-time" },
+          lastUsedAt: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      PersonalApiKeyCreateRequest: {
+        type: "object",
+        required: ["walletAddress", "name", "permission", "rateLimit"],
+        properties: {
+          walletAddress: { type: "string" },
+          name: { type: "string", minLength: 1, maxLength: 100 },
+          permission: { type: "string", enum: ["read", "trading", "full"] },
+          rateLimit: { type: "integer", minimum: 10, maximum: 200 },
+        },
+      },
+      PersonalApiKeyCreateResponse: {
+        type: "object",
+        required: ["key", "apiKey", "oneTimeReveal"],
+        properties: {
+          key: { type: "string", description: "Raw API key, returned once only." },
+          apiKey: { $ref: "#/components/schemas/PersonalApiKey" },
+          oneTimeReveal: { type: "boolean", enum: [true] },
+        },
+      },
       Market: {
         type: "object",
         properties: {
@@ -311,6 +409,14 @@ const OPENAPI_SPEC = {
           height:       { type: "integer" },
           scriptPubKey: { type: "string" },
         },
+      },
+    },
+    securitySchemes: {
+      PersonalApiKey: {
+        type: "apiKey",
+        in: "header",
+        name: "X-API-Key",
+        description: "Optional personal key. Authorization: Bearer is also accepted; wallet and admin checks remain in force.",
       },
     },
   },
