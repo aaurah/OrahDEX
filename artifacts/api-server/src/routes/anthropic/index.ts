@@ -11,6 +11,7 @@ import {
 import { eq, asc, desc } from "drizzle-orm";
 import { logger } from "../../lib/logger.js";
 import { aiChatRateLimit } from "../../middleware/aiChatRateLimit.js";
+import { recordAiSuccess, tripCircuitBreaker } from "../ai.js";
 import { getApiOllamaStatus as getDevaiOllamaStatus } from "../../lib/ollamaRuntime.js";
 import { buildOraSystemPrompt } from "../../lib/oraPrompt.js";
 import {
@@ -158,6 +159,7 @@ router.get("/anthropic/conversations/:id/messages", async (req, res) => {
 });
 
 router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req, res) => {
+  let inferenceStarted = false;
   try {
     const convId = Number(req.params.id);
     if (!convId) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -220,6 +222,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
         { role: "system", content: systemPrompt },
         ...chatMessages,
       ];
+      inferenceStarted = true;
       const stream = await createDevaiOllamaStream(ollamaMessages, 512, oraModel, controller.signal);
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content;
@@ -229,6 +232,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
         }
       }
     } else {
+      inferenceStarted = true;
       const stream = anthropic.messages.stream({
         model: "claude-sonnet-4-6",
         max_tokens: 8192,
@@ -244,6 +248,8 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
       }
     }
 
+    recordAiSuccess();
+
     // Persist the assistant reply independently — a DB failure must not
     // send a false error event to the client (the user already saw the response).
     db.insert(messages).values({
@@ -258,6 +264,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
     res.end();
   } catch (err) {
     const localOllama = isDevaiOllamaEnabled();
+    if (inferenceStarted) tripCircuitBreaker(err);
     logger.error({ err, provider: localOllama ? "ollama" : "anthropic" }, "Ora chat stream failed");
     if (!res.headersSent) {
       res.status(localOllama ? 503 : 500).json({

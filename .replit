@@ -128,7 +128,7 @@ OLLAMA_MODELS = "/home/runner/workspace/.ollama-models"
 DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE = "true"
 
 [userenv.production]
-DEVAI_MODEL = "qwen2.5-coder:1.5b"
+DEVAI_MODEL = "qwen2.5-coder:0.5b"
 DEVAI_OLLAMA_ENABLED = "true"
-ORA_AI_MODEL = "qwen2.5-coder:1.5b"
+ORA_AI_MODEL = "qwen2.5-coder:0.5b"
 DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE = "true"

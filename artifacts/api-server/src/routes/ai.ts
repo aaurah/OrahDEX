@@ -157,7 +157,7 @@ function isAiAvailable(): boolean {
   return true;
 }
 
-function recordAiSuccess(): void {
+export function recordAiSuccess(): void {
   const now = new Date();
   consecutiveTimeouts = 0;
   aiProviderState = "healthy";
@@ -166,7 +166,7 @@ function recordAiSuccess(): void {
   aiProviderConsecutiveFails = 0;
 }
 
-function tripCircuitBreaker(err: unknown) {
+export function tripCircuitBreaker(err: unknown) {
   aiProviderState = "degraded";
   aiProviderLastRunAt = new Date();
   aiProviderConsecutiveFails++;
