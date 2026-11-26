@@ -122,7 +122,7 @@ EVM_ORDERBOOK_MATCHING_ENABLED = "true"
 [userenv.development]
 BSV_NETWORK = "main"
 DEVAI_OLLAMA_ENABLED = "true"
-DEVAI_MODEL = "qwen2.5-coder:1.5b"
+DEVAI_MODEL = "qwen2.5-coder:0.5b"
 ORA_AI_MODEL = "llama3.2:1b"
 OLLAMA_MODELS = "/home/runner/workspace/.ollama-models"
 
