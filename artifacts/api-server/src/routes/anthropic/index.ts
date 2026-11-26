@@ -4,6 +4,7 @@ import { conversations, messages, marketsTable } from "@workspace/db/schema";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import {
   createDevaiOllamaStream,
+  getLocalOllamaInferenceSettings,
   isDevaiOllamaEnabled,
   oraModel,
   type DevAiChatMessage,
@@ -21,7 +22,7 @@ import {
 
 const router = Router();
 
-function previewOraLimit(name: string, fallback: number, min: number, max: number): number {
+function oraLimit(name: string, fallback: number, min: number, max: number): number {
   if (process.env.NODE_ENV !== "development") return fallback;
   const configured = Number(process.env[name]);
   return Number.isInteger(configured) && configured >= min && configured <= max
@@ -200,7 +201,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
       .from(messages)
       .where(eq(messages.conversationId, convId))
       .orderBy(desc(messages.createdAt))
-      .limit(previewOraLimit("ORA_AI_HISTORY_MESSAGES", 20, 2, 20));
+      .limit(oraLimit("ORA_AI_HISTORY_MESSAGES", 4, 2, 20));
 
     const chatMessages = allMessages.reverse().map((m) => ({
       role: m.role as "user" | "assistant",
@@ -208,7 +209,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
     }));
 
     const marketContext = await getLiveMarketContext(
-      previewOraLimit("ORA_AI_MARKET_CONTEXT_PAIRS", 12, 1, 12),
+      oraLimit("ORA_AI_MARKET_CONTEXT_PAIRS", 6, 1, 12),
     );
     const systemPrompt = buildSystemPrompt(marketContext);
 
@@ -234,13 +235,14 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
         ...chatMessages,
       ];
       inferenceStarted = true;
+      const inferenceSettings = getLocalOllamaInferenceSettings();
       const stream = await createDevaiOllamaStream(
         ollamaMessages,
         512,
         oraModel,
         controller.signal,
-        previewOraLimit("ORA_AI_CONTEXT_TOKENS", 2048, 512, 2048),
-        previewOraLimit("ORA_AI_NUM_BATCH", 1024, 128, 1024),
+        inferenceSettings.numCtx,
+        inferenceSettings.numBatch,
       );
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content;

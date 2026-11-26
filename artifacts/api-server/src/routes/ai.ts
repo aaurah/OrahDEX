@@ -4,10 +4,11 @@ import { db } from "@workspace/db";
 import { conversations, messages } from "@workspace/db/schema";
 import {
   openai,
-  devaiOpenAI,
+  createDevaiOllamaCompletion,
   createDevaiOllamaStream,
   oraModel,
   isDevaiOllamaEnabled,
+  type DevAiChatMessage,
 } from "@workspace/integrations-openai-ai-server";
 import { eq, asc, desc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
@@ -24,10 +25,9 @@ const router = Router();
 
 /* ── Provider selection ──────────────────────────────────────────────────────
  * Orah AI runs on the hosted OpenAI integration when one is provisioned.  On a
- * VM that only has a local Ollama model, the same endpoints are served through
- * Ollama's OpenAI-compatible API (DEVAI_OLLAMA_ENABLED / DEVAI_MODEL).  Both
- * paths use the same `openai` client below — only the model name, token field
- * and timeouts differ.
+ * VM that only has a local Ollama model, these endpoints use its native chat
+ * API (DEVAI_OLLAMA_ENABLED / ORA_AI_MODEL) so request-level memory settings
+ * are honored. Hosted requests continue through the OpenAI client.
  */
 const oraLocalModelEnabled = (): boolean => isDevaiOllamaEnabled();
 // Local models need longer budgets: a 1.5B model on CPU generates tokens far
@@ -38,18 +38,9 @@ const aiTimeoutMs = (): number => (oraLocalModelEnabled() ? 90_000 : 15_000);
 const aiModel = (): string => oraLocalModelEnabled()
   ? oraModel
   : (process.env.AI_INTEGRATIONS_OPENAI_MODEL || "gpt-4o-mini");
-const aiClient = () => oraLocalModelEnabled() ? devaiOpenAI : openai;
-// Ollama honours `max_tokens`; the hosted provider uses `max_completion_tokens`.
-const aiTokenLimit = (maxTokens: number): Record<string, number> =>
-  oraLocalModelEnabled() ? { max_tokens: maxTokens } : { max_completion_tokens: maxTokens };
-// Small local models tend to wrap JSON in prose; ask Ollama for JSON mode and a
-// deterministic sample so the portfolio / news endpoints don't fall back to
-// computed text.
-const aiJsonMode = (): { response_format?: { type: "json_object" }; temperature?: number } =>
-  oraLocalModelEnabled() ? { response_format: { type: "json_object" }, temperature: 0 } : {};
 // Local models also need an explicit "JSON only, quote every string" instruction
 // on top of the route's prompt, otherwise they emit unquoted prose values.
-const aiJsonMessages = (system: string, user: string) => oraLocalModelEnabled()
+const aiJsonMessages = (system: string, user: string): DevAiChatMessage[] => oraLocalModelEnabled()
   ? [
       { role: "system" as const, content: `${system}\n\nYou are a JSON API: reply with one valid JSON object only, no prose, and quote every string value.` },
       { role: "user" as const, content: user },
@@ -58,6 +49,31 @@ const aiJsonMessages = (system: string, user: string) => oraLocalModelEnabled()
       { role: "system" as const, content: system },
       { role: "user" as const, content: user },
     ];
+
+async function createAiChatCompletion(
+  messages: DevAiChatMessage[],
+  maxTokens: number,
+  signal: AbortSignal,
+  jsonMode = false,
+  formatSchema?: Record<string, unknown>,
+) {
+  if (oraLocalModelEnabled()) {
+    return createDevaiOllamaCompletion(
+      messages,
+      maxTokens,
+      aiModel(),
+      signal,
+      jsonMode,
+      jsonMode ? 0 : undefined,
+      formatSchema,
+    );
+  }
+  return openai.chat.completions.create({
+    model: aiModel(),
+    max_completion_tokens: maxTokens,
+    messages,
+  }, { signal });
+}
 
 // ── Safety middleware: hard deadline on every AI route (120 s when a local
 // model is serving, 25 s for the hosted provider) ────────────────────────────
@@ -441,14 +457,14 @@ router.get("/ai/market-analysis", async (req, res) => {
 
 Keep it under 200 words. Use plain markdown. No financial advice disclaimer needed — just direct analysis.`;
 
-    const response = await aiClient().chat.completions.create({
-      model: aiModel(),
-      ...aiTokenLimit(512),
-      messages: [
+    const response = await createAiChatCompletion(
+      [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
+      512,
+      AbortSignal.timeout(aiTimeoutMs()),
+    );
 
     const content = response.choices[0]?.message?.content || fallbackAnalysis(symbol);
     analysisCache.set(symbol, { content, ts: Date.now() });
@@ -509,24 +525,35 @@ router.get("/ai/insights", async (_req, res) => {
       return `\n\nLive Hyperliquid perp data (now): ${lines}`;
     }).catch(() => "");
 
-    const response = await aiClient().chat.completions.create({
-      model: aiModel(),
-      ...aiTokenLimit(512),
-      messages: [
+    const response = await createAiChatCompletion(
+      [
         { role: "system", content: SYSTEM_PROMPT },
         {
           role: "user",
           content: `Give 3 brief, sharp market insights for crypto traders right now. Each insight should be 1-2 sentences. Format as a JSON array of strings. Focus on actionable trends across DeFi, L2s, and BSV ecosystem. Return only valid JSON, no markdown wrapping.${hlContext}`
         },
       ],
-    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
+      512,
+      AbortSignal.timeout(aiTimeoutMs()),
+      true,
+      {
+        type: "array",
+        items: { type: "string" },
+        minItems: 3,
+        maxItems: 3,
+      },
+    );
 
     const raw = response.choices[0]?.message?.content || "[]";
     let parsed: string[];
     try {
-      parsed = JSON.parse(raw.trim().replace(/^```json\n?/, "").replace(/\n?```$/, ""));
+      const value = JSON.parse(raw.trim().replace(/^```json\n?/, "").replace(/\n?```$/, ""));
+      parsed = Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 3)
+        : [];
+      if (!parsed.length) throw new Error("AI insights response was not an array of strings.");
     } catch {
-      parsed = [raw];
+      throw new Error("AI insights response did not match the required JSON array.");
     }
 
     const content = JSON.stringify(parsed);
@@ -584,14 +611,14 @@ router.get("/ai/trade-signal", async (req, res) => {
       ? `Should I ${action} ${symbol} right now? Give a 2-sentence risk assessment with a bullish/bearish/neutral rating. Be direct.`
       : `Give a 1-sentence directional signal for ${symbol} as of March 2026: bullish, bearish, or neutral, and why. Be extremely concise.`;
 
-    const response = await aiClient().chat.completions.create({
-      model: aiModel(),
-      ...aiTokenLimit(256),
-      messages: [
+    const response = await createAiChatCompletion(
+      [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
+      256,
+      AbortSignal.timeout(aiTimeoutMs()),
+    );
 
     const signal = response.choices[0]?.message?.content || fallbackSignal(symbol).signal;
     const sentiment = signal.toLowerCase().includes("bullish") ? "bullish"
@@ -709,12 +736,12 @@ Return ONLY a JSON object (no markdown, no backticks) with these exact fields:
 
 Consider: diversification, concentration risk, exposure to volatile vs stable assets, sector balance.`;
 
-    const response = await aiClient().chat.completions.create({
-      model: aiModel(),
-      ...aiTokenLimit(1024),
-      ...aiJsonMode(),
-      messages: aiJsonMessages(SYSTEM_PROMPT, prompt),
-    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
+    const response = await createAiChatCompletion(
+      aiJsonMessages(SYSTEM_PROMPT, prompt),
+      1024,
+      AbortSignal.timeout(aiTimeoutMs()),
+      true,
+    );
 
     const raw2 = response.choices[0]?.message?.content ?? "";
     const jsonMatch = raw2.match(/\{[\s\S]*\}/);
@@ -796,12 +823,12 @@ Return ONLY a JSON object (no markdown, no backticks):
 
 Be specific to ${symbol}'s actual situation. Focus on: ecosystem developments, institutional flows, technical levels, macro factors. Keep each narrative under 20 words.`;
 
-    const response = await aiClient().chat.completions.create({
-      model: aiModel(),
-      ...aiTokenLimit(1024),
-      ...aiJsonMode(),
-      messages: aiJsonMessages(SYSTEM_PROMPT, prompt),
-    }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
+    const response = await createAiChatCompletion(
+      aiJsonMessages(SYSTEM_PROMPT, prompt),
+      1024,
+      AbortSignal.timeout(aiTimeoutMs()),
+      true,
+    );
 
     const raw2 = response.choices[0]?.message?.content ?? "";
     const jsonMatch = raw2.match(/\{[\s\S]*\}/);

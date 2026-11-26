@@ -95,6 +95,21 @@ export interface DevAiChatMessage {
   content: string;
 }
 
+export function getLocalOllamaInferenceSettings(): { numCtx: number; numBatch: number } {
+  const readBounded = (name: string, fallback: number, min: number, max: number) => {
+    const value = Number(process.env[name]);
+    return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
+  };
+  return {
+    numCtx: readBounded("ORA_AI_CONTEXT_TOKENS", 1024, 512, 32768),
+    numBatch: readBounded("ORA_AI_NUM_BATCH", 256, 128, 1024),
+  };
+}
+
+export interface DevAiChatCompletion {
+  choices: Array<{ message: { content: string | null } }>;
+}
+
 export const isDevaiOllamaEnabled = () => process.env.DEVAI_OLLAMA_ENABLED === "true";
 
 export const isUnsafeOllamaMemoryOverrideEnabled = () =>
@@ -243,8 +258,8 @@ export async function createDevaiOllamaStream(
   maxTokens = 2048,
   model: string = devaiModel,
   signal?: AbortSignal,
-  numCtx = 2048,
-  numBatch = 1024,
+  numCtx = getLocalOllamaInferenceSettings().numCtx,
+  numBatch = getLocalOllamaInferenceSettings().numBatch,
 ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
   const status = await getDevaiOllamaStatus(model);
   if (!status.ready) throw new Error(status.error ?? "Local model is not ready.");
@@ -258,8 +273,7 @@ export async function createDevaiOllamaStream(
     headers: { "Content-Type": "application/json", ...devaiOllamaAccessHeaders() },
     body: JSON.stringify({
       model, messages, stream: true, keep_alive: "30m",
-      // 1024 measured ~6% faster than 512 on this CPU-only host. Keep the
-      // production default unless a preview-only memory test justifies lowering it.
+      // Keep local context and batch limits explicit on Ollama's native route.
       options: { num_ctx: contextLength, num_predict: Math.min(maxTokens, 1024), num_batch: batchSize },
     }),
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
@@ -297,4 +311,46 @@ export async function createDevaiOllamaStream(
       }
     } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
   })();
+}
+
+export async function createDevaiOllamaCompletion(
+  messages: DevAiChatMessage[],
+  maxTokens = 512,
+  model: string = oraModel,
+  signal?: AbortSignal,
+  jsonMode = false,
+  temperature?: number,
+  formatSchema?: Record<string, unknown>,
+): Promise<DevAiChatCompletion> {
+  const status = await getDevaiOllamaStatus(model);
+  if (!status.ready) throw new Error(status.error ?? "Local model is not ready.");
+
+  const { numCtx, numBatch } = getLocalOllamaInferenceSettings();
+  const response = await fetch(`${devaiOllamaServerUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...devaiOllamaAccessHeaders() },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false,
+      keep_alive: "30m",
+      ...(jsonMode ? { format: formatSchema ?? "json" } : {}),
+      options: {
+        num_ctx: numCtx,
+        num_predict: Math.min(maxTokens, 1024),
+        num_batch: numBatch,
+        ...(temperature === undefined ? {} : { temperature }),
+      },
+    }),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(120_000)])
+      : AbortSignal.timeout(120_000),
+  });
+
+  const data = await response.json().catch(() => ({})) as {
+    error?: string;
+    message?: { content?: string };
+  };
+  if (!response.ok) throw new Error(data.error || `Local Ollama chat failed with HTTP ${response.status}.`);
+  return { choices: [{ message: { content: data.message?.content ?? null } }] };
 }
