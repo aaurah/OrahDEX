@@ -37,9 +37,9 @@ async function openA8EthPair({ seller, buyer, base, escrow, sellerId, buyerId, b
 }
 
 describe("OrahDEXOrderbookEscrow", function () {
-  it("settles A8/ETH atomically within both limit prices and refunds buyer price improvement", async function () {
+  it("lets a third party settle, but sends assets only to the order makers", async function () {
     const ctx = await setup();
-    const { seller, buyer, feeRecipient, base, escrow } = ctx;
+    const { seller, buyer, stranger, feeRecipient, base, escrow } = ctx;
     const sellerId = id("seller-order");
     const buyerId = id("buyer-order");
     const settlementId = id("fill-1");
@@ -49,7 +49,7 @@ describe("OrahDEXOrderbookEscrow", function () {
     const sellerEthBefore = await ethers.provider.getBalance(seller.address);
     const feeEthBefore = await ethers.provider.getBalance(feeRecipient.address);
 
-    await escrow.settle(settlementId, buyerId, sellerId, scale(10), grossQuote);
+    await escrow.connect(stranger).settle(settlementId, buyerId, sellerId, scale(10), grossQuote);
 
     assert.equal(await base.balanceOf(buyer.address), scale(10));
     assert.equal(await base.balanceOf(escrow.target), 0n);
@@ -99,7 +99,7 @@ describe("OrahDEXOrderbookEscrow", function () {
     assert.equal(await ethers.provider.getBalance(escrow.target), 0n);
   });
 
-  it("rejects cross-pair orders and prevents a maker matching with itself", async function () {
+  it("rejects cross-pair orders", async function () {
     const { seller, buyer, base, escrow } = await setup();
     const other = await (await ethers.getContractFactory("TestToken")).deploy();
     const expiresAt = BigInt((await ethers.provider.getBlock("latest")).timestamp + 3600);
@@ -114,5 +114,30 @@ describe("OrahDEXOrderbookEscrow", function () {
       { value: scale(30) },
     );
     await assert.rejects(() => escrow.settle(id("cross-pair"), buyerId, sellerId, scale(1), 3n * E18));
+  });
+
+  it("rejects a maker matching their own buy and sell orders", async function () {
+    const { seller, stranger, base, escrow } = await setup();
+    const expiresAt = BigInt((await ethers.provider.getBlock("latest")).timestamp + 3600);
+    const baseAmount = scale(10);
+    const quoteAmount = scale(30);
+    const sellId = id("self-sell");
+    const buyId = id("self-buy");
+
+    await escrow.connect(seller).openOrder(
+      sellId, 1, base.target, ethers.ZeroAddress, baseAmount, 0, 2n * E18, expiresAt,
+    );
+    await escrow.connect(seller).openOrder(
+      buyId, 0, base.target, ethers.ZeroAddress, baseAmount, quoteAmount, 3n * E18, expiresAt,
+      { value: quoteAmount },
+    );
+
+    await assert.rejects(
+      () => escrow.connect(stranger).settle(id("self-fill"), buyId, sellId, baseAmount, 22n * E18),
+    );
+    assert.equal(await escrow.orders(buyId).then((order) => order.active), true);
+    assert.equal(await escrow.orders(sellId).then((order) => order.active), true);
+    assert.equal(await base.balanceOf(escrow.target), baseAmount);
+    assert.equal(await ethers.provider.getBalance(escrow.target), quoteAmount);
   });
 });

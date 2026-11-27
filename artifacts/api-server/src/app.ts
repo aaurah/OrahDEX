@@ -5,6 +5,7 @@ import compression from "compression";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
+import v8 from "node:v8";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -48,6 +49,7 @@ import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
 import { startErrorWatcher } from "./lib/errorWatcher.js";
 import { pool } from "@workspace/db";
+import { BoundedMap } from "./lib/boundedMap.js";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
 pool.query(`
@@ -231,6 +233,37 @@ app.use(
     },
   }),
 );
+
+const memoryPressureRouteCooldown = new BoundedMap<string, number>(200);
+app.use((req, res, next) => {
+  const startHeap = process.memoryUsage().heapUsed;
+  const startedAt = Date.now();
+  res.once("finish", () => {
+    const memory = process.memoryUsage();
+    const heapLimit = v8.getHeapStatistics().heap_size_limit;
+    const heapRatio = memory.heapUsed / heapLimit;
+    const heapDelta = memory.heapUsed - startHeap;
+    if (heapRatio < 0.7 && heapDelta < 64 * 1024 * 1024) return;
+
+    const routePattern = typeof req.route?.path === "string" ? req.route.path : "[unmatched]";
+    const route = `${req.method} ${req.baseUrl}${routePattern}`;
+    const now = Date.now();
+    const lastLoggedAt = memoryPressureRouteCooldown.get(route) ?? 0;
+    if (now - lastLoggedAt < 30_000) return;
+    memoryPressureRouteCooldown.set(route, now);
+
+    logger.warn({
+      route,
+      statusCode: res.statusCode,
+      durationMs: now - startedAt,
+      heapUsedMB: Math.round(memory.heapUsed / 1024 / 1024),
+      heapLimitMB: Math.round(heapLimit / 1024 / 1024),
+      heapDeltaMB: Math.round(heapDelta / 1024 / 1024),
+      rssMB: Math.round(memory.rss / 1024 / 1024),
+    }, "API request completed during memory pressure");
+  });
+  next();
+});
 // Build the allowed-origin list:
 //   1. ALLOWED_ORIGINS env var (comma-separated, takes full precedence when set)
 //   2. Hard-coded custom domains
@@ -709,38 +742,54 @@ process.on("unhandledRejection", (reason) => {
 });
 
 // ── Heap watchdog ────────────────────────────────────────────────────────────
-// Logs heap usage every 5 minutes. Thresholds are calibrated for this
-// container (~300–400 MB RSS). Triggers GC when heap exceeds 65% of total
-// so we reclaim memory before the container OOM-kills the process.
+// Sample frequently enough to catch rapid heap growth. Request-completion logs
+// above add route-pattern context when a response finishes under memory pressure.
 {
-  const HEAP_GC_PCT   = 0.75;  // trigger GC above this fraction of heapTotal
-  const HEAP_WARN_MB  = 280;   // log warn  (server typically idles at ~200 MB)
-  const HEAP_ALERT_MB = 420;   // log error (container RSS limit ~700 MB)
+  const HEAP_WARN_PCT = 0.55;
+  const HEAP_ALERT_PCT = 0.7;
+  const RSS_ALERT_MB = 1_500;
+  const GC_COOLDOWN_MS = 120_000;
+  let lastProactiveGcAt = 0;
+
   setInterval(() => {
-    const { heapUsed, heapTotal, rss } = process.memoryUsage();
-    const usedMB  = Math.round(heapUsed  / 1024 / 1024);
-    const totalMB = Math.round(heapTotal / 1024 / 1024);
-    const rssMB   = Math.round(rss       / 1024 / 1024);
-    const uptimeH = (process.uptime() / 3600).toFixed(2);
+    let memory = process.memoryUsage();
+    const heapLimit = v8.getHeapStatistics().heap_size_limit;
+    const heapRatio = memory.heapUsed / heapLimit;
+    const now = Date.now();
 
-    // Proactive GC — reclaim memory before the OOM killer strikes
-    if (heapUsed / heapTotal > HEAP_GC_PCT && typeof (global as any).gc === "function") {
+    if (
+      heapRatio >= HEAP_ALERT_PCT &&
+      now - lastProactiveGcAt >= GC_COOLDOWN_MS &&
+      typeof (global as any).gc === "function"
+    ) {
+      const beforeGcMB = Math.round(memory.heapUsed / 1024 / 1024);
       (global as any).gc();
-      logger.info({ heapUsedMB: usedMB, heapTotalMB: totalMB },
-        "Heap watchdog: triggered GC (heap >65%)");
+      lastProactiveGcAt = now;
+      memory = process.memoryUsage();
+      logger.warn({
+        heapBeforeGcMB: beforeGcMB,
+        heapAfterGcMB: Math.round(memory.heapUsed / 1024 / 1024),
+        heapLimitMB: Math.round(heapLimit / 1024 / 1024),
+      }, "Heap watchdog triggered proactive garbage collection");
     }
 
-    if (usedMB >= HEAP_ALERT_MB) {
-      logger.error({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
-        "HEAP CRITICAL — approaching OOM; restart may be imminent");
-    } else if (usedMB >= HEAP_WARN_MB) {
-      logger.warn({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
-        "Heap usage elevated — possible memory leak");
-    } else {
-      logger.info({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
-        "Heap report");
+    const usedMB = Math.round(memory.heapUsed / 1024 / 1024);
+    const rssMB = Math.round(memory.rss / 1024 / 1024);
+    const fields = {
+      heapUsedMB: usedMB,
+      heapLimitMB: Math.round(heapLimit / 1024 / 1024),
+      heapUsedPct: Math.round((memory.heapUsed / heapLimit) * 100),
+      rssMB,
+      externalMB: Math.round(memory.external / 1024 / 1024),
+      uptimeH: Number((process.uptime() / 3600).toFixed(2)),
+    };
+
+    if (memory.heapUsed / heapLimit >= HEAP_ALERT_PCT || rssMB >= RSS_ALERT_MB) {
+      logger.error(fields, "HEAP CRITICAL — API memory use is approaching the process limit");
+    } else if (memory.heapUsed / heapLimit >= HEAP_WARN_PCT) {
+      logger.warn(fields, "API heap usage elevated");
     }
-  }, 5 * 60 * 1000).unref();
+  }, 30_000).unref();
 }
 
 _s(    0, startHlWebSocket,            "startHlWebSocket");

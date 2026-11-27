@@ -3,6 +3,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const API_HEAP_MB = Number(process.env.API_MAX_OLD_SPACE_MB ?? "1024");
+if (!Number.isSafeInteger(API_HEAP_MB) || API_HEAP_MB < 512 || API_HEAP_MB > 16_384) {
+  throw new Error("API_MAX_OLD_SPACE_MB must be an integer between 512 and 16384.");
+}
 
 function start(label, cmd, args, cwd, env = {}) {
   const proc = spawn(cmd, args, {
@@ -38,7 +42,7 @@ console.log(`Starting OrahDEX — API :${API_PORT}  Frontend :${FRONTEND_PORT}`)
 start(
   "api",
   "node",
-  ["--enable-source-maps", "--max-old-space-size=4096", "--expose-gc", "dist/index.mjs"],
+  ["--enable-source-maps", `--max-old-space-size=${API_HEAP_MB}`, "--expose-gc", "dist/index.mjs"],
   path.join(__dirname, "artifacts/api-server"),
   { PORT: API_PORT, NODE_ENV: "production" }
 );

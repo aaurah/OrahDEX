@@ -19,6 +19,7 @@ import { getCachedLEPrices } from "../lib/lePriceCache.js";
 import { getCachedLECurrencies } from "./letsexchange.js";
 import { SS_COIN_TICKER } from "../lib/simpleswap.js";
 import { logger } from "../lib/logger.js";
+import { BoundedMap } from "../lib/boundedMap.js";
 
 const router: IRouter = Router();
 
@@ -626,11 +627,14 @@ router.get("/coins/all-sources", async (req, res) => {
 });
 
 /* ── GET /api/coins/:id/tickers ────────────────────────────────────────────── */
-const tickerCache = new Map<string, Cache<any>>();
+const tickerCache = new BoundedMap<string, Cache<any>>(500);
 const TICKER_CACHE_MS = 5 * 60 * 1000;
 
 router.get("/coins/:id/tickers", async (req, res) => {
   const { id } = req.params;
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(id)) {
+    return res.status(400).json({ error: "Invalid coin identifier" });
+  }
   const cached = tickerCache.get(id);
   if (cached && Date.now() - cached.ts < TICKER_CACHE_MS) return res.json(cached.data);
 
@@ -708,7 +712,7 @@ router.get("/coins/:id/tickers", async (req, res) => {
 });
 
 // ─── Coin detail: description, social links, ATH, categories ─────────────────
-const detailCache = new Map<string, Cache<any>>();
+const detailCache = new BoundedMap<string, Cache<any>>(500);
 const DETAIL_CACHE_MS = 10 * 60 * 1000;
 
 function stripHtml(html: string): string {
@@ -828,9 +832,9 @@ const CG_ID_OVERRIDES: Record<string, string> = {
 };
 
 const cgCoinCacheMs   = 30 * 60 * 1000;
-const cgCoinCache     = new Map<string, Cache<any>>();
+const cgCoinCache     = new BoundedMap<string, Cache<any>>(500);
 const cgSearchCacheMs = 4 * 60 * 60 * 1000; // 4 h for found; 2 h for null
-const cgSearchCache   = new Map<string, { id: string | null; ts: number }>();
+const cgSearchCache   = new BoundedMap<string, { id: string | null; ts: number }>(2_000);
 
 // ─── Persistent coin-info DB cache ───────────────────────────────────────────
 // coin_info_cache stores fully-enriched coin metadata.
@@ -999,7 +1003,7 @@ async function fetchCgFullData(symbol: string, cgId: string): Promise<Record<str
 }
 
 async function enhanceCoinDetails(symbol: string): Promise<void> {
-  if (enhanceInFlight.has(symbol)) return;
+  if (enhanceInFlight.has(symbol) || enhanceInFlight.size >= MAX_IN_FLIGHT_ENRICHMENTS) return;
   enhanceInFlight.add(symbol);
   try {
     await new Promise(ok => setTimeout(ok, 300 + Math.random() * 700));
@@ -1126,7 +1130,9 @@ async function internalPriceFallback(symbol: string): Promise<Record<string, any
 // /detail re-uses the same fullCache as /full, avoiding duplicate CP API calls.
 router.get("/coins/:symbol/detail", async (req, res) => {
   const symbol = (req.params.symbol ?? "").toUpperCase().trim();
-  if (!symbol) return res.status(400).json({ error: "symbol required" });
+  if (!/^[A-Z0-9][A-Z0-9._-]{0,31}$/.test(symbol)) {
+    return res.status(400).json({ error: "Invalid coin symbol" });
+  }
 
   // Serve from fullCache if available (seeded by prefetch or a prior /full call).
   const hit = fullCache.get(symbol);
@@ -1185,12 +1191,12 @@ router.get("/coins/:symbol/detail", async (req, res) => {
 });
 
 // ─── Contract address → token lookup (GeckoTerminal multi-chain) ─────────────
-const contractLookupCache = new Map<string, Cache<any>>();
+const contractLookupCache = new BoundedMap<string, Cache<any>>(1_000);
 const CONTRACT_LOOKUP_CACHE_MS = 5 * 60 * 1000;
 
 router.get("/coins/by-contract", async (req, res) => {
   const address = ((req.query.address as string) ?? "").trim().toLowerCase();
-  if (!address.match(/^0x[0-9a-f]{10,}/)) {
+  if (!/^0x[0-9a-f]{40}$/.test(address)) {
     return res.json({ found: false, reason: "invalid_address" });
   }
 
@@ -1310,7 +1316,7 @@ router.get("/aggregator/swap", async (req, res) => {
 // Fetches CoinGecko market data and optional coin metadata.
 // Cached server-side for 30 minutes so repeat opens are instant.
 // ─────────────────────────────────────────────────────────────────────────────
-const fullCache = new Map<string, Cache<any>>();
+const fullCache = new BoundedMap<string, Cache<any>>(500);
 const FULL_CACHE_MS = 30 * 60 * 1000;
 
 // Hardcoded symbol→CoinPaprika ID for the most common coins.
@@ -1352,7 +1358,7 @@ const CP_ID_OVERRIDES: Record<string, string> = {
 };
 
 // Runtime symbol→cgId map populated by the bulk prefetch.
-const cgIdMap = new Map<string, string>();
+const cgIdMap = new BoundedMap<string, string>(1_000);
 
 // Map a /coins/markets item to our standard coin shape (market data only).
 function cgMarketsItemToData(c: any): Record<string, any> {
@@ -1447,11 +1453,12 @@ export async function prefetchCgMarkets(retryDelayMs = 90_000): Promise<void> {
 
 // Track which symbols are already being enhanced so we don't double-fire.
 const enhanceInFlight = new Set<string>();
+const MAX_IN_FLIGHT_ENRICHMENTS = 64;
 
 // Background Tier-2 enrichment: adds descriptions and links.
 // Non-blocking — caller does NOT await.
 async function enhanceWithDetail(symbol: string, cpId: string): Promise<void> {
-  if (enhanceInFlight.has(symbol)) return;
+  if (enhanceInFlight.has(symbol) || enhanceInFlight.size >= MAX_IN_FLIGHT_ENRICHMENTS) return;
   enhanceInFlight.add(symbol);
   try {
     await new Promise(ok => setTimeout(ok, Math.random() * 1500));
@@ -1515,7 +1522,9 @@ async function enhanceWithDetail(symbol: string, cpId: string): Promise<void> {
 
 router.get("/coins/:symbol/full", async (req, res) => {
   const symbol = (req.params.symbol ?? "").toUpperCase().trim();
-  if (!symbol) return res.status(400).json({ error: "symbol required" });
+  if (!/^[A-Z0-9][A-Z0-9._-]{0,31}$/.test(symbol)) {
+    return res.status(400).json({ error: "Invalid coin symbol" });
+  }
 
   // ── Cache check ──────────────────────────────────────────────────────────
   const hit = fullCache.get(symbol);

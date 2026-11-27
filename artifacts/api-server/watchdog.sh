@@ -10,6 +10,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${PORT:-8080}"
 NODE_ENV="${NODE_ENV:-development}"
+API_MAX_OLD_SPACE_MB="${API_MAX_OLD_SPACE_MB:-1024}"
 
 MAX_BACKOFF=30        # seconds
 STABLE_SEC=60         # run longer than this → reset back-off
@@ -93,6 +94,7 @@ log "============================================="
 log " OrahDEX API Server Watchdog — starting up"
 log "============================================="
 log "PORT=$PORT  NODE_ENV=$NODE_ENV"
+log "API_MAX_OLD_SPACE_MB=$API_MAX_OLD_SPACE_MB"
 log "Script dir: $SCRIPT_DIR"
 
 cd "$SCRIPT_DIR"
@@ -118,7 +120,7 @@ while true; do
   START_TS=$(date +%s)
 
   NODE_ENV="$NODE_ENV" \
-    node --enable-source-maps --max-old-space-size=4096 --expose-gc \
+    node --enable-source-maps --max-old-space-size="$API_MAX_OLD_SPACE_MB" --expose-gc \
          ./dist/index.mjs &
   child_pid=$!
 

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bash watchdog.sh",
     "build": "node ./build.mjs",
-    "start": "node --enable-source-maps --max-old-space-size=4096 --expose-gc ./dist/index.mjs",
+    "start": "node --enable-source-maps --max-old-space-size=${API_MAX_OLD_SPACE_MB:-1024} --expose-gc ./dist/index.mjs",
     "typecheck": "tsc -b --force ../../lib/db ../../lib/api-zod ../../lib/integrations-openai-ai-server && tsc -p tsconfig.json --noEmit",
     "test": "node --test test/*.test.mjs"
   },

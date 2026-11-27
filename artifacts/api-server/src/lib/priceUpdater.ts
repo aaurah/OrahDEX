@@ -9,6 +9,7 @@ import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
 import { getCachedLEPrices, warmLEPriceCache, leRequest, fetchLEKeyPricesIfNeeded } from "./lePriceCache.js";
 import { fetchSSCurrencies, isSimpleSwapConfigured } from "./simpleswap.js";
+import { BoundedMap } from "./boundedMap.js";
 
 /** Format a price with enough decimal places so sub-satoshi values aren't lost.
  *  e.g. 4.2e-12 → "0.0000000000042000" rather than "0.00000000"
@@ -443,12 +444,12 @@ let _cgCache: Record<string, CoinGeckoPrice> = {};
 const CG_CACHE_MS = 55_000;
 let _cgIdCacheTs = 0;
 let _cgIdCache: Record<string, string> = {};
-const _cgIdMissCache = new Map<string, number>();
+const _cgIdMissCache = new BoundedMap<string, number>(2_000);
 const CG_ID_CACHE_MS = 10 * 60_000;
 let _cgApiKeyPromise: Promise<string | null> | null = null;
 
 /** Market cap (USD) per symbol — populated on each successful CG simple/price call. */
-export const cgMarketCapCache = new Map<string, number>();
+export const cgMarketCapCache = new BoundedMap<string, number>(2_000);
 
 export async function getCoinGeckoApiKey(): Promise<string | null> {
   if (!_cgApiKeyPromise) {
@@ -516,10 +517,6 @@ export async function resolveCoinGeckoId(symbol: string): Promise<string | null>
     // Keep the chart path usable if coin metadata is unavailable.
   }
   _cgIdMissCache.set(normalized, Date.now());
-  if (_cgIdMissCache.size > 2_000) {
-    const oldest = [..._cgIdMissCache.entries()].sort((a, b) => a[1] - b[1])[0];
-    if (oldest) _cgIdMissCache.delete(oldest[0]);
-  }
   return null;
 }
 

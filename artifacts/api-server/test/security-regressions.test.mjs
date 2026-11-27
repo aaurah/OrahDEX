@@ -47,6 +47,12 @@ const swapRoutesPath = path.join(__dirname, "..", "src", "routes", "swap.ts");
 const withdrawalsRoutesPath = path.join(__dirname, "..", "src", "routes", "withdrawals.ts");
 const lifiClientPath = path.join(__dirname, "..", "src", "lib", "lifi.ts");
 const statusPagePath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "StatusPage.tsx");
+const dexRoutesPath = path.join(__dirname, "..", "src", "routes", "dex.ts");
+const priceUpdaterPath = path.join(__dirname, "..", "src", "lib", "priceUpdater.ts");
+const apiAppPath = path.join(__dirname, "..", "src", "app.ts");
+const apiPackagePath = path.join(__dirname, "..", "package.json");
+const apiWatchdogPath = path.join(__dirname, "..", "watchdog.sh");
+const apiStartPath = path.join(__dirname, "..", "..", "..", "start.mjs");
 const supportSettingsPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "SupportSettings.tsx");
 
 async function read(filePath) {
@@ -513,4 +519,40 @@ test("high-cardinality quote and withdrawal caches have fixed capacity", async (
   assert.match(swapSrc, /_rateInFlight\s*=\s*new BoundedMap/);
   assert.match(withdrawalSrc, /_withdrawRateMap\s*=\s*new BoundedMap/);
   assert.match(lifiSrc, /tokensCache = new BoundedMap/);
+});
+
+test("public coin lookups cap retained data and reject oversized identifiers", async () => {
+  const [dexSrc, priceUpdaterSrc] = await Promise.all([
+    read(dexRoutesPath),
+    read(priceUpdaterPath),
+  ]);
+  assert.match(dexSrc, /tickerCache = new BoundedMap/);
+  assert.match(dexSrc, /detailCache = new BoundedMap/);
+  assert.match(dexSrc, /cgCoinCache\s*=\s*new BoundedMap/);
+  assert.match(dexSrc, /cgSearchCache\s*=\s*new BoundedMap/);
+  assert.match(dexSrc, /contractLookupCache = new BoundedMap/);
+  assert.match(dexSrc, /fullCache = new BoundedMap/);
+  assert.match(dexSrc, /cgIdMap = new BoundedMap/);
+  assert.match(dexSrc, /MAX_IN_FLIGHT_ENRICHMENTS/);
+  assert.match(dexSrc, /Invalid coin symbol/);
+  assert.match(dexSrc, /0x\[0-9a-f\]\{40\}/);
+  assert.match(priceUpdaterSrc, /_cgIdMissCache = new BoundedMap/);
+  assert.match(priceUpdaterSrc, /cgMarketCapCache = new BoundedMap/);
+});
+
+test("API heap usage is observable and its default heap budget is bounded", async () => {
+  const [appSrc, packageSrc, watchdogSrc, startSrc] = await Promise.all([
+    read(apiAppPath),
+    read(apiPackagePath),
+    read(apiWatchdogPath),
+    read(apiStartPath),
+  ]);
+  assert.match(appSrc, /v8\.getHeapStatistics\(\)\.heap_size_limit/);
+  assert.match(appSrc, /API request completed during memory pressure/);
+  assert.match(appSrc, /\}, 30_000\)\.unref\(\)/);
+  assert.match(packageSrc, /API_MAX_OLD_SPACE_MB:-1024/);
+  assert.match(watchdogSrc, /API_MAX_OLD_SPACE_MB:-1024/);
+  assert.match(startSrc, /API_MAX_OLD_SPACE_MB/);
+  assert.match(startSrc, /max-old-space-size=\$\{API_HEAP_MB\}/);
+  assert.doesNotMatch(startSrc, /max-old-space-size=4096/);
 });
