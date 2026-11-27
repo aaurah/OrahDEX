@@ -177,7 +177,6 @@ const CHANNEL_META: Record<string, { icon: any; label: string; color: string; de
   global:  { icon: Globe,      label: "Global",   color: "text-blue-400",   desc: "Open channel for all wallets" },
   support: { icon: Shield,     label: "Support",  color: "text-orange-400", desc: "User support & moderation" },
   system:  { icon: Radio,      label: "System",   color: "text-green-400",  desc: "Read-only admin announcements" },
-  ora:     { icon: Bot,        label: "Ora AI",   color: "text-violet-400", desc: "AI assistant channel" },
 };
 const channelIcon = (name: string) => {
   if (name.startsWith("pair:")) return { icon: Hash, label: `#${name.slice(5)}`, color: "text-primary", desc: "Pair-specific channel" };

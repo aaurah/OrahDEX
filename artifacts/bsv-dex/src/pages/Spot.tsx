@@ -26,7 +26,6 @@ import { readEscrowDeposit } from "@/lib/escrow";
 import { cancelEvmOrderbookOrder } from "@/lib/orderbookCancellation";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown, ArrowLeftRight, BookOpen, RefreshCw } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
-import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
 import { useBaseTokenList } from "@/hooks/useBaseTokenList";
@@ -1579,9 +1578,6 @@ export function SpotTrading() {
                     </span>
                   </div>
                 )}
-                <div className="p-2 border-t border-border">
-                  <AiTradeAnalysis symbol={rawSymbol} baseAsset={base} />
-                </div>
               </>
             ) : (
               <div ref={lePanelRef} className="flex flex-col h-full min-h-0">

@@ -24,7 +24,6 @@ const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ 
 const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
 const MobileTabKeeper = lazy(() => import("@/components/mobile/MobileTabKeeper").then(m => ({ default: m.MobileTabKeeper })));
 const Layout = lazy(() => import("@/components/Layout").then(m => ({ default: m.Layout })));
-const AiAssistant = lazy(() => import("@/components/AiAssistant").then(m => ({ default: m.AiAssistant })));
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
 const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
@@ -60,8 +59,6 @@ async function linkHandCashReceivingAddress(handle: string) {
   if (ownerAddress) saveDerivedAddresses(ownerAddress, { bsv: result.address });
 }
 const NotFound     = lazy(() => import("@/pages/not-found"));
-const OraAIPage    = lazy(() => import("@/pages/OraAI").then(m => ({ default: m.OraAIPage })));
-const DevAIPage    = lazy(() => import("@/pages/DevAI").then(m => ({ default: m.DevAIPage })));
 
 /* Legal / Info — standalone full-screen pages (no Layout wrapper) */
 const TermsOfService  = lazy(() => import("@/pages/TermsOfService").then(m => ({ default: m.TermsOfService })));
@@ -114,9 +111,6 @@ const AdminSecuritySettings = lazy(() => import("@/pages/admin/SecuritySettings"
 const AdminFeeConfig      = lazy(() => import("@/pages/admin/FeeConfig").then(m => ({ default: m.AdminFeeConfig })));
 const AdminAnnouncements  = lazy(() => import("@/pages/admin/Announcements").then(m => ({ default: m.AdminAnnouncements })));
 const AdminEmailInbox     = lazy(() => import("@/pages/admin/EmailInbox").then(m => ({ default: m.AdminEmailInbox })));
-const AdminAiIntelligence = lazy(() => import("@/pages/admin/AiIntelligence").then(m => ({ default: m.AdminAiIntelligence })));
-const AdminDevAISettings  = lazy(() => import("@/pages/admin/AdminDevAI").then(m => ({ default: m.AdminDevAI })));
-const AdminDevAIWorkspace = lazy(() => import("@/pages/admin/DevAIWorkspace"));
 const AdminSystemHealth   = lazy(() => import("@/pages/admin/SystemHealth").then(m => ({ default: m.AdminSystemHealth })));
 const AdminLiquidityBot   = lazy(() => import("@/pages/admin/LiquidityBot").then(m => ({ default: m.AdminLiquidityBot })));
 const AdminCopyVault      = lazy(() => import("@/pages/admin/CopyVaultAdmin").then(m => ({ default: m.AdminCopyVault })));
@@ -530,18 +524,6 @@ function Router() {
       <Route path="/admin/announcements"><AdminRoute><AdminAnnouncements /></AdminRoute></Route>
       <Route path="/admin/mail">          <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
       <Route path="/admin/integrations"> <AdminRoute><AdminIntegrations /></AdminRoute></Route>
-      <Route path="/admin/ai">        <AdminRoute><AdminAiIntelligence /></AdminRoute></Route>
-      <Route path="/admin/devai/settings"><AdminRoute><AdminDevAISettings /></AdminRoute></Route>
-      <Route path="/admin/devai/workspace">
-        <RequireAdminAuth>
-          <Suspense fallback={<PageSkeleton />}><AdminDevAIWorkspace /></Suspense>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/devai">
-        <RequireAdminAuth>
-          <Suspense fallback={<PageSkeleton />}><DevAIPage /></Suspense>
-        </RequireAdminAuth>
-      </Route>
       <Route path="/admin/health">    <AdminRoute><AdminSystemHealth /></AdminRoute></Route>
       <Route path="/admin/liquidity"> <AdminRoute><AdminLiquidityBot /></AdminRoute></Route>
       <Route path="/admin/copy-vaults"><AdminRoute><AdminCopyVault /></AdminRoute></Route>
@@ -564,13 +546,11 @@ function Router() {
       {/* ── Landing page ── */}
       <Route path="/home">
         <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
-        <Suspense fallback={null}><AiAssistant /></Suspense>
       </Route>
 
       {/* ── Root: landing page ── */}
       <Route path="/">
         <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
-        <Suspense fallback={null}><AiAssistant /></Suspense>
       </Route>
 
       {/* ── Redirects ── */}
@@ -647,12 +627,6 @@ function Router() {
                   <Route path="/nft"            component={NFTPage} />
                   <Route path="/prediction"     component={PredictionTrading} />
                   <Route path="/sovereign"      component={SovereignOverviewPage} />
-                  <Route path="/ora-ai"         component={OraAIPage} />
-                  <Route path="/devai">
-                    <RequireAdminAuth>
-                      <Suspense fallback={<PageSkeleton />}><DevAIPage /></Suspense>
-                    </RequireAdminAuth>
-                  </Route>
                   <Route path="/settings"           component={WebSettings} />
                   <Route path="/settings/api-keys" component={UserApiKeys} />
                   <Route component={NotFound} />

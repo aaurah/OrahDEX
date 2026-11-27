@@ -69,14 +69,6 @@ const STATIC: Record<string, PageMeta> = {
     title: `Sovereign Overview — OrahDEX Protocol${S}`,
     description: "OrahDEX Sovereign: self-custodial, BSV-settled DEX protocol. Full chain sovereignty for traders.",
   },
-  "/ora-ai": {
-    title: `Ora AI — Trading Assistant${S}`,
-    description: "Chat with Ora, the OrahDEX AI assistant. Get market insights, portfolio analysis, and trade ideas.",
-  },
-  "/devai": {
-    title: `DevAI — Developer AI Tools${S}`,
-    description: "OrahDEX DevAI: AI-powered developer tools for building on the OrahDEX protocol.",
-  },
   "/portfolio": {
     title: `Portfolio — My Holdings${S}`,
     description: "Track your crypto portfolio on OrahDEX. View balances, P&L, and full transaction history.",

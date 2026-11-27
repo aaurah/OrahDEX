@@ -19,7 +19,6 @@ import { CATEGORY_OF, ALL_CATEGORIES, CATEGORY_META, type NotifCategory } from "
 import { walletRequestAuthHeaders } from "@/lib/walletRequestAuth";
 
 /* ── Heavy modals — loaded only when first opened ── */
-const AiAssistant = lazy(() => import("./AiAssistant").then(m => ({ default: m.AiAssistant })));
 const ChatWidget = lazy(() => import("./ChatWidget").then(m => ({ default: m.ChatWidget })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -43,8 +42,6 @@ const NAV_LINKS = [
 const NAV_MORE = [
   { href: "/tutorials", label: "Tutorials", icon: BookOpen },
   { href: "/explorer", label: "Orah Explorer", icon: Blocks },
-  { href: "/ora-ai",    label: "Ora AI",    icon: Bot },
-  { href: "/devai",       label: "DevAI",   icon: Code2 },
   { href: "/p2p",       label: "P2P",       icon: Users },
   { href: "/copy",      label: "CopyVault", icon: Copy },
   { href: "/keeper",    label: "Keepers",   icon: Shield },
@@ -801,11 +798,11 @@ export function Layout({ children }: { children: ReactNode }) {
             )}
           </div>
 
-          {/* Support / Ora AI chat button */}
+          {/* Support chat button */}
           <button
             onClick={() => setChatOpen(o => !o)}
             className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
-            title="Support & Ora AI"
+            title="Live chat support"
           >
             <MessageCircle className="w-4 h-4" />
           </button>
@@ -1026,12 +1023,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Fixed tx status overlay — bottom right */}
       <TxStatusBar />
 
-      {/* Ora — AI Trading Assistant */}
-      {(location.startsWith("/trade") || location.startsWith("/futures") || location.startsWith("/swap")) && (
-        <Suspense fallback={null}><AiAssistant /></Suspense>
-      )}
-
-      {/* Support / Ora AI chat widget — opened via header MessageCircle button */}
+      {/* Support chat widget — opened via header MessageCircle button */}
       {chatOpen && (
         <Suspense fallback={null}>
           <ChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />

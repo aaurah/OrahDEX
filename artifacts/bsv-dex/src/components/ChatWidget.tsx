@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  X, Send, MessageCircle, Globe, Headphones, Radio, Bot,
+  X, Send, MessageCircle, Globe, Headphones, Radio,
   ChevronLeft, Zap, Shield, Users, Info, ExternalLink, Loader2,
   Hash, AlertTriangle, UserCircle2, ChevronDown,
 } from "lucide-react";
@@ -12,14 +12,14 @@ import { useSupportChat } from "@/hooks/useSupportChat";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
-type ChannelKind = "global" | "pair" | "support" | "system" | "ora";
+type ChannelKind = "global" | "pair" | "support" | "system";
 
 interface ChatMessage {
   id: string;
   channel: string;
   wallet: string;
   displayName: string;
-  role: "trader" | "leader" | "follower" | "support" | "system" | "ora";
+  role: "trader" | "leader" | "follower" | "support" | "system";
   text: string;
   ts: number;
   txid?: string;
@@ -67,58 +67,6 @@ function linkifyText(text: string): React.ReactNode[] {
   return parts;
 }
 
-/* ── ORA AI streaming inside chat ───────────────────────────────────────── */
-async function streamOraReply(
-  text: string,
-  convId: number | null,
-  setConvId: (id: number) => void,
-  onChunk: (chunk: string) => void,
-  onDone: (error?: string) => void,
-) {
-  try {
-    let cid = convId;
-    if (!cid) {
-      const r = await fetch(`${BASE}/api/ai/conversations`, { method: "POST" });
-      if (!r.ok) throw new Error("Failed to start conversation");
-      const data = await r.json();
-      cid = data.id;
-      setConvId(cid!);
-    }
-    const r = await fetch(`${BASE}/api/ai/conversations/${cid}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: text }),
-    });
-    if (!r.ok) throw new Error("Ora is unavailable. Please try again.");
-    const reader = r.body?.getReader();
-    const dec = new TextDecoder();
-    let buf = "";
-    let gotDone = false;
-    while (reader && !gotDone) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        try {
-          const ev = JSON.parse(line.slice(6));
-          if (ev.error) throw new Error(ev.error);
-          if (ev.content) onChunk(ev.content);
-          if (ev.done) { gotDone = true; break; }
-        } catch (innerErr: any) {
-          if (innerErr.message) throw innerErr;
-        }
-      }
-    }
-  } catch (err: any) {
-    onDone(err?.message ?? "Ora encountered an error. Please try again.");
-    return;
-  }
-  onDone();
-}
-
 /* ── Relative time ────────────────────────────────────────────────────────── */
 function relTime(ts: number): string {
   const d = Date.now() - ts;
@@ -132,7 +80,6 @@ function relTime(ts: number): string {
 function RoleBadge({ role }: { role: ChatMessage["role"] }) {
   if (role === "system") return <span className="text-[9px] font-bold px-1 rounded bg-primary/20 text-primary uppercase">System</span>;
   if (role === "support") return <span className="text-[9px] font-bold px-1 rounded bg-blue-500/20 text-blue-400 uppercase">Support</span>;
-  if (role === "ora") return <span className="text-[9px] font-bold px-1 rounded bg-emerald-500/20 text-emerald-400 uppercase">Ora AI</span>;
   if (role === "leader") return <span className="text-[9px] font-bold px-1 rounded bg-amber-500/20 text-amber-400 uppercase">Leader</span>;
   return null;
 }
@@ -140,7 +87,6 @@ function RoleBadge({ role }: { role: ChatMessage["role"] }) {
 /* ── Single message bubble ─────────────────────────────────────────────── */
 function MessageBubble({ msg, isMine }: { msg: ChatMessage; isMine: boolean }) {
   const isSystem = msg.role === "system";
-  const isOra = msg.role === "ora";
 
   if (isSystem) {
     return (
@@ -158,11 +104,10 @@ function MessageBubble({ msg, isMine }: { msg: ChatMessage; isMine: boolean }) {
       {/* Avatar */}
       <div className={cn(
         "w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold",
-        isOra ? "bg-emerald-500/20 text-emerald-400" :
         isMine ? "bg-primary/20 text-primary" :
         "bg-secondary text-muted-foreground"
       )}>
-        {isOra ? <Bot className="w-3.5 h-3.5" /> : (msg.displayName[0] ?? "?").toUpperCase()}
+        {(msg.displayName[0] ?? "?").toUpperCase()}
       </div>
 
       <div className={cn("flex flex-col max-w-[75%]", isMine && "items-end")}>
@@ -178,9 +123,7 @@ function MessageBubble({ msg, isMine }: { msg: ChatMessage; isMine: boolean }) {
           "px-3 py-2 rounded-2xl text-[12px] leading-relaxed break-words",
           isMine
             ? "bg-primary text-primary-foreground rounded-tr-sm"
-            : isOra
-              ? "bg-emerald-950/80 text-emerald-100 border border-emerald-500/20 rounded-tl-sm"
-              : "bg-secondary text-foreground rounded-tl-sm"
+            : "bg-secondary text-foreground rounded-tl-sm"
         )}>
           {linkifyText(msg.text)}
         </div>
@@ -260,14 +203,6 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
       readOnly: true,
       description: "Protocol announcements",
     },
-    {
-      id: "ora",
-      channelKey: "ora",
-      label: "Ora AI",
-      icon: Bot,
-      color: "text-emerald-400",
-      description: "Dedicated AI trading assistant",
-    },
   ];
 
   /* ── State ─────────────────────────────────────────────────────────────── */
@@ -275,8 +210,6 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
   const [messagesByChannel, setMessagesByChannel] = useState<Record<string, ChatMessage[]>>({});
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [oraStreaming, setOraStreaming] = useState(false);
-  const [oraConvId, setOraConvId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pseudonym, setPseudonym] = useState(() => localStorage.getItem("chat_pseudonym") || "");
   const [showNameEdit, setShowNameEdit] = useState(false);
@@ -381,7 +314,7 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
   /* ── Send message ────────────────────────────────────────────────────── */
   async function handleSend() {
     const text = input.trim();
-    if (!text || sending || oraStreaming) return;
+    if (!text || sending) return;
     setInput("");
     setError(null);
 
@@ -394,65 +327,6 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
       } finally {
         setSending(false);
       }
-      return;
-    }
-
-    /* Ora AI channel — stream from AI endpoint */
-    if (activeChannel.id === "ora") {
-      const userMsg: ChatMessage = {
-        id: `local-${Date.now()}`,
-        channel: "ora",
-        wallet: address || "anonymous",
-        displayName,
-        role: "trader",
-        text,
-        ts: Date.now(),
-      };
-      setMessagesByChannel(prev => ({
-        ...prev,
-        ora: [...(prev["ora"] ?? []), userMsg],
-      }));
-
-      const oraMsg: ChatMessage = {
-        id: `ora-${Date.now()}`,
-        channel: "ora",
-        wallet: "ora",
-        displayName: "Ora",
-        role: "ora",
-        text: "",
-        ts: Date.now(),
-      };
-      setMessagesByChannel(prev => ({ ...prev, ora: [...(prev["ora"] ?? []), oraMsg] }));
-      setOraStreaming(true);
-
-      await streamOraReply(
-        text,
-        oraConvId,
-        (id) => setOraConvId(id),
-        (chunk) => {
-          setMessagesByChannel(prev => {
-            const list = [...(prev["ora"] ?? [])];
-            const last = list[list.length - 1];
-            if (last && last.role === "ora") {
-              list[list.length - 1] = { ...last, text: last.text + chunk };
-            }
-            return { ...prev, ora: list };
-          });
-        },
-        (errMsg) => {
-          setOraStreaming(false);
-          if (errMsg) {
-            setMessagesByChannel(prev => {
-              const list = [...(prev["ora"] ?? [])];
-              const last = list[list.length - 1];
-              if (last && last.role === "ora" && last.text === "") {
-                list[list.length - 1] = { ...last, text: errMsg };
-              }
-              return { ...prev, ora: list };
-            });
-          }
-        },
-      );
       return;
     }
 
@@ -619,19 +493,6 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
             <p className="text-sm font-medium opacity-60">
               {activeChannel.id === "system" ? "No announcements yet." : "No messages yet. Be the first!"}
             </p>
-            {activeChannel.id === "ora" && (
-              <div className="flex flex-wrap gap-2 justify-center mt-2 max-w-xs">
-                {["What is BSV settlement?", "Explain HTLC swaps", "How do Keeper tiers work?", "What is a VAMM?"].map(q => (
-                  <button
-                    key={q}
-                    onClick={() => { setInput(q); inputRef.current?.focus(); }}
-                    className="text-[10px] px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            )}
             {activeChannel.id === "support" && (
               <div className="flex flex-wrap gap-2 justify-center mt-2 max-w-xs">
                 {["I'm stuck in a bridge", "My order failed", "How do I withdraw?", "What is a Keeper?"].map(q => (
@@ -655,18 +516,6 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
             isMine={activeChannel.id === "support" ? msg.role === "trader" : !!address && msg.wallet === address}
           />
         ))}
-
-        {/* Ora streaming indicator */}
-        {oraStreaming && activeChannel.id === "ora" && (
-          <div className="flex gap-2 mb-3">
-            <div className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
-              <Bot className="w-3.5 h-3.5 text-emerald-400" />
-            </div>
-            <div className="px-3 py-2 rounded-2xl rounded-tl-sm bg-emerald-950/80 border border-emerald-500/20">
-              <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
-            </div>
-          </div>
-        )}
 
         <div ref={bottomRef} />
       </div>
@@ -702,11 +551,9 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKey}
               placeholder={
-                activeChannel.id === "ora"
-                  ? "Ask Ora anything about trading, BSV, markets…"
-                  : activeChannel.id === "support"
-                    ? "Describe your issue…"
-                    : `Message #${activeChannel.label}…`
+                activeChannel.id === "support"
+                  ? "Describe your issue…"
+                  : `Message #${activeChannel.label}…`
               }
               rows={1}
               className="flex-1 resize-none bg-secondary/60 rounded-2xl px-4 py-2.5 text-sm outline-none border border-border focus:border-primary/50 transition-colors max-h-32 scrollbar-none"
@@ -719,15 +566,15 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
             />
             <button
               onClick={handleSend}
-              disabled={!input.trim() || sending || oraStreaming}
+              disabled={!input.trim() || sending}
               className={cn(
                 "w-10 h-10 rounded-2xl flex items-center justify-center transition-all shrink-0",
-                input.trim() && !sending && !oraStreaming
+                input.trim() && !sending
                   ? "bg-primary text-primary-foreground hover:brightness-110 active:scale-95"
                   : "bg-secondary text-muted-foreground"
               )}
             >
-              {sending || oraStreaming
+              {sending
                 ? <Loader2 className="w-4 h-4 animate-spin" />
                 : <Send className="w-4 h-4" />
               }

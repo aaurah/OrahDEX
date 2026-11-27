@@ -220,20 +220,6 @@
     <priority>0.6</priority>
   </url>
 
-  <!-- AI -->
-  <url>
-    <loc>https://orahdex.com/ora-ai</loc>
-    <lastmod>2026-05-16</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://orahdex.com/devai</loc>
-    <lastmod>2026-05-16</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-
   <!-- Sovereign -->
   <url>
     <loc>https://orahdex.com/sovereign</loc>

@@ -343,8 +343,8 @@ export function WebSettings() {
             icon={MessageCircle}
             iconColor="#6366f1"
             label="Live Chat"
-            value="Chat with Ora AI support"
-            onClick={() => window.dispatchEvent(new CustomEvent("open:ai-assistant"))}
+            value="Contact OrahDEX Support"
+            onClick={() => navigate("/support")}
           />
           <Row
             icon={Mail}

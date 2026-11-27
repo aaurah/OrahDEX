@@ -43,13 +43,6 @@
       "description": "Bitcoin perpetual futures",
       "url": "/futures/BTC-USDT-PERP",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
-    },
-    {
-      "name": "DevAI",
-      "short_name": "DevAI",
-      "description": "Developer AI — build bots and integrations on OrahDEX",
-      "url": "/devai",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
   "icons": [

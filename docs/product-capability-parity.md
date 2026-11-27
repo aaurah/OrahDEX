@@ -16,7 +16,6 @@ Reviewed: 25 November 2026
 | Markets and charts | Data-source dependent | Market API and chart data-provider behavior, including empty and unavailable responses |
 | BSV settlement | Route-specific | BSV transaction path and settlement evidence for the exact feature; do not infer universal OP_RETURN settlement |
 | Futures, prediction, copy, and NFTs | Feature-specific | The specific UI route, API handlers, deployed contracts, and settlement evidence |
-| Ora AI | Service-dependent | Configured inference service and current error/empty states |
 | Fees and providers | Quote-specific | Current route quote, fee calculation, minimums, and provider terms |
 
 ## Release check

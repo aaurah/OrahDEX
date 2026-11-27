@@ -9,7 +9,7 @@ import {
   Database, CheckCircle2, ExternalLink, Globe, Server,
   Wifi, ArrowDownToLine, Clock, Layers, Bell,
   TrendingDown, Minus, ToggleLeft, Palette, Megaphone,
-  Landmark, Terminal, Brain, Rocket, PieChart as PieIcon,
+  Landmark, Terminal, Rocket, PieChart as PieIcon,
 } from "lucide-react";
 import {
   AreaChart, Area,
@@ -474,10 +474,6 @@ export function AdminDashboard() {
           value={channels.length > 0 ? `${channels.length} ch` : "—"}
           sub={`${totalMsgs} msgs · ${totalSubs} live`}
           color="blue" />
-        <KpiCard icon={Brain} label="AI Sessions"
-          value={isLoading ? "…" : fmtNum(stats?.aiConversations)}
-          sub={`${fmtNum(stats?.aiMessages)} messages`}
-          color="violet" />
         <KpiCard icon={Database} label="Overlay Records"
           value={(overlayStats as any)?.total != null ? String((overlayStats as any).total) : "—"}
           sub={(overlayStats as any)?.latestBlockScanned ? `block ${(overlayStats as any).latestBlockScanned}` : "BSV on-chain"}
@@ -788,9 +784,6 @@ export function AdminDashboard() {
               {stats?.activePairs > 0 && (
                 <AlertRow level="ok" icon={ArrowRightLeft} msg={`${stats.activePairs} pairs active`} sub="all healthy" />
               )}
-              {stats?.aiConversations > 0 && (
-                <AlertRow level="ok" icon={Brain} msg={`Ora AI — ${fmtNum(stats.aiConversations)} sessions`} sub="fully operational" />
-              )}
               {channels.length > 0 && (
                 <AlertRow level="ok" icon={MessageCircle} msg={`Chat — ${channels.length} channels · ${totalSubs} live`} sub={`${totalMsgs} total msgs`} />
               )}
@@ -860,7 +853,6 @@ export function AdminDashboard() {
           <QuickAction href="/admin/themes"          icon={Palette}        label="Themes"       color="text-pink-400 bg-pink-400/10" />
           <QuickAction href="/admin/announcements"   icon={Megaphone}      label="Announce"     color="text-amber-400 bg-amber-400/10" />
           <QuickAction href="/admin/treasury"        icon={Landmark}       label="Treasury"     color="text-orange-400 bg-orange-400/10" />
-          <QuickAction href="/admin/ai"              icon={Brain}          label="Ora AI"       color="text-violet-400 bg-violet-400/10" />
           <QuickAction href="/admin/logs"            icon={Terminal}       label="Logs"         color="text-red-400 bg-red-400/10" />
           <QuickAction href="/admin/setup"           icon={Rocket}         label="Setup"        color="text-cyan-400 bg-cyan-400/10" />
         </div>

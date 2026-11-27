@@ -1,8 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health.js";
 import diagnosticsRouter from "./diagnostics.js";
-import aiRouter from "./ai.js";
-import devaiRouter from "./devai.js";
 import marketsRouter from "./markets.js";
 import explorerRouter from "./explorer.js";
 import ordersRouter from "./orders.js";
@@ -53,7 +51,6 @@ import adminDiagnosticsRouter from "./adminDiagnostics.js";
 import coinbaseRouter from "./coinbase.js";
 import kycRouter from "./kyc.js";
 import walletRouter from "./wallet.js";
-import anthropicRouter from "./anthropic/index.js";
 import quantumAuthRouter from "./quantumAuth.js";
 import sorRouter from "./sor.js";
 import lightningRouter from "./lightning.js";
@@ -114,8 +111,6 @@ router.get("/settings/public", async (_req, res) => {
 
 router.use(healthRouter);
 router.use(diagnosticsRouter);
-router.use(aiRouter);
-router.use(devaiRouter);
 router.use(marketsRouter);
 router.use(explorerRouter);
 router.use(ordersRouter);
@@ -185,7 +180,6 @@ router.use(stripeCheckoutRouter);
 router.use(coinbaseRouter);
 router.use(kycRouter);
 router.use("/wallet", walletRouter);
-router.use(anthropicRouter);
 router.use(quantumAuthRouter);
 router.use("/overlay", overlayRouter);
 router.use(quicknodeRouter);

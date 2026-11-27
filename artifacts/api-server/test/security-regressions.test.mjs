@@ -32,15 +32,12 @@ const apiKeyAuthPath = path.join(__dirname, "..", "src", "middleware", "apiKeyAu
 const personalApiKeysPath = path.join(__dirname, "..", "src", "lib", "personalApiKeys.ts");
 const walletRequestAuthPath = path.join(__dirname, "..", "src", "lib", "walletRequestAuth.ts");
 const userApiKeysPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "UserApiKeysSecure.tsx");
-const portfolioAnalysisPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "AiPortfolioAnalysis.tsx");
 const emailInboxPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "EmailInbox.tsx");
 const htlcDeployPath = path.join(__dirname, "..", "..", "..", "contracts", "deploy.ts");
 const gitignorePath = path.join(__dirname, "..", "..", "..", ".gitignore");
 const v1RoutesPath = path.join(__dirname, "..", "src", "routes", "v1.ts");
 const healthHandlerPath = path.join(__dirname, "..", "src", "app.ts");
 const selfHealingPath = path.join(__dirname, "..", "src", "lib", "selfHealing.ts");
-const aiRoutesPath = path.join(__dirname, "..", "src", "routes", "ai.ts");
-const anthropicRoutesPath = path.join(__dirname, "..", "src", "routes", "anthropic", "index.ts");
 const chatRoutesPath = path.join(__dirname, "..", "src", "routes", "chat.ts");
 const candleFetcherPath = path.join(__dirname, "..", "src", "lib", "candleFetcher.ts");
 const swapRoutesPath = path.join(__dirname, "..", "src", "routes", "swap.ts");
@@ -377,9 +374,8 @@ test("passkey transfer codes are hashed, short-lived, one-time POST secrets", as
   assert.match(routesSrc, /router\.get\("\/passkey\/transfer\/:code",[\s\S]*?res\.status\(410\)/);
 });
 
-test("AI output is sanitized and admin email is isolated from the app origin", async () => {
-  const [analysisSrc, emailSrc] = await Promise.all([read(portfolioAnalysisPath), read(emailInboxPath)]);
-  assert.match(analysisSrc, /DOMPurify\.sanitize/);
+test("admin email content is isolated from the app origin", async () => {
+  const emailSrc = await read(emailInboxPath);
   assert.match(emailSrc, /sandbox=""|sandbox=\{\s*""\s*\}/);
   assert.doesNotMatch(emailSrc, /sandbox="allow-same-origin/);
 });
@@ -424,7 +420,7 @@ test("internal admin metadata and authentication state have bounded capacity", a
 test("public health reports real worker states and does not call an empty registry healthy", async () => {
   const [src, monitorSrc] = await Promise.all([read(healthHandlerPath), read(selfHealingPath)]);
   assert.match(src, /getHealthReport\(\)\.map/);
-  assert.match(src, /getAiProviderHealth\(\)/);
+  assert.doesNotMatch(src, /getAiProviderHealth/);
   assert.match(src, /services\.length === 0[\s\S]*?"unknown"/);
   assert.match(src, /status,\s*uptime:[\s\S]*services,\s*alerts/);
   assert.match(monitorSrc, /if \(!e\.lastRunAt\)[\s\S]*?status = "starting"/);
@@ -438,27 +434,12 @@ test("status page shows current checks without fabricated historical uptime", as
   assert.doesNotMatch(src, /generateBars|calcUptime|% uptime|< 30 DAYS AGO/);
 });
 
-test("AI response caches are bounded and symbols/payloads are validated", async () => {
-  const [aiSrc, candleSrc] = await Promise.all([read(aiRoutesPath), read(candleFetcherPath)]);
-  assert.match(aiSrc, /new BoundedMap<string, CacheEntry>\(256\)/);
-  assert.match(aiSrc, /new BoundedMap<string, CacheEntry>\(128\)/);
-  assert.match(aiSrc, /normalizeAiSymbol/);
-  assert.match(aiSrc, /holdings\.length > 20/);
+test("candle caches are bounded and symbols/payloads are validated", async () => {
+  const candleSrc = await read(candleFetcherPath);
   assert.match(candleSrc, /HISTORY_CACHE_MAX_ENTRIES = 24/);
   assert.match(candleSrc, /setHistoryCache\(cacheKey/);
   assert.match(candleSrc, /coingeckoOhlcCache = new BoundedMap/);
   assert.match(candleSrc, /candleRefreshBackoff = new BoundedMap/);
-});
-
-test("AI endpoints report provider failures and cannot create unsigned orders", async () => {
-  const [aiSrc, anthropicSrc] = await Promise.all([read(aiRoutesPath), read(anthropicRoutesPath)]);
-  assert.match(aiSrc, /AI_PROVIDER_NOT_CONFIGURED/);
-  assert.match(aiSrc, /res\.status\(503\)\.json\(\{ insights: \[\], cached: false/);
-  assert.match(aiSrc, /available: false,\s*source: "computed_fallback"/);
-  assert.doesNotMatch(aiSrc, /FALLBACK_INSIGHTS/);
-  assert.match(anthropicSrc, /router\.post\("\/ai\/trade", aiChatRateLimit/);
-  assert.match(anthropicSrc, /execute === true[\s\S]*?SIGNED_ORDER_FLOW_REQUIRED/);
-  assert.doesNotMatch(anthropicSrc, /ordersTable|AI trade order placed/);
 });
 
 test("public chat storage is bounded and privileged channels require server auth", async () => {

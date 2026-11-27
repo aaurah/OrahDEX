@@ -90,9 +90,6 @@ Peer-to-peer fiat ↔ crypto trading with escrow-based settlement and dispute re
 ### OrahNFT
 Social NFT marketplace — posts are BSV inscriptions permanently anchored on-chain. Tradeable creator coins for each profile.
 
-### Ora AI
-Integrated intelligence layer — GPT-4 market analysis, real-time trade signals, portfolio coaching, and AI image generation for OrahNFT content.
-
 ### Multichain Wallet
 - EVM: 69+ chains, WalletConnect compatible
 - BSV: native key derivation
@@ -241,47 +238,8 @@ PORT=20180 pnpm --filter @workspace/bsv-dex run dev
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `ALCHEMY_API_KEY` | EVM RPC provider |
-| `OPENAI_API_KEY` | AI analysis and image generation |
+| `OPENAI_API_KEY` | AI image generation |
 | `STRIPE_SECRET_KEY` | Fiat on-ramp |
-
-### Local AI (Ollama)
-
-Ora AI and DevAI run without a hosted model key when a local [Ollama](https://ollama.com) model is available. Everything below is optional and documented in `.env.example`.
-
-```bash
-# 1. Install Ollama and start the service on loopback
-curl -fsSL https://ollama.com/install.sh | sh
-OLLAMA_HOST=127.0.0.1:11434 ollama serve
-
-# 2. Pull the model tag you want to use (must match the env var exactly)
-ollama pull llama3.2:3b        # Ora AI chat
-ollama pull qwen2.5-coder:1.5b # DevAI (coding model)
-```
-
-| Variable | Description |
-|---|---|
-| `DEVAI_OLLAMA_ENABLED` | `true` serves Ora AI and DevAI from local Ollama instead of a hosted AI key |
-| `DEVAI_OLLAMA_BASE_URL` | Ollama OpenAI-compatible base URL; loopback by default |
-| `DEVAI_OLLAMA_REMOTE` | Set `true` only for a protected remote Ollama host over HTTPS |
-| `DEVAI_MODEL` | Tag DevAI uses (default `qwen2.5-coder:1.5b`) |
-| `ORA_AI_MODEL` | Tag Ora AI uses (default: same as `DEVAI_MODEL`) |
-| `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` | Cloudflare Access Service Auth credentials for remote mode; store as secrets |
-
-Notes:
-- The API starts Ollama on loopback and retrieves missing configured tags in the background. AI endpoints remain `503` until the exact model tag is installed and passes the memory check.
-- `/api/health` reports `ai-provider` as `healthy` once the local model is the provider.
-- If neither a hosted AI key nor a local model is configured, AI endpoints return `503 AI_PROVIDER_NOT_CONFIGURED`.
-- Ollama is started by the API runtime, not `start.mjs`. Downloads are held unless at least 6 GiB of measured memory headroom and 4 GiB of free model-disk space are available; memory uses the lower of cgroup headroom and host `MemAvailable`.
-- For Replit publishing, set `DEVAI_OLLAMA_ENABLED`, `DEVAI_MODEL`, and `ORA_AI_MODEL` in the production environment. The selected tags are downloaded on a new VM when safe checks pass; model weights are not stored in Git.
-- The existing 2 GiB / 0.5-vCPU published machine cannot host these models safely. Use Publishing → Adjust settings → Machine configuration to choose an 8 GiB-or-larger machine, verify its displayed hourly rate, and confirm the API still has 6 GiB free after startup. More CPU improves local inference speed. Ollama avoids hosted-model API calls, but published VM compute is still charged.
-
-#### Remote Ollama through Cloudflare Access
-
-Use this only when Ollama is hosted on a separate machine such as Termux. Keep Ollama bound to `127.0.0.1:11434`; point a named Cloudflare Tunnel hostname at that loopback service and protect the hostname with an Access **Service Auth** policy. Do not expose port `11434` directly or use an unauthenticated quick tunnel.
-
-Set `DEVAI_OLLAMA_REMOTE=true` and `DEVAI_OLLAMA_BASE_URL=https://<protected-hostname>/v1` in Replit production. Store the Access service-token ID and secret as `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` Replit Secrets. Remote mode sends those headers for model checks and inference, never starts or downloads models on Replit, and requires both exact model tags to already exist on the remote host.
-
-Termux can stop the tunnel or model service when Android sleeps, changes networks, or reclaims background apps. It is suitable for testing, not dependable public hosting; a phone-hosted model may make public Ora AI unavailable whenever the phone disconnects.
 
 ---
 
@@ -309,7 +267,6 @@ Termux can stop the tunnel or model service when Android sleeps, changes network
 | Multichain Wallet (EVM + BSV + TRON) | ✅ Complete |
 | CopyVault | ✅ Complete |
 | P2P Market | ✅ Complete |
-| Ora AI | ✅ Complete |
 | OrahNFT | 🚧 In Progress |
 | Fiat On-Ramp | ⚠️ Partial |
 

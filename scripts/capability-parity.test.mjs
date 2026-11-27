@@ -23,7 +23,6 @@ test("shared status keeps all reviewed product areas visible", () => {
     "markets-charts",
     "bsv-settlement",
     "other-features",
-    "ora-ai",
     "fees-providers",
   ]) {
     assert.ok(ids.includes(expected), `missing capability status: ${expected}`);

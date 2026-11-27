@@ -22,8 +22,6 @@ git add -u
 git add \
   artifacts/api-server/src/routes/nft.ts \
   artifacts/api-server/src/routes/futures.ts \
-  artifacts/api-server/src/routes/ai.ts \
-  artifacts/api-server/src/routes/devai.ts \
   artifacts/api-server/src/routes/creatorCoins.ts \
   artifacts/api-server/src/routes/bridge.ts \
   artifacts/api-server/src/routes/trade.ts \
@@ -66,7 +64,6 @@ Escrow contract verified on 13/13 chains (12 mainnets + Sepolia)
 
 Performance — unbounded DB query fixes:
   futures.ts: full-table scan -> inArray(PERP_SYMBOLS)
-  ai.ts + devai.ts: messages queries -> .limit(500)
   creatorCoins.ts: social_posts -> LIMIT 100
   nft.ts: 6 unbounded queries capped (collections/items/portfolio)
 

@@ -122,7 +122,7 @@ const GROUPS: Group[] = [
       { id: "push_notifications",   label: "Push Notifications",    description: "Browser push notifications for price alerts" },
       { id: "telegram_bot",         label: "Telegram Bot Alerts",   description: "Alert users via Telegram bot", beta: true },
       { id: "discord_bot",          label: "Discord Bot Alerts",    description: "Post trade alerts to Discord channels", beta: true },
-      { id: "native_chat",          label: "Native OrahDEX Chat",   description: "Enable the built-in multi-channel chat system (Global, Pair, Support, Ora AI)" },
+      { id: "native_chat",          label: "Native OrahDEX Chat",   description: "Enable the built-in multi-channel chat system (Global, Pair, Support)" },
       { id: "global_chat_channel",  label: "Global Chat Channel",   description: "Show the Global channel in the chat widget — open to all connected wallets" },
       { id: "pair_chat_channel",    label: "Pair Chat Channels",    description: "Create per-pair chat channels auto-detected from the trading URL (e.g. #BTC-USDT)" },
       { id: "ai_chat_moderation",   label: "AI Moderation",         description: "Block phishing patterns, PII, scam links and seed-phrase leaks before messages are stored" },

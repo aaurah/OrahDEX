@@ -116,44 +116,6 @@ export interface PersonalApiKeyOperationResponse {
   success: boolean;
 }
 
-export type AiRuntimeStatusProvider = typeof AiRuntimeStatusProvider[keyof typeof AiRuntimeStatusProvider];
-
-
-export const AiRuntimeStatusProvider = {
-  local_ollama: 'local_ollama',
-  openai: 'openai',
-  anthropic: 'anthropic',
-} as const;
-
-/**
- * @nullable
- */
-export type AiRuntimeStatusMemory = {
-  availableBytes: number;
-  limitBytes: number;
-} | null;
-
-export interface AiRuntimeStatus {
-  provider: AiRuntimeStatusProvider;
-  model: string;
-  environment: string;
-  ready: boolean;
-  code: string;
-  /** @nullable */
-  error: string | null;
-  enabled?: boolean;
-  reachable?: boolean;
-  modelAvailable?: boolean;
-  availableModels?: string[];
-  minimumModelHeadroomBytes?: number;
-  /** Additional free host memory required for this exact model, including the API reserve. */
-  requiredInferenceHeadroomBytes?: number;
-  /** Verified reusable CPU memory of the exact selected Ollama runner. */
-  residentModelBytes?: number;
-  /** @nullable */
-  memory?: AiRuntimeStatusMemory;
-}
-
 export type HealthStatusStatus = typeof HealthStatusStatus[keyof typeof HealthStatusStatus];
 
 
@@ -679,39 +641,6 @@ export interface ExplorerActivityPage {
   offset: number;
   hasMore: boolean;
   scope: string;
-}
-
-export interface AnthropicConversation {
-  id: number;
-  title: string;
-  createdAt: string;
-}
-
-export interface AnthropicMessage {
-  id: number;
-  conversationId: number;
-  role: string;
-  content: string;
-  createdAt: string;
-}
-
-export interface AnthropicConversationInput {
-  title: string;
-}
-
-export interface AnthropicMessageInput {
-  content: string;
-}
-
-export interface AnthropicConversationWithMessages {
-  id: number;
-  title: string;
-  createdAt: string;
-  messages: AnthropicMessage[];
-}
-
-export interface AnthropicError {
-  error: string;
 }
 
 export type GetCandlesParams = {

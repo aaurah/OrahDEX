@@ -20,7 +20,6 @@ import { Search, Star, ArrowRightLeft, Zap, TrendingUp, Wallet, X, ChevronLeft, 
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
-import { AiInsightsBar } from "@/components/AiInsightsBar";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
@@ -601,9 +600,6 @@ export function Markets() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* AI Insights banner */}
-      <AiInsightsBar />
-
       {/* Header */}
       <div className="px-3 md:px-5 pt-0 pb-3 border-b border-border bg-card/40">
           <div className="mt-2 flex items-center gap-2">

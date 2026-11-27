@@ -5,7 +5,7 @@ import { db, pool } from "@workspace/db";
 import { getWatcherState, getWatcherSummary } from "../lib/errorWatcher.js";
 
 import { generateAdminToken, revokeAdminToken, requireAdminToken } from "../middleware/adminAuth.js";
-import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable, keeperEarningsTable } from "@workspace/db/schema";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, leSwapsTable, routingProfilesTable, keeperEarningsTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
 import { invalidateSzKeyCache } from "../lib/swapzone.js";
@@ -735,10 +735,6 @@ router.get("/stats", async (_req, res) => {
   const [openOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` })
     .from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
 
-  // AI stats
-  const [convRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(conversations);
-  const [msgRow]  = await db.select({ cnt: sql<number>`count(*)::int` }).from(messages);
-
   // Merge user counts: registered wallets + unique order wallets
   const totalUserCount = Math.max(realUsers.length, uniqueOrderWallets?.cnt ?? 0);
   const activeUserCount = Math.max(
@@ -772,11 +768,6 @@ router.get("/stats", async (_req, res) => {
     tvl: 845000000,
     feeRate: 0.1,
     systemStatus: "operational",
-    // AI Intelligence stats
-    aiConversations: convRow?.cnt ?? 0,
-    aiMessages: msgRow?.cnt ?? 0,
-    aiInsights: 3,  // fixed: 3 insights per generation cycle
-    aiSignals: (openOrdersRow?.cnt ?? 0) + 24, // signals served estimate
   });
 });
 
@@ -1361,7 +1352,6 @@ const API_CONFIG_DEFAULTS: Record<string, string> = {
   cacheTtlCandles:          "30",
   cacheTtlHealth:           "10",
   cacheTtlPairs:            "120",
-  cacheTtlAi:               "60",
   // WebSocket
   wsMaxConnections:         "500",
   wsHeartbeatIntervalMs:    "30000",

@@ -10,7 +10,6 @@
  */
 
 import { Router, type IRouter } from "express";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, pool } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { eq, desc, and } from "drizzle-orm";
@@ -834,7 +833,7 @@ const cgSearchCacheMs = 4 * 60 * 60 * 1000; // 4 h for found; 2 h for null
 const cgSearchCache   = new Map<string, { id: string | null; ts: number }>();
 
 // ─── Persistent coin-info DB cache ───────────────────────────────────────────
-// coin_info_cache stores fully-enriched coin data (including AI analysis).
+// coin_info_cache stores fully-enriched coin metadata.
 // Survives server restarts: warmCacheFromDB() seeds fullCache at boot.
 // Entries older than DB_CACHE_TTL_MS trigger a background re-enrichment.
 const DB_CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
@@ -857,9 +856,9 @@ async function ensureCoinInfoTable(): Promise<void> {
   }
 }
 
-/** Persist fully-enriched coin data to DB. Only saves when AI analysis is present. */
+/** Persist fully-enriched coin data to DB. */
 async function persistCoinInfo(symbol: string, data: Record<string, any>): Promise<void> {
-  if (!data.aiAnalysis) return; // only save fully-enriched entries
+  if (data._partial) return;
   try {
     await ensureCoinInfoTable();
     await pool.query(
@@ -908,8 +907,7 @@ export async function warmCacheFromDB(): Promise<void> {
       const sym = row.symbol as string;
       const existing = fullCache.get(sym);
       if (existing && !existing.data._partial) continue; // don't overwrite already-enriched
-      // Mark _partial:true so enhanceCgWithAI will refresh market data on first access,
-      // but it will skip AI re-generation since aiAnalysis is already present.
+      // Mark _partial:true so coin details refresh on first access.
       fullCache.set(sym, { data: { ...row.data, _partial: true }, ts: Date.now() });
       warmed++;
     }
@@ -993,15 +991,14 @@ async function fetchCgFullData(symbol: string, cgId: string): Promise<Record<str
       atlChangePercent:  md.atl_change_percentage?.usd ?? null,
       twitterFollowers:  cd.twitter_followers ?? null,
       redditSubscribers: cd.reddit_subscribers ?? null,
-      aiAnalysis:        null,
     };
-    data._partial = true; // AI enrichment fires async; frontend polls until false
+    data._partial = true; // detail enrichment fires async; frontend polls until false
     cgCoinCache.set(symbol, { data, ts: Date.now() });
     return data;
   } catch { return null; }
 }
 
-async function enhanceCgWithAI(symbol: string): Promise<void> {
+async function enhanceCoinDetails(symbol: string): Promise<void> {
   if (enhanceInFlight.has(symbol)) return;
   enhanceInFlight.add(symbol);
   try {
@@ -1022,50 +1019,15 @@ async function enhanceCgWithAI(symbol: string): Promise<void> {
       }
     }
 
-    let aiAnalysis: string | null = current.aiAnalysis ?? null;
-    if (!aiAnalysis) {
-      try {
-        const mktCap = current.marketCap
-          ? current.marketCap >= 1e9 ? `$${(current.marketCap / 1e9).toFixed(2)}B` : `$${(current.marketCap / 1e6).toFixed(2)}M`
-          : "N/A";
-        const athPct = current.athChangePercent != null ? `${(current.athChangePercent as number).toFixed(1)}% from ATH` : "N/A";
-        const atlPct = current.atlChangePercent != null ? `+${(current.atlChangePercent as number).toFixed(0)}% from ATL` : "N/A";
-        const prompt = `You are a senior crypto analyst on OrahDEX, a multi-chain DEX. Analyze ${current.name ?? symbol} (${current.symbol ?? symbol}) and return a JSON object with EXACTLY these keys:
-- "summary": 2-3 sentences on the project's core value proposition and technology
-- "useCase": 1-2 sentences on the primary use case and who it serves
-- "strengths": array of exactly 3 bullet strings (each ≤14 words)
-- "risks": array of exactly 3 bullet strings (each ≤14 words)
-- "sentiment": exactly one of "bullish", "bearish", or "neutral" — your overall assessment
-- "outlook": 1-2 sentences on short-term price outlook given the current metrics
-- "traderNote": 1 sentence OrahDEX-specific tip about trading this asset
-
-Market context:
-- Market cap: ${mktCap} | Rank: #${current.marketCapRank ?? "unranked"}
-- 24h: ${current.priceChange24h != null ? (current.priceChange24h as number).toFixed(2) + "%" : "N/A"} | 7d: ${current.priceChange7d != null ? (current.priceChange7d as number).toFixed(2) + "%" : "N/A"}
-- ATH distance: ${athPct} | ATL distance: ${atlPct}
-- Categories: ${(current.categories ?? []).join(", ") || "N/A"}
-- Description: ${(current.description ?? "").slice(0, 600)}
-
-Return ONLY valid JSON. No markdown fences, no extra text.`;
-        const msg = await anthropic.messages.create({
-          model: "claude-haiku-4-5", max_tokens: 750,
-          messages: [{ role: "user", content: prompt }],
-        });
-        const raw = msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";
-        const m   = raw.match(/\{[\s\S]*\}/);
-        if (m) aiAnalysis = m[0];
-      } catch { /* non-fatal */ }
-    }
-
-    const enriched = { ...current, _partial: false, aiAnalysis };
+    const enriched = { ...current, _partial: false };
     fullCache.set(symbol, { data: enriched, ts: Date.now() });
     cgCoinCache.set(symbol, { data: enriched, ts: Date.now() });
     persistCoinInfo(symbol, enriched); // fire-and-forget — saves to DB for next restart
-    logger.info({ symbol }, "coin enriched (CG+AI)");
+    logger.info({ symbol }, "coin details enriched (CG)");
   } catch (e: any) {
     const cur = fullCache.get(symbol);
     if (cur) fullCache.set(symbol, { data: { ...cur.data, _partial: false }, ts: cur.ts });
-    logger.warn({ err: e?.message, symbol }, "enhanceCgWithAI failed");
+    logger.warn({ err: e?.message, symbol }, "enhanceCoinDetails failed");
   } finally {
     enhanceInFlight.delete(symbol);
   }
@@ -1158,7 +1120,6 @@ async function internalPriceFallback(symbol: string): Promise<Record<string, any
     atlChangePercent:  null,
     twitterFollowers:  null,
     redditSubscribers: null,
-    aiAnalysis:        null,
   };
 }
 
@@ -1170,7 +1131,7 @@ router.get("/coins/:symbol/detail", async (req, res) => {
   // Serve from fullCache if available (seeded by prefetch or a prior /full call).
   const hit = fullCache.get(symbol);
   if (hit && Date.now() - hit.ts < FULL_CACHE_MS) {
-    if (hit.data._partial) enhanceCgWithAI(symbol);
+    if (hit.data._partial) enhanceCoinDetails(symbol);
     return res.json(hit.data);
   }
 
@@ -1184,7 +1145,7 @@ router.get("/coins/:symbol/detail", async (req, res) => {
   const dbData = await loadCoinInfoFromDB(symbol);
   if (dbData) {
     fullCache.set(symbol, { data: { ...dbData, _partial: true }, ts: Date.now() });
-    enhanceCgWithAI(symbol); // refresh market data in background; skips AI (already present)
+    enhanceCoinDetails(symbol); // refresh metadata in the background
     return res.json(dbData);
   }
 
@@ -1196,7 +1157,7 @@ router.get("/coins/:symbol/detail", async (req, res) => {
       const fallback = await internalPriceFallback(symbol);
       if (fallback) {
         fullCache.set(symbol, { data: { ...fallback, _partial: true }, ts: Date.now() });
-        enhanceCgWithAI(symbol);
+        enhanceCoinDetails(symbol);
         return res.json(fallback);
       }
       return res.json({ error: "not_found" });
@@ -1207,7 +1168,7 @@ router.get("/coins/:symbol/detail", async (req, res) => {
       const fallback = await internalPriceFallback(symbol);
       if (fallback) {
         fullCache.set(symbol, { data: { ...fallback, _partial: true }, ts: Date.now() });
-        enhanceCgWithAI(symbol);
+        enhanceCoinDetails(symbol);
         return res.json(fallback);
       }
       return res.json({ error: "not_found" });
@@ -1215,7 +1176,7 @@ router.get("/coins/:symbol/detail", async (req, res) => {
 
     fullCache.set(symbol, { data, ts: Date.now() });
     detailCache.set(symbol, { data, ts: Date.now() });
-    enhanceCgWithAI(symbol);
+    enhanceCoinDetails(symbol);
     return res.json(data);
   } catch (err: any) {
     req.log.warn({ err: err?.message, symbol }, "coin detail fetch failed");
@@ -1346,7 +1307,7 @@ router.get("/aggregator/swap", async (req, res) => {
 
 // ─── GET /api/coins/:symbol/full  — everything in one shot, cached 30 min ────
 //
-// Fetches CoinGecko market data + generates a Claude AI analysis.
+// Fetches CoinGecko market data and optional coin metadata.
 // Cached server-side for 30 minutes so repeat opens are instant.
 // ─────────────────────────────────────────────────────────────────────────────
 const fullCache = new Map<string, Cache<any>>();
@@ -1396,7 +1357,7 @@ const cgIdMap = new Map<string, string>();
 // Map a /coins/markets item to our standard coin shape (market data only).
 function cgMarketsItemToData(c: any): Record<string, any> {
   return {
-    _partial:          true,   // description/links/AI enriched on first open
+    _partial:          true,   // description and links enriched on first open
     _source:           "coingecko",
     cpId:              null,
     name:              c.name ?? c.id,
@@ -1435,7 +1396,6 @@ function cgMarketsItemToData(c: any): Record<string, any> {
     atlChangePercent:  c.atl_change_percentage ?? null,
     twitterFollowers:  null,
     redditSubscribers: null,
-    aiAnalysis:        null,
   };
 }
 
@@ -1488,7 +1448,7 @@ export async function prefetchCgMarkets(retryDelayMs = 90_000): Promise<void> {
 // Track which symbols are already being enhanced so we don't double-fire.
 const enhanceInFlight = new Set<string>();
 
-// Background Tier-2 enrichment: adds description, links, AI analysis.
+// Background Tier-2 enrichment: adds descriptions and links.
 // Non-blocking — caller does NOT await.
 async function enhanceWithDetail(symbol: string, cpId: string): Promise<void> {
   if (enhanceInFlight.has(symbol)) return;
@@ -1544,38 +1504,7 @@ async function enhanceWithDetail(symbol: string, cpId: string): Promise<void> {
       telegram,
     };
 
-    // ── Claude AI analysis ────────────────────────────────────────────────
-    let aiAnalysis: string | null = prev.aiAnalysis ?? null;
-    if (!aiAnalysis) {
-      try {
-        const prompt = `You are a concise crypto analyst on OrahDEX. Analyze ${fullData.name} (${fullData.symbol}) and return a JSON object with EXACTLY these keys:
-- "summary": 2-3 sentence overview of what this coin is and its core value proposition
-- "useCase": 1-2 sentences on the primary use case / problem it solves
-- "strengths": array of 3 short bullet strings (each ≤12 words)
-- "risks": array of 3 short bullet strings (each ≤12 words)
-- "traderNote": 1 sentence tip for traders watching this asset on OrahDEX
-
-Context data:
-- Market cap rank: #${fullData.marketCapRank ?? "unknown"}
-- Categories: ${categories.join(", ") || "N/A"}
-- 24h change: ${prev.priceChange24h != null ? (prev.priceChange24h as number).toFixed(2) + "%" : "N/A"}
-- ATH: $${prev.ath ?? "N/A"}
-- Market cap: $${prev.marketCap ? ((prev.marketCap as number) / 1e9).toFixed(2) + "B" : "N/A"}
-- Description: ${(description ?? "").slice(0, 400)}
-
-Return ONLY valid JSON, no markdown, no extra text.`;
-        const msg = await anthropic.messages.create({
-          model: "claude-haiku-4-5",
-          max_tokens: 600,
-          messages: [{ role: "user", content: prompt }],
-        });
-        const raw = msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";
-        const jsonMatch = raw.match(/\{[\s\S]*\}/);
-        if (jsonMatch) aiAnalysis = jsonMatch[0];
-      } catch { /* non-fatal */ }
-    }
-
-    fullCache.set(symbol, { data: { ...prev, ...fullData, aiAnalysis }, ts: Date.now() });
+    fullCache.set(symbol, { data: { ...prev, ...fullData }, ts: Date.now() });
     logger.info({ symbol }, "coin detail enriched (CP)");
   } catch (e: any) {
     logger.warn({ err: e?.message, symbol }, "enhanceWithDetail (CP) failed");
@@ -1591,7 +1520,7 @@ router.get("/coins/:symbol/full", async (req, res) => {
   // ── Cache check ──────────────────────────────────────────────────────────
   const hit = fullCache.get(symbol);
   if (hit && Date.now() - hit.ts < FULL_CACHE_MS) {
-    if (hit.data._partial) enhanceCgWithAI(symbol);
+    if (hit.data._partial) enhanceCoinDetails(symbol);
     return res.json(hit.data);
   }
 
@@ -1599,7 +1528,7 @@ router.get("/coins/:symbol/full", async (req, res) => {
   const dbFull = await loadCoinInfoFromDB(symbol);
   if (dbFull) {
     fullCache.set(symbol, { data: { ...dbFull, _partial: true }, ts: Date.now() });
-    enhanceCgWithAI(symbol); // refresh market data in background; skips AI re-gen
+    enhanceCoinDetails(symbol); // refresh market data and coin metadata in background
     return res.json(dbFull);
   }
 
@@ -1612,7 +1541,7 @@ router.get("/coins/:symbol/full", async (req, res) => {
       const fallback = await internalPriceFallback(symbol);
       if (fallback) {
         fullCache.set(symbol, { data: { ...fallback, _partial: true }, ts: Date.now() });
-        enhanceCgWithAI(symbol);
+        enhanceCoinDetails(symbol);
         return res.json(fallback);
       }
       return res.json({ error: "not_found" });
@@ -1623,14 +1552,14 @@ router.get("/coins/:symbol/full", async (req, res) => {
       const fallback = await internalPriceFallback(symbol);
       if (fallback) {
         fullCache.set(symbol, { data: { ...fallback, _partial: true }, ts: Date.now() });
-        enhanceCgWithAI(symbol);
+        enhanceCoinDetails(symbol);
         return res.json(fallback);
       }
       return res.json({ error: "not_found" });
     }
 
     fullCache.set(symbol, { data, ts: Date.now() });
-    enhanceCgWithAI(symbol);
+    enhanceCoinDetails(symbol);
     return res.json(data);
   } catch (err: any) {
     req.log?.warn?.({ err: err?.message, symbol }, "coin full fetch failed");

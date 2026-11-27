@@ -1,26 +1,15 @@
-import { X, Globe, FileText, ExternalLink, Code2, MessageCircle, TrendingUp, BarChart2, Layers, Cpu, Calendar, Sparkles, AlertTriangle, Zap, Users } from "lucide-react";
+import { X, Globe, FileText, ExternalLink, Code2, MessageCircle, TrendingUp, BarChart2, Layers, Cpu, Calendar, Sparkles, Users } from "lucide-react";
 import { CoinLogo } from "@/components/CoinLogo";
 import { getTagColor } from "@/lib/coinInfo";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
-import { AiNewsSentiment } from "@/components/AiNewsSentiment";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface Props {
   symbol: string | null;
   onClose: () => void;
-}
-
-interface AiInsight {
-  summary?: string;
-  useCase?: string;
-  strengths?: string[];
-  risks?: string[];
-  sentiment?: "bullish" | "bearish" | "neutral";
-  outlook?: string;
-  traderNote?: string;
 }
 
 interface CoinFull {
@@ -63,7 +52,6 @@ interface CoinFull {
   atlChangePercent?: number | null;
   twitterFollowers?: number | null;
   redditSubscribers?: number | null;
-  aiAnalysis?: string | null;
 }
 
 function fmtNum(n: number | null | undefined, opts?: Intl.NumberFormatOptions): string {
@@ -168,11 +156,6 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
 
   if (!symbol) return null;
 
-  let ai: AiInsight | null = null;
-  if (data?.aiAnalysis) {
-    try { ai = JSON.parse(data.aiAnalysis); } catch { ai = null; }
-  }
-
   const isRateLimited = isError && (error as any)?.message === "rate_limited";
   const notFound      = isError && !isRateLimited;
 
@@ -249,88 +232,6 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
 
           {!isLoading && data && !notFound && (
             <>
-              {/* ── AI Analysis ─────────────────────────────────────────────── */}
-              {data._partial && !ai && (
-                <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 px-3.5 py-3 flex items-center gap-2.5">
-                  <Sparkles className="w-3.5 h-3.5 text-violet-400 shrink-0 animate-pulse" />
-                  <p className="text-xs text-violet-300/80">AI analysis loading…</p>
-                </div>
-              )}
-              {ai && (
-                <Section title="AI Analysis by Ora" icon={<Sparkles className="w-3 h-3 text-violet-400" />}>
-                  <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-3.5 space-y-3">
-                    {/* Sentiment badge */}
-                    {ai.sentiment && (
-                      <div className="flex items-center gap-2">
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border",
-                          ai.sentiment === "bullish"  && "bg-green-500/15 border-green-500/30 text-green-400",
-                          ai.sentiment === "bearish"  && "bg-red-500/15 border-red-500/30 text-red-400",
-                          ai.sentiment === "neutral"  && "bg-amber-500/15 border-amber-500/30 text-amber-400",
-                        )}>
-                          <span>{ai.sentiment === "bullish" ? "▲" : ai.sentiment === "bearish" ? "▼" : "●"}</span>
-                          {ai.sentiment}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">Ora AI Sentiment</span>
-                      </div>
-                    )}
-                    {ai.summary && (
-                      <p className="text-sm text-foreground/90 leading-relaxed">{ai.summary}</p>
-                    )}
-                    {ai.useCase && (
-                      <div>
-                        <p className="text-[10px] font-bold text-violet-400 uppercase tracking-wider mb-1">Use Case</p>
-                        <p className="text-xs text-foreground/80 leading-relaxed">{ai.useCase}</p>
-                      </div>
-                    )}
-                    <div className="grid grid-cols-2 gap-2">
-                      {ai.strengths && ai.strengths.length > 0 && (
-                        <div>
-                          <p className="text-[10px] font-bold text-green-400 uppercase tracking-wider mb-1.5">Strengths</p>
-                          <ul className="space-y-1">
-                            {ai.strengths.map((s, i) => (
-                              <li key={i} className="text-[11px] text-foreground/80 flex gap-1.5">
-                                <span className="text-green-400 shrink-0 mt-0.5">✓</span>{s}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {ai.risks && ai.risks.length > 0 && (
-                        <div>
-                          <p className="text-[10px] font-bold text-red-400 uppercase tracking-wider mb-1.5">Risks</p>
-                          <ul className="space-y-1">
-                            {ai.risks.map((r, i) => (
-                              <li key={i} className="text-[11px] text-foreground/80 flex gap-1.5">
-                                <AlertTriangle size={10} className="text-red-400 shrink-0 mt-0.5" />{r}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                    {ai.outlook && (
-                      <div className="flex gap-2 bg-violet-500/10 border border-violet-500/20 rounded-xl px-3 py-2">
-                        <TrendingUp size={13} className="text-violet-400 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-[10px] font-bold text-violet-400 uppercase tracking-wider mb-0.5">Outlook</p>
-                          <p className="text-[11px] text-foreground/80 leading-relaxed">{ai.outlook}</p>
-                        </div>
-                      </div>
-                    )}
-                    {ai.traderNote && (
-                      <div className="flex gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
-                        <Zap size={13} className="text-amber-400 shrink-0 mt-0.5" />
-                        <p className="text-[11px] text-amber-200 leading-relaxed">{ai.traderNote}</p>
-                      </div>
-                    )}
-                  </div>
-                </Section>
-              )}
-
-              {/* ── AI News & Sentiment ──────────────────────────────────────── */}
-              {symbol && <AiNewsSentiment symbol={symbol} />}
-
               {/* ── Price Performance ────────────────────────────────────────── */}
               <Section title="Price Performance" icon={<TrendingUp className="w-3 h-3" />}>
                 <div className="rounded-xl border border-border bg-secondary/30 overflow-hidden">

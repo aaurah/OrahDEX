@@ -7,14 +7,14 @@ import { BoundedMap } from "../lib/boundedMap.js";
 const router = Router();
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
-export type ChannelId = string; // "global" | "pair:BTC-USDT" | "vault:abc" | "support" | "system" | "ora"
+export type ChannelId = string; // "global" | "pair:BTC-USDT" | "vault:abc" | "support" | "system"
 
 interface ChatMessage {
   id: string;
   channel: ChannelId;
   wallet: string;          // "0xabc..." | "anonymous"
   displayName: string;     // wallet[:6] or pseudonym
-  role: "trader" | "leader" | "support" | "system" | "ora";
+  role: "trader" | "leader" | "support" | "system";
   text: string;
   ts: number;
   txid?: string;           // detected on-chain txid in message
@@ -31,7 +31,7 @@ const store = new BoundedMap<ChannelId, ChatMessage[]>(MAX_CHAT_CHANNELS);
 const sseClients = new Map<ChannelId, Set<Response>>();
 let totalSseClients = 0;
 
-const STATIC_CHANNELS = new Set(["global", "support", "system", "ora", "nft"]);
+const STATIC_CHANNELS = new Set(["global", "support", "system", "nft"]);
 
 function normalizeChannel(channel: string): string | null {
   if (STATIC_CHANNELS.has(channel)) return channel;
@@ -242,8 +242,8 @@ router.post("/channels/:channel/messages", (req: Request, res: Response) => {
     return;
   }
 
-  /* System announcements and Ora AI replies are server/admin controlled. */
-  if (channel === "system" || channel === "ora") {
+  /* System announcements are server/admin controlled. */
+  if (channel === "system") {
     res.status(403).json({ error: "This chat channel is read-only." });
     return;
   }
@@ -344,9 +344,8 @@ router.post("/channels/:channel/messages", (req: Request, res: Response) => {
 router.get("/channels", (_req: Request, res: Response) => {
   const channels = [
     { id: "global",  label: "Global",  description: "Exchange-wide chat", readOnly: false },
-    { id: "support", label: "Support", description: "AI support + human escalation", readOnly: false },
+    { id: "support", label: "Support", description: "Human support", readOnly: false },
     { id: "system",  label: "System",  description: "Protocol announcements", readOnly: true },
-    { id: "ora",     label: "Ora AI",  description: "Dedicated AI assistant channel", readOnly: false },
   ];
   const withCounts = channels.map(c => ({
     ...c,

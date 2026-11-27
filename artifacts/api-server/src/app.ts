@@ -9,7 +9,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import router from "./routes";
-import { getAiProviderHealth } from "./routes/ai.js";
 import v1Router from "./routes/v1.js";
 import { docsRouter, rpcRouter } from "./routes/docs.js";
 import { logger } from "./lib/logger";
@@ -500,11 +499,7 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
 app.use((_req: Request, res: Response, next: NextFunction) => {
   // AI image generation (gpt-image-1) can take 90–120 s — give it extra headroom.
   const isAiImage = _req.path === "/social/ai/image" && _req.method === "POST";
-  // Local Ollama can spend ~30 s loading a cold model before it starts replying.
-  // Keep this outer deadline aligned with the longer AI-route/model budgets.
-  const isLocalAiRequest = process.env.DEVAI_OLLAMA_ENABLED === "true"
-    && /^\/(?:api\/)?(?:ai|anthropic)(?:\/|$)/.test(_req.path);
-  const ms = isAiImage || isLocalAiRequest ? 120_000 : (_req.method === "GET" ? 30_000 : 60_000);
+  const ms = isAiImage ? 120_000 : (_req.method === "GET" ? 30_000 : 60_000);
   const timer = setTimeout(() => {
     if (!res.headersSent) {
       res.status(503).json({ error: "Request timeout" });
@@ -858,9 +853,6 @@ async function healthHandler(_req: any, res: any) {
   }
 
   try {
-    // null when the AI provider is not configured — it is then not a monitored
-    // component and must not colour the platform-wide status.
-    const aiProvider = getAiProviderHealth();
     const services = [
       ...getHealthReport().map((service) => ({
         name: service.name,
@@ -871,7 +863,6 @@ async function healthHandler(_req: any, res: any) {
         avgDurationMs: Math.round(service.avgDurationMs),
         staleSinceMs: service.staleSinceMs,
       })),
-      ...(aiProvider ? [aiProvider] : []),
     ];
     const anyDead = services.some((service) => service.status === "dead");
     const anyStuck = services.some((service) => service.status === "stuck");

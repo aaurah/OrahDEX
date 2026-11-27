@@ -44,13 +44,6 @@ export const CAPABILITY_STATUS = [
       "Availability and execution vary. A page or API endpoint alone does not establish on-chain settlement, guaranteed liquidity, or yield.",
   },
   {
-    id: "ora-ai",
-    area: "Ora AI",
-    status: "Service-dependent",
-    summary:
-      "Replies require an available inference service and may be delayed, incomplete, or inaccurate. They are not financial advice.",
-  },
-  {
     id: "fees-providers",
     area: "Fees and providers",
     status: "Quote-specific",

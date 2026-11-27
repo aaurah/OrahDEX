@@ -102,7 +102,6 @@ timeoutMs = 90000
 
 [nix]
 channel = "stable-25_05"
-packages = ["ollama"]
 
 [userenv]
 
@@ -121,18 +120,5 @@ EVM_ORDERBOOK_MATCHING_ENABLED = "true"
 
 [userenv.development]
 BSV_NETWORK = "main"
-DEVAI_OLLAMA_ENABLED = "true"
-DEVAI_MODEL = "qwen2.5-coder:0.5b"
-ORA_AI_MODEL = "qwen2.5-coder:0.5b"
-OLLAMA_MODELS = "/home/runner/workspace/.ollama-models"
-DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE = "true"
-ORA_AI_CONTEXT_TOKENS = "1024"
-ORA_AI_HISTORY_MESSAGES = "4"
-ORA_AI_MARKET_CONTEXT_PAIRS = "6"
-ORA_AI_NUM_BATCH = "256"
 
 [userenv.production]
-DEVAI_MODEL = "qwen2.5-coder:0.5b"
-DEVAI_OLLAMA_ENABLED = "true"
-ORA_AI_MODEL = "qwen2.5-coder:0.5b"
-DEVAI_OLLAMA_UNSAFE_MEMORY_OVERRIDE = "true"

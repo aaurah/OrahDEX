@@ -463,9 +463,6 @@ export function AdminApiSettings() {
                 <RangeField label="Pairs & Chains" hint="Static reference data — can cache aggressively"
                   value={num(cfg.cacheTtlPairs, 120)} min={30} max={3600} step={30} unit="sec"
                   onChange={v => set("cacheTtlPairs", v)} />
-                <RangeField label="AI Insights" hint="AI-generated insights and market signals"
-                  value={num(cfg.cacheTtlAi, 60)} min={10} max={600} step={10} unit="sec"
-                  onChange={v => set("cacheTtlAi", v)} />
               </Grid>
               <div className="mt-5 p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl">
                 <p className="text-xs text-muted-foreground">

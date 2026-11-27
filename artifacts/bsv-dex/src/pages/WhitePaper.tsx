@@ -18,11 +18,10 @@ const SECTIONS = [
   { id: "markets", label: "3. Markets and liquidity" },
   { id: "swaps", label: "4. Swaps and bridges" },
   { id: "features", label: "5. Other product areas" },
-  { id: "ai", label: "6. Ora AI" },
-  { id: "economics", label: "7. Fees and providers" },
-  { id: "security", label: "8. Security and limitations" },
-  { id: "privacy", label: "9. Privacy and compliance" },
-  { id: "roadmap", label: "10. Roadmap" },
+  { id: "economics", label: "6. Fees and providers" },
+  { id: "security", label: "7. Security and limitations" },
+  { id: "privacy", label: "8. Privacy and compliance" },
+  { id: "roadmap", label: "9. Roadmap" },
   { id: "glossary", label: "Glossary" },
   { id: "disclaimer", label: "Legal disclaimer" },
 ];
@@ -283,16 +282,7 @@ export function WhitePaper() {
               </p>
             </Section>
 
-            <Section id="ai" title="6. Ora AI">
-              <p>
-                Ora AI depends on a configured inference provider and related market-data sources. It may be unavailable, delayed, incomplete, or inaccurate. Generated content is informational and is not investment, tax, or legal advice.
-              </p>
-              <p>
-                Users remain responsible for verifying market facts and making their own trading decisions. Ora does not guarantee a price target, forecast, or trading outcome.
-              </p>
-            </Section>
-
-            <Section id="economics" title="7. Fees and providers">
+            <Section id="economics" title="6. Fees and providers">
               <p>
                 Fees, spread, gas, limits, and provider charges are route-specific. A global maker/taker schedule should not be inferred from this paper. Review the quote and wallet transaction details before signing.
               </p>
@@ -301,7 +291,7 @@ export function WhitePaper() {
               </p>
             </Section>
 
-            <Section id="security" title="8. Security and operational limitations">
+            <Section id="security" title="7. Security and operational limitations">
               <ul className="list-disc pl-5 space-y-2">
                 <li>Smart contracts can contain defects and may depend on privileged relayers or other roles.</li>
                 <li>API, database, RPC, wallet, and data-provider outages can prevent an order from appearing, matching, or completing.</li>
@@ -314,7 +304,7 @@ export function WhitePaper() {
               </Notice>
             </Section>
 
-            <Section id="privacy" title="9. Privacy and compliance">
+            <Section id="privacy" title="8. Privacy and compliance">
               <p>
                 OrahDEX processes wallet addresses, transaction and order records, and operational data. Some support, administrative, verification, or provider flows may process additional information. Review the current privacy notice and feature-specific disclosures.
               </p>
@@ -323,7 +313,7 @@ export function WhitePaper() {
               </p>
             </Section>
 
-            <Section id="roadmap" title="10. Roadmap and change control">
+            <Section id="roadmap" title="9. Roadmap and change control">
               <p>
                 Network expansion, full-chain trading, broader contract coverage, and provider integrations are not implied by the current feature list. A roadmap item remains planned until the app, API, contract deployment, and user flow are verified together.
               </p>

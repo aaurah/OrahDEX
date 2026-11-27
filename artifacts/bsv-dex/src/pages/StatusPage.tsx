@@ -70,8 +70,6 @@ function buildServices(
     make("platform", "OrahDEX Platform", "Core Platform", platformStatus),
     make("api",      "REST API",         "Core Platform",  apiStatus,
       health ? `Instance up ${Math.floor((health.uptime ?? 0) / 60)} min` : undefined),
-    make("ai-provider", "AI Provider", "Core Platform", svcStatus(find("ai-provider")), undefined, find("ai-provider")),
-
     make("order-engine", "Order Engine", "Trading Engine", svcStatus(find("liquidity-bot")),   undefined, find("liquidity-bot")),
     make("price-feed",   "Price Feed",   "Trading Engine", svcStatus(find("price-updater")),   undefined, find("price-updater")),
     make("arb-engine",   "Arb Engine",   "Trading Engine", svcStatus(find("ArbBot")),          undefined, find("ArbBot")),

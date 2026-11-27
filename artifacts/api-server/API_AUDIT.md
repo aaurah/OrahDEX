@@ -3,6 +3,8 @@
 **Date:** 2026-11-25  
 **Scope:** Static inventory and targeted reliability/security review. No published deployment, production database writes, wallet signatures, or chain actions were performed.
 
+**Current-state note (2026-11-27):** This is a historical snapshot. Ora AI and DevAI chat, analysis, provider, and Ollama runtime features have since been removed from the app; AI image generation is separate. The production Node.js heap issue still needs independent monitoring.
+
 ## Route inventory
 
 The API has 73 TypeScript route modules and 669 `router.get`, `router.post`, `router.put`, `router.patch`, `router.delete`, and `router.use` declarations. The inventory is:
