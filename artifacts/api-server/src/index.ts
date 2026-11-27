@@ -11,7 +11,11 @@ const REQUIRED_VARS: Array<{ name: string; fatal: boolean }> = [
 for (const { name, fatal } of REQUIRED_VARS) {
   if (!process.env[name]?.trim()) {
     if (fatal) throw new Error(`[FATAL] ${name} is not set. Refusing to start.`);
-    console.info(`[INFO] ${name} is not set — related features will be unavailable.`);
+    if (name === "API_KEY_HMAC_SECRET") {
+      console.info("[INFO] API_KEY_HMAC_SECRET is not set — legacy/admin API keys are unavailable; personal API keys do not need it.");
+    } else {
+      console.info(`[INFO] ${name} is not set — related features will be unavailable.`);
+    }
   }
 }
 

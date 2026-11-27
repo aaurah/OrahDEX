@@ -7,16 +7,6 @@ export type PersonalApiKeyPermission = "read" | "trading" | "full";
 
 const MIN_RATE_LIMIT = 10;
 const MAX_RATE_LIMIT = 200;
-const MIN_SECRET_BYTES = 32;
-
-export class ApiKeyConfigurationError extends Error {
-  readonly code = "API_KEY_CONFIGURATION_MISSING";
-
-  constructor() {
-    super("Personal API keys are unavailable until API_KEY_HMAC_SECRET is configured in Replit Secrets.");
-    this.name = "ApiKeyConfigurationError";
-  }
-}
 
 export class PersonalApiKeyRateLimitError extends Error {
   readonly code = "API_KEY_RATE_LIMIT";
@@ -85,16 +75,10 @@ export function personalApiKeyRequestContext(input: unknown): string {
   return JSON.stringify(normalizePersonalApiKeyInput(input));
 }
 
-function getApiKeySecret(): string {
-  const secret = process.env.API_KEY_HMAC_SECRET;
-  if (!secret || Buffer.byteLength(secret, "utf8") < MIN_SECRET_BYTES) {
-    throw new ApiKeyConfigurationError();
-  }
-  return secret;
-}
-
 export function hashPersonalApiKey(key: string): string {
-  return crypto.createHmac("sha256", getApiKeySecret()).update(key, "utf8").digest("hex");
+  // API keys contain 256 bits of random entropy, so a one-way SHA-256 digest
+  // remains infeasible to brute-force even if the database is exposed.
+  return crypto.createHash("sha256").update(key, "utf8").digest("hex");
 }
 
 function toPublicView(row: typeof userApiKeysTable.$inferSelect): PersonalApiKeyView {

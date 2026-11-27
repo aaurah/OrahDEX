@@ -79,7 +79,6 @@ import { BSV_NET, getBsvNetworkConfig, type BsvNetwork } from "../lib/bsvNetwork
 import { randomBytes } from "node:crypto";
 import { issueWalletRequestChallenge, verifyWalletRequestProof, type WalletRequestResource } from "../lib/walletRequestAuth.js";
 import {
-  ApiKeyConfigurationError,
   createPersonalApiKey,
   listPersonalApiKeys,
   normalizePersonalApiKeyInput,
@@ -957,10 +956,6 @@ router.post("/user/api-keys", async (req, res) => {
     res.status(201).json({ ...created, oneTimeReveal: true });
   } catch (err: any) {
     req.log.error({ err }, "personal-api-keys: create failed");
-    if (err instanceof ApiKeyConfigurationError) {
-      res.status(503).json({ error: err.message, code: err.code });
-      return;
-    }
     res.status(503).json({ error: "Personal API keys are temporarily unavailable." });
   }
 });

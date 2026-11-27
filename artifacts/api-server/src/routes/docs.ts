@@ -93,7 +93,7 @@ const OPENAPI_SPEC = {
           "201": { description: "Created key with one-time raw credential reveal", content: { "application/json": { schema: { $ref: "#/components/schemas/PersonalApiKeyCreateResponse" } } } },
           "400": { description: "Invalid key details" },
           "401": { description: "Wallet proof is missing, invalid, expired, or already used" },
-          "503": { description: "Secret or database is unavailable" },
+          "503": { description: "Key storage or database is unavailable" },
         },
       },
     },

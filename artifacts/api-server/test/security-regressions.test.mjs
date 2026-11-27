@@ -293,7 +293,7 @@ test("personal API-key CRUD is wallet-authorized and reveals raw keys only at cr
   assert.match(routesSrc, /personalApiKeyRequestContext/);
   assert.match(challengeSrc, /DELETE FROM platform_settings[\s\S]*RETURNING value/);
   assert.match(challengeSrc, /stored\.context !== params\.context/);
-  assert.match(serviceSrc, /createHmac\("sha256"/);
+  assert.match(serviceSrc, /createHash\("sha256"\)/);
   assert.match(serviceSrc, /keyHash:\s*hashPersonalApiKey\(key\)/);
   assert.doesNotMatch(serviceSrc, /key:\s*key,/);
   assert.match(serviceSrc, /keyPreview/);

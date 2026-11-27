@@ -5,7 +5,6 @@ import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import {
-  ApiKeyConfigurationError,
   authenticatePersonalApiKey,
   PersonalApiKeyRateLimitError,
   sameWalletAddress,
@@ -325,10 +324,6 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
       if (err instanceof PersonalApiKeyRateLimitError) {
         res.setHeader("Retry-After", "60");
         res.status(429).json({ error: err.message, limit: err.limit, window: "1 minute" });
-        return;
-      }
-      if (err instanceof ApiKeyConfigurationError) {
-        res.status(503).json({ error: err.message, code: err.code });
         return;
       }
       logger.error({ err }, "apiKeyAuth: personal key verification unavailable");
