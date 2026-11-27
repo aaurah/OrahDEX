@@ -120,13 +120,13 @@ export function ExplorerPage() {
   const [activityOffset, setActivityOffset] = useState(0);
   const [addressToken, setAddressToken] = useState<string | undefined>(undefined);
 
-  const blockParams = useMemo(() => ({ limit: 12 }), []);
+  const blockParams = useMemo(() => ({ limit: 6 }), []);
   const activityParams = useMemo(() => ({ limit: 8, offset: activityOffset }), [activityOffset]);
   const selectedBlockParams = useMemo(() => ({ limit: 12, offset: blockOffset }), [blockOffset]);
   const addressParams = useMemo(() => ({ limit: 20, ...(addressToken ? { token: addressToken } : {}) }), [addressToken]);
 
   const blocksQuery = useGetExplorerBlocks(blockParams, {
-    query: { refetchInterval: 30_000, queryKey: getGetExplorerBlocksQueryKey(blockParams) },
+    query: { refetchInterval: 120_000, queryKey: getGetExplorerBlocksQueryKey(blockParams) },
   });
   const activityQuery = useGetExplorerActivity(activityParams, {
     query: { refetchInterval: 30_000, queryKey: getGetExplorerActivityQueryKey(activityParams) },

@@ -6,6 +6,10 @@ const router: IRouter = Router();
 const WOC_BASE = BSV_NET.wocBase;
 const FETCH_TIMEOUT_MS = 9_000;
 const CACHE_TTL_MS = 20_000;
+const RECENT_BLOCKS_CACHE_TTL_MS = 120_000;
+const RECENT_BLOCKS_STALE_TTL_MS = 15 * 60_000;
+const WOC_API_KEY_CACHE_TTL_MS = 5 * 60_000;
+const WOC_API_KEY_MISSING_CACHE_TTL_MS = 30_000;
 
 interface WocBlock {
   hash?: string;
@@ -27,6 +31,9 @@ interface CacheEntry<T> {
 }
 
 const responseCache = new Map<string, CacheEntry<unknown>>();
+const recentBlocksStaleCache = new Map<string, CacheEntry<Record<string, unknown>>>();
+const recentBlocksInFlight = new Map<string, Promise<Record<string, unknown>>>();
+let wocApiKeyCache: CacheEntry<string> = { value: "", expiresAt: 0 };
 
 function getCached<T>(key: string): T | null {
   const entry = responseCache.get(key);
@@ -52,8 +59,34 @@ function setCached<T>(key: string, value: T, ttlMs = CACHE_TTL_MS): void {
 }
 
 class WocError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(public readonly status: number, message: string, public readonly retryAfterMs = 0) {
     super(message);
+  }
+}
+
+async function getWocApiKey(): Promise<string> {
+  const now = Date.now();
+  if (wocApiKeyCache.expiresAt > now) return wocApiKeyCache.value;
+
+  const envKey = (process.env.WHATSONCHAIN_API_KEY ?? process.env.WOC_API_KEY ?? "").trim();
+  if (envKey) {
+    wocApiKeyCache = { value: envKey, expiresAt: now + WOC_API_KEY_CACHE_TTL_MS };
+    return envKey;
+  }
+
+  try {
+    const result = await pool.query<{ value: string }>(
+      `SELECT value FROM platform_settings WHERE key = 'whatsonchain_api_key' LIMIT 1`,
+    );
+    const key = (result.rows[0]?.value ?? "").trim();
+    wocApiKeyCache = {
+      value: key,
+      expiresAt: now + (key ? WOC_API_KEY_CACHE_TTL_MS : WOC_API_KEY_MISSING_CACHE_TTL_MS),
+    };
+    return key;
+  } catch {
+    wocApiKeyCache = { value: "", expiresAt: now + WOC_API_KEY_MISSING_CACHE_TTL_MS };
+    return "";
   }
 }
 
@@ -61,12 +94,21 @@ async function fetchWoc<T>(path: string): Promise<{ data: T; response: globalThi
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
+    const apiKey = await getWocApiKey();
     const response = await fetch(`${WOC_BASE}${path}`, {
       signal: controller.signal,
-      headers: { Accept: "application/json", "User-Agent": "OrahDEX-Explorer/1.0" },
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "OrahDEX-Explorer/1.0",
+        ...(apiKey ? { "woc-api-key": apiKey } : {}),
+      },
     });
     if (!response.ok) {
-      throw new WocError(response.status, `WhatsOnChain returned ${response.status}`);
+      const retryAfterSeconds = Number(response.headers.get("retry-after"));
+      const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+        ? Math.min(retryAfterSeconds * 1000, 10_000)
+        : 0;
+      throw new WocError(response.status, `WhatsOnChain returned ${response.status}`, retryAfterMs);
     }
     return { data: await response.json() as T, response };
   } finally {
@@ -113,29 +155,40 @@ async function getBlock(height: number): Promise<WocBlock> {
 }
 
 async function getRecentBlock(height: number): Promise<WocBlock> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       return await getBlock(height);
     } catch (error) {
-      const permanentProviderError = error instanceof WocError && error.status !== 429 && error.status < 500;
-      if (permanentProviderError || attempt === 2) throw error;
-      await new Promise(resolve => setTimeout(resolve, 180 * (attempt + 1)));
+      const retryable = error instanceof WocError
+        ? error.status === 429 || error.status >= 500
+        : true;
+      if (!retryable || attempt === 1) throw error;
+      const delayMs = error instanceof WocError && error.retryAfterMs > 0
+        ? error.retryAfterMs
+        : error instanceof WocError && error.status === 429
+          ? 1_200
+          : 350;
+      await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
   throw new Error("Recent block lookup failed.");
 }
 
 async function getRecentBlocks(heights: number[]): Promise<WocBlock[]> {
-  const blocks = new Array<WocBlock>(heights.length);
+  const blocks = new Array<WocBlock | undefined>(heights.length);
   let nextIndex = 0;
   const workers = Array.from({ length: Math.min(2, heights.length) }, async () => {
     while (nextIndex < heights.length) {
       const index = nextIndex++;
-      blocks[index] = await getRecentBlock(heights[index]);
+      try {
+        blocks[index] = await getRecentBlock(heights[index]);
+      } catch {
+        // Keep good blocks when the public provider rate-limits one lookup.
+      }
     }
   });
   await Promise.all(workers);
-  return blocks;
+  return blocks.filter((block): block is WocBlock => Boolean(block));
 }
 
 /** GET /api/explorer/blocks — small, cached window of recent BSV blocks. */
@@ -149,33 +202,48 @@ router.get("/explorer/blocks", async (req, res) => {
     return;
   }
 
-  try {
+  const load = async (): Promise<Record<string, unknown>> => {
     const { data: chain } = await fetchWoc<{ blocks?: number; bestblockhash?: string }>("/chain/info");
     const height = Number(chain.blocks ?? 0);
     if (!Number.isSafeInteger(height) || height <= 0) {
-      res.status(503).json({ error: "BSV chain height is not available yet." });
-      return;
+      throw new WocError(503, "BSV chain height is not available yet.");
     }
 
     const heights = Array.from({ length: limit }, (_, index) => height - index).filter(value => value > 0);
-    const blocks = (await getRecentBlocks(heights)).map(summarizeBlock);
+    const fetchedBlocks = await getRecentBlocks(heights);
+    if (fetchedBlocks.length === 0) {
+      throw new WocError(503, "Recent BSV blocks could not be loaded.");
+    }
 
     const payload = {
       network: BSV_NET.network,
       tipHeight: height,
       bestBlockHash: String(chain.bestblockhash ?? ""),
-      blocks,
+      blocks: fetchedBlocks.map(summarizeBlock),
       source: "WhatsOnChain",
       updatedAt: new Date().toISOString(),
     };
-    if (blocks.length === 0) {
-      res.status(502).json({ error: "Recent BSV blocks could not be loaded." });
-      return;
+    setCached(cacheKey, payload, fetchedBlocks.length === heights.length ? RECENT_BLOCKS_CACHE_TTL_MS : 20_000);
+    recentBlocksStaleCache.set(cacheKey, { value: payload, expiresAt: Date.now() + RECENT_BLOCKS_STALE_TTL_MS });
+    return payload;
+  };
+
+  try {
+    let request = recentBlocksInFlight.get(cacheKey);
+    if (!request) {
+      request = load().finally(() => recentBlocksInFlight.delete(cacheKey));
+      recentBlocksInFlight.set(cacheKey, request);
     }
-    setCached(cacheKey, payload);
-    res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
+    const payload = await request;
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=180");
     res.json(payload);
   } catch (err) {
+    const stale = recentBlocksStaleCache.get(cacheKey);
+    if (stale && stale.expiresAt > Date.now()) {
+      res.setHeader("Cache-Control", "public, max-age=15");
+      res.json(stale.value);
+      return;
+    }
     sendWocError(res, err);
   }
 });
