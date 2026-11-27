@@ -15,7 +15,21 @@ import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const fetchIntegrations = () =>
+type IntegrationData = Record<string, unknown> & {
+  _configuredSecrets?: Record<string, boolean>;
+};
+
+const HIDDEN_INTEGRATION_KEYS = new Set([
+  "coingecko_api_key", "cmc_api_key", "dexscreener_api_key", "geckoterm_api_key",
+  "moonpay_api_key", "transak_api_key", "banxa_api_key", "simplex_api_key",
+  "ramp_api_key", "whatsonchain_api_key", "smtp_user", "smtp_pass",
+  "recaptcha_secret_key", "discord_webhook_url", "telegram_bot_token",
+  "letsexchange_api_key", "changenow_api_key", "swapzone_api_key", "sumsub_api_key",
+  "sumsub_secret_key", "onfido_api_token", "moonpay_secret_key",
+  "bsv_rpc_user", "bsv_rpc_pass", "mixpanel_token",
+]);
+
+const fetchIntegrations = (): Promise<IntegrationData> =>
   adminFetch(`/api/admin/integrations`).then(r => r.json()).catch(() => ({}));
 
 const fetchSiteSettings = () =>
@@ -23,12 +37,12 @@ const fetchSiteSettings = () =>
 
 function useApiField(
   key: string,
-  integrations: Record<string, string>,
+  integrations: IntegrationData,
   siteSettings: Record<string, string>,
   checkIn: "integrations" | "site"
 ) {
-  const val = checkIn === "integrations" ? integrations[key] : siteSettings[key];
-  return val?.trim() ?? "";
+  const value = checkIn === "integrations" ? integrations[key] : siteSettings[key];
+  return typeof value === "string" ? value.trim() : "";
 }
 
 // ─── STEP DEFINITIONS ─────────────────────────────────────────────────────────
@@ -204,10 +218,10 @@ const PRIORITY_STYLE: Record<Priority, { label: string; color: string }> = {
 // ─── INLINE CONFIG FORMS ──────────────────────────────────────────────────────
 
 function ApiKeyField({
-  label, fieldKey, value, onChange, type = "text", placeholder, description, secret = true,
+  label, fieldKey, value, onChange, type = "text", placeholder, description, secret = true, configured = false,
 }: {
   label: string; fieldKey: string; value: string; onChange: (v: string) => void;
-  type?: string; placeholder?: string; description?: string; secret?: boolean;
+  type?: string; placeholder?: string; description?: string; secret?: boolean; configured?: boolean;
 }) {
   const [show, setShow] = useState(false);
   const inputType = secret ? (show ? "text" : "password") : type;
@@ -220,7 +234,7 @@ function ApiKeyField({
           type={inputType}
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
+          placeholder={configured && !value ? "Saved securely — blank keeps it; enter a replacement" : placeholder}
           className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none font-mono"
         />
         {secret && (
@@ -232,8 +246,11 @@ function ApiKeyField({
             {show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
           </button>
         )}
-        {value && <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0" />}
+        {(value || configured) && <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0" />}
       </div>
+      {configured && !value && (
+        <p className="text-[10px] text-green-400/80">Configured; the saved value is hidden.</p>
+      )}
     </div>
   );
 }
@@ -262,7 +279,7 @@ function StepCard({
   step, integrations, siteSettings, onRefresh,
 }: {
   step: Step;
-  integrations: Record<string, string>;
+  integrations: IntegrationData;
   siteSettings: Record<string, string>;
   onRefresh: () => void;
 }) {
@@ -274,15 +291,18 @@ function StepCard({
   const siteKeys = step.checkSite ?? [];
   const allKeys  = [...intKeys, ...siteKeys];
 
+  const isIntegrationConfigured = (key: string) =>
+    integrations._configuredSecrets?.[key] === true ||
+    (typeof integrations[key] === "string" && Boolean((integrations[key] as string).trim()));
+
   const isDone = allKeys.length === 0
     ? false
     : allKeys.every(k => {
-        const v = intKeys.includes(k) ? integrations[k] : siteSettings[k];
-        return v?.trim().length > 0;
+        return intKeys.includes(k) ? isIntegrationConfigured(k) : Boolean(siteSettings[k]?.trim());
       });
 
   const configuredCount = [
-    ...intKeys.filter(k => integrations[k]?.trim()),
+    ...intKeys.filter(isIntegrationConfigured),
     ...siteKeys.filter(k => siteSettings[k]?.trim()),
   ].length;
   const hasPartial = allKeys.length > 0 && configuredCount > 0 && !isDone;
@@ -292,11 +312,18 @@ function StepCard({
   // Local draft state for form fields
   const [draft, setDraft] = useState<Record<string, string>>({});
   const setDraftKey = (k: string) => (v: string) => setDraft(d => ({ ...d, [k]: v }));
-  const val = (k: string, source: "int" | "site") =>
-    draft[k] ?? (source === "int" ? integrations[k] : siteSettings[k]) ?? "";
+  const val = (k: string, source: "int" | "site") => {
+    if (draft[k] !== undefined) return draft[k];
+    if (source === "int" && HIDDEN_INTEGRATION_KEYS.has(k)) return "";
+    const stored = source === "int" ? integrations[k] : siteSettings[k];
+    return typeof stored === "string" ? stored : "";
+  };
 
   const saveIntegrations = async (keys: string[]) => {
-    const current = { ...integrations };
+    const current: Record<string, string> = {};
+    for (const [key, value] of Object.entries(integrations)) {
+      if (typeof value === "string") current[key] = value;
+    }
     for (const k of keys) {
       if (draft[k] !== undefined) current[k] = draft[k];
     }
@@ -381,9 +408,11 @@ function StepCard({
               <p>OrahDEX sources all prices from its own engine: Binance public ticker + WhatsOnChain BSV rate + own order-book trades. No API key required for core price data.</p>
             </div>
             <ApiKeyField label="DexScreener API Key (optional)" fieldKey="dexscreener_api_key" value={val("dexscreener_api_key", "int")}
-              onChange={setDraftKey("dexscreener_api_key")} placeholder="Leave empty for public tier" description="Enhances token discovery for Base chain and DEX pairs." />
+              onChange={setDraftKey("dexscreener_api_key")} placeholder="Leave empty for public tier" description="Enhances token discovery for Base chain and DEX pairs."
+              configured={isIntegrationConfigured("dexscreener_api_key")} />
             <ApiKeyField label="GeckoTerminal API Key (optional)" fieldKey="geckoterm_api_key" value={val("geckoterm_api_key", "int")}
-              onChange={setDraftKey("geckoterm_api_key")} placeholder="Leave empty for public tier" description="Optional: 200+ network DEX pool discovery." />
+              onChange={setDraftKey("geckoterm_api_key")} placeholder="Leave empty for public tier" description="Optional: 200+ network DEX pool discovery."
+              configured={isIntegrationConfigured("geckoterm_api_key")} />
           </InlineForm>
         );
       case "smtp":
@@ -394,9 +423,11 @@ function StepCard({
             <ApiKeyField label="SMTP Port" fieldKey="smtp_port" value={val("smtp_port", "int")}
               onChange={setDraftKey("smtp_port")} placeholder="587" secret={false} />
             <ApiKeyField label="SMTP Username" fieldKey="smtp_user" value={val("smtp_user", "int")}
-              onChange={setDraftKey("smtp_user")} placeholder="apikey or your email" secret={false} />
+              onChange={setDraftKey("smtp_user")} placeholder="apikey or your email"
+              configured={isIntegrationConfigured("smtp_user")} />
             <ApiKeyField label="SMTP Password / API Key" fieldKey="smtp_pass" value={val("smtp_pass", "int")}
-              onChange={setDraftKey("smtp_pass")} placeholder="Your SMTP password or SendGrid API key" />
+              onChange={setDraftKey("smtp_pass")} placeholder="Your SMTP password or SendGrid API key"
+              configured={isIntegrationConfigured("smtp_pass")} />
             <ApiKeyField label="From Address" fieldKey="smtp_from" value={val("smtp_from", "int")}
               onChange={setDraftKey("smtp_from")} placeholder="no-reply@orahdex.com" secret={false} type="email" />
           </InlineForm>
@@ -431,7 +462,8 @@ function StepCard({
             <ApiKeyField label="reCAPTCHA Site Key" fieldKey="recaptcha_site_key" value={val("recaptcha_site_key", "int")}
               onChange={setDraftKey("recaptcha_site_key")} placeholder="6Le..." secret={false} />
             <ApiKeyField label="reCAPTCHA Secret Key" fieldKey="recaptcha_secret_key" value={val("recaptcha_secret_key", "int")}
-              onChange={setDraftKey("recaptcha_secret_key")} placeholder="6Le..." />
+              onChange={setDraftKey("recaptcha_secret_key")} placeholder="6Le..."
+              configured={isIntegrationConfigured("recaptcha_secret_key")} />
             <ApiKeyField label="Withdrawal Cooling Period (minutes)" fieldKey="withdrawal_cooling_minutes" value={val("withdrawal_cooling_minutes", "site")}
               onChange={setDraftKey("withdrawal_cooling_minutes")} placeholder="30" secret={false} type="number" />
           </InlineForm>
@@ -440,46 +472,58 @@ function StepCard({
         return (
           <InlineForm onSave={handleSave} loading={saving}>
             <ApiKeyField label="Sumsub App Token" fieldKey="sumsub_api_key" value={val("sumsub_api_key", "int")}
-              onChange={setDraftKey("sumsub_api_key")} placeholder="sbx:..." description="Get from app.sumsub.com → Developers" />
+              onChange={setDraftKey("sumsub_api_key")} placeholder="sbx:..." description="Get from app.sumsub.com → Developers"
+              configured={isIntegrationConfigured("sumsub_api_key")} />
             <ApiKeyField label="Sumsub Secret Key" fieldKey="sumsub_secret_key" value={val("sumsub_secret_key", "int")}
-              onChange={setDraftKey("sumsub_secret_key")} placeholder="Your Sumsub secret" />
+              onChange={setDraftKey("sumsub_secret_key")} placeholder="Your Sumsub secret"
+              configured={isIntegrationConfigured("sumsub_secret_key")} />
             <ApiKeyField label="Onfido API Token (alternative)" fieldKey="onfido_api_token" value={val("onfido_api_token", "int")}
-              onChange={setDraftKey("onfido_api_token")} placeholder="api_sandbox_..." />
+              onChange={setDraftKey("onfido_api_token")} placeholder="api_sandbox_..."
+              configured={isIntegrationConfigured("onfido_api_token")} />
           </InlineForm>
         );
       case "fiat":
         return (
           <InlineForm onSave={handleSave} loading={saving}>
             <ApiKeyField label="MoonPay API Key" fieldKey="moonpay_api_key" value={val("moonpay_api_key", "int")}
-              onChange={setDraftKey("moonpay_api_key")} placeholder="pk_live_..." description="Get at moonpay.com/dashboard" />
+              onChange={setDraftKey("moonpay_api_key")} placeholder="pk_live_..." description="Get at moonpay.com/dashboard"
+              configured={isIntegrationConfigured("moonpay_api_key")} />
             <ApiKeyField label="MoonPay Secret Key" fieldKey="moonpay_secret_key" value={val("moonpay_secret_key", "int")}
-              onChange={setDraftKey("moonpay_secret_key")} placeholder="sk_live_..." />
+              onChange={setDraftKey("moonpay_secret_key")} placeholder="sk_live_..."
+              configured={isIntegrationConfigured("moonpay_secret_key")} />
             <ApiKeyField label="Transak API Key" fieldKey="transak_api_key" value={val("transak_api_key", "int")}
-              onChange={setDraftKey("transak_api_key")} placeholder="Your Transak key" description="Get at transak.com" />
+              onChange={setDraftKey("transak_api_key")} placeholder="Your Transak key" description="Get at transak.com"
+              configured={isIntegrationConfigured("transak_api_key")} />
             <ApiKeyField label="Banxa API Key (optional)" fieldKey="banxa_api_key" value={val("banxa_api_key", "int")}
-              onChange={setDraftKey("banxa_api_key")} placeholder="Your Banxa key" />
+              onChange={setDraftKey("banxa_api_key")} placeholder="Your Banxa key"
+              configured={isIntegrationConfigured("banxa_api_key")} />
           </InlineForm>
         );
       case "bsv-node":
         return (
           <InlineForm onSave={handleSave} loading={saving}>
             <ApiKeyField label="WhatsOnChain API Key" fieldKey="whatsonchain_api_key" value={val("whatsonchain_api_key", "int")}
-              onChange={setDraftKey("whatsonchain_api_key")} placeholder="mainnet_..." description="Get at whatsonchain.com/signup" />
+              onChange={setDraftKey("whatsonchain_api_key")} placeholder="mainnet_..." description="Get at whatsonchain.com/signup"
+              configured={isIntegrationConfigured("whatsonchain_api_key")} />
             <ApiKeyField label="Custom BSV RPC URL (optional)" fieldKey="bsv_rpc_url" value={val("bsv_rpc_url", "int")}
               onChange={setDraftKey("bsv_rpc_url")} placeholder="https://your-bsv-node:8332" secret={false} />
             <ApiKeyField label="BSV RPC Username" fieldKey="bsv_rpc_user" value={val("bsv_rpc_user", "int")}
-              onChange={setDraftKey("bsv_rpc_user")} placeholder="rpcuser" secret={false} />
+              onChange={setDraftKey("bsv_rpc_user")} placeholder="rpcuser"
+              configured={isIntegrationConfigured("bsv_rpc_user")} />
             <ApiKeyField label="BSV RPC Password" fieldKey="bsv_rpc_pass" value={val("bsv_rpc_pass", "int")}
-              onChange={setDraftKey("bsv_rpc_pass")} placeholder="rpcpassword" />
+              onChange={setDraftKey("bsv_rpc_pass")} placeholder="rpcpassword"
+              configured={isIntegrationConfigured("bsv_rpc_pass")} />
           </InlineForm>
         );
       case "dexscreener":
         return (
           <InlineForm onSave={handleSave} loading={saving}>
             <ApiKeyField label="DexScreener API Key" fieldKey="dexscreener_api_key" value={val("dexscreener_api_key", "int")}
-              onChange={setDraftKey("dexscreener_api_key")} placeholder="Optional — public tier available" />
+              onChange={setDraftKey("dexscreener_api_key")} placeholder="Optional — public tier available"
+              configured={isIntegrationConfigured("dexscreener_api_key")} />
             <ApiKeyField label="GeckoTerminal API Key" fieldKey="geckoterminal_api_key" value={val("geckoterminal_api_key", "int")}
-              onChange={setDraftKey("geckoterminal_api_key")} placeholder="Optional — public tier available" />
+              onChange={setDraftKey("geckoterminal_api_key")} placeholder="Optional — public tier available"
+              configured={isIntegrationConfigured("geckoterminal_api_key")} />
           </InlineForm>
         );
       case "notifications":
@@ -487,9 +531,11 @@ function StepCard({
           <InlineForm onSave={handleSave} loading={saving}>
             <ApiKeyField label="Discord Webhook URL" fieldKey="discord_webhook_url" value={val("discord_webhook_url", "int")}
               onChange={setDraftKey("discord_webhook_url")} placeholder="https://discord.com/api/webhooks/..."
-              description="Server → Edit Channel → Integrations → Webhooks" secret={false} />
+              description="Server → Edit Channel → Integrations → Webhooks"
+              configured={isIntegrationConfigured("discord_webhook_url")} />
             <ApiKeyField label="Telegram Bot Token" fieldKey="telegram_bot_token" value={val("telegram_bot_token", "int")}
-              onChange={setDraftKey("telegram_bot_token")} placeholder="123456:ABC-..." description="Create via @BotFather on Telegram" />
+              onChange={setDraftKey("telegram_bot_token")} placeholder="123456:ABC-..." description="Create via @BotFather on Telegram"
+              configured={isIntegrationConfigured("telegram_bot_token")} />
             <ApiKeyField label="Telegram Chat ID" fieldKey="telegram_chat_id" value={val("telegram_chat_id", "int")}
               onChange={setDraftKey("telegram_chat_id")} placeholder="-1001234567890" secret={false} />
           </InlineForm>
@@ -502,7 +548,8 @@ function StepCard({
             <ApiKeyField label="Google Tag Manager ID" fieldKey="google_tag_manager_id" value={val("google_tag_manager_id", "int")}
               onChange={setDraftKey("google_tag_manager_id")} placeholder="GTM-XXXXXXX" secret={false} />
             <ApiKeyField label="Mixpanel Token" fieldKey="mixpanel_token" value={val("mixpanel_token", "int")}
-              onChange={setDraftKey("mixpanel_token")} placeholder="Your Mixpanel project token" />
+              onChange={setDraftKey("mixpanel_token")} placeholder="Your Mixpanel project token"
+              configured={isIntegrationConfigured("mixpanel_token")} />
             <ApiKeyField label="Hotjar Site ID" fieldKey="hotjar_id" value={val("hotjar_id", "int")}
               onChange={setDraftKey("hotjar_id")} placeholder="1234567" secret={false} />
             <ApiKeyField label="Facebook Pixel ID" fieldKey="facebook_pixel_id" value={val("facebook_pixel_id", "int")}
@@ -577,8 +624,9 @@ function StepCard({
           {allKeys.length > 0 && (
             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
               {allKeys.map(k => {
-                const v = intKeys.includes(k) ? integrations[k] : siteSettings[k];
-                const set = v?.trim().length > 0;
+                const set = intKeys.includes(k)
+                  ? isIntegrationConfigured(k)
+                  : Boolean(siteSettings[k]?.trim());
                 return (
                   <span key={k} className={cn(
                     "flex items-center gap-0.5 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-lg border",

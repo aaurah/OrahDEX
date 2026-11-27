@@ -15,6 +15,9 @@ const routesIndexPath = path.join(__dirname, "..", "src", "routes", "index.ts");
 const adminAuthPath = path.join(__dirname, "..", "src", "middleware", "adminAuth.ts");
 const adminRoutesPath = path.join(__dirname, "..", "src", "routes", "admin.ts");
 const adminLoginPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "Login.tsx");
+const adminIntegrationsPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "Integrations.tsx");
+const adminSecuritySettingsPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "SecuritySettings.tsx");
+const adminSetupGuidePath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "SetupGuide.tsx");
 const evmWebhookRouterPath = path.join(__dirname, "..", "src", "routes", "evmWebhookRouter.ts");
 const depositAddressesPath = path.join(__dirname, "..", "src", "lib", "depositAddresses.ts");
 const internalEvmWalletPath = path.join(__dirname, "..", "src", "lib", "internalEvmWallet.ts");
@@ -154,6 +157,52 @@ test("admin API is private by default except for login and challenge routes", as
   assert.match(src, /"POST \/auth\/wallet"/);
   assert.doesNotMatch(src, /"GET \/security-vault"/);
   assert.doesNotMatch(src, /"POST \/security-vault\/regenerate-bsv"/);
+});
+
+test("admin integration secrets are not returned to the browser", async () => {
+  const [routesSrc, pageSrc] = await Promise.all([
+    read(adminRoutesPath),
+    read(adminIntegrationsPath),
+  ]);
+  const getRoute = routesSrc.match(/router\.get\("\/integrations"[\s\S]*?\n\}\);/)?.[0];
+  const saveRoute = routesSrc.match(/router\.put\("\/integrations"[\s\S]*?\n\}\);/)?.[0];
+
+  assert.ok(getRoute, "integration settings GET route exists");
+  assert.ok(saveRoute, "integration settings PUT route exists");
+  assert.match(getRoute, /SECRET_INTEGRATION_KEYS/);
+  assert.match(getRoute, /configuredSecrets/);
+  assert.match(getRoute, /result\[key\] = ""/);
+  assert.match(getRoute, /Cache-Control", "no-store"/);
+  assert.match(saveRoute, /value\.trim\(\)\.length === 0/);
+  assert.match(saveRoute, /clearKeys/);
+  assert.match(pageSrc, /Never retain a secret returned by an older API version/);
+  assert.match(pageSrc, /Remove saved value on Save All/);
+});
+
+test("admin key panels never return or render private wallet keys", async () => {
+  const [routesSrc, pageSrc] = await Promise.all([
+    read(adminRoutesPath),
+    read(adminSecuritySettingsPath),
+  ]);
+  const vaultRoute = routesSrc.match(/router\.get\("\/security-vault"[\s\S]*?\n\}\);/)?.[0];
+  const totpSetupRoute = routesSrc.match(/router\.get\("\/auth\/totp-uri"[\s\S]*?\n\}\);/)?.[0];
+
+  assert.ok(vaultRoute, "security vault route exists");
+  assert.ok(totpSetupRoute, "TOTP enrollment route exists");
+  assert.match(vaultRoute, /Cache-Control", "no-store"/);
+  assert.doesNotMatch(vaultRoute, /\bwif\s*:|\bprivKeyHex\s*:|\btotpSecret\s*:/);
+  assert.doesNotMatch(pageSrc, /vault\.bsvWallet\.(?:wif|privKeyHex)|vault\.totpSecret/);
+  assert.match(totpSetupRoute, /isAdminTotpEnabled\(\)/);
+  assert.match(totpSetupRoute, /status\(409\)/);
+});
+
+test("admin setup guide masks stored credentials while showing configured status", async () => {
+  const src = await read(adminSetupGuidePath);
+
+  assert.match(src, /HIDDEN_INTEGRATION_KEYS/);
+  assert.match(src, /Configured; the saved value is hidden/);
+  assert.match(src, /_configuredSecrets/);
+  assert.match(src, /if \(source === "int" && HIDDEN_INTEGRATION_KEYS\.has\(k\)\) return ""/);
 });
 
 test("admin password comparison is safe for unequal input lengths", async () => {

@@ -13,7 +13,6 @@ import { invalidateLetsExchangeCredentialCache } from "../lib/lePriceCache.js";
 import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte, gt } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
-import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
 import { createPublicClient, createWalletClient, http as viemHttp, parseEther, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
@@ -420,6 +419,11 @@ router.get("/auth/session", requireAdminToken, (_req, res) => {
  * Returns the otpauth URI for QR-code generation (uses server-side secret).
  */
 router.get("/auth/totp-uri", requireAdminToken, async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  if (await isAdminTotpEnabled()) {
+    res.status(409).json({ error: "Authenticator setup data is unavailable after two-factor authentication is enabled." });
+    return;
+  }
   const secret  = process.env.ADMIN_TOTP_SECRET;
   if (!secret) {
     res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
@@ -429,7 +433,6 @@ router.get("/auth/totp-uri", requireAdminToken, async (_req, res) => {
   const issuer  = "OrahDEX";
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
   const uri     = `otpauth://totp/${encodeURIComponent(issuer + ":" + email)}?${params}`;
-  res.setHeader("Cache-Control", "no-store");
   // Generate QR code server-side as a data URI — never send the TOTP secret
   // to a third-party service (e.g. api.qrserver.com).
   let qrUrl = "";
@@ -575,10 +578,10 @@ router.put("/wallet-whitelist", requireAdminToken, async (req, res) => {
 
 router.get("/security-vault", async (_req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store");
     const wallet = await getOrCreateWallet();
-    // Only public metadata is returned. Raw private keys (wif, privKeyHex)
-    // and the TOTP secret are never exposed via the API — obtain them directly
-    // from the database or environment if emergency recovery is needed.
+    // Only public metadata is returned. Private keys and TOTP seeds never leave
+    // their server-side storage through this endpoint.
     res.json({
       bsvWallet: {
         address:   wallet.address,
@@ -1478,10 +1481,6 @@ router.put("/fee-wallet", async (req, res) => {
 
 /* ─── PLATFORM INTEGRATION SETTINGS ─── */
 
-// Keys that are safe to expose publicly (not secrets) — the Reown Project ID is
-// a public identifier by design; it appears in client-side JS anyway.
-const PUBLIC_KEYS = ["reown_project_id"];
-
 // All integration keys managed through the admin panel
 const INTEGRATION_KEYS = [
   "reown_project_id",
@@ -1514,15 +1513,41 @@ const INTEGRATION_KEYS = [
   "sumsub_api_key",
 ];
 
+// These values can be returned to the admin UI. Every other integration value
+// is treated as a secret and is only ever returned as a configured/not-set bit.
+const PUBLIC_KEYS = new Set([
+  "reown_project_id",
+  "bsv_rpc_url",
+  "smtp_host",
+  "smtp_port",
+  "smtp_from",
+  "recaptcha_site_key",
+  "google_analytics_id",
+  "intercom_app_id",
+  "telegram_chat_id",
+]);
+const SECRET_INTEGRATION_KEYS = new Set(INTEGRATION_KEYS.filter(key => !PUBLIC_KEYS.has(key)));
+
 router.get("/integrations", async (_req, res) => {
   try {
-    const rows = await db.select().from(platformSettingsTable);
+    const { rows } = await pool.query<{ key: string; value: string }>(
+      "SELECT key, value FROM platform_settings WHERE key = ANY($1)",
+      [INTEGRATION_KEYS],
+    );
+    const byKey = new Map(rows.map(row => [row.key, row.value]));
     const result: Record<string, string> = {};
+    const configuredSecrets: Record<string, boolean> = {};
     for (const key of INTEGRATION_KEYS) {
-      const row = rows.find(r => r.key === key);
-      result[key] = row?.value ?? "";
+      const value = byKey.get(key) ?? "";
+      if (SECRET_INTEGRATION_KEYS.has(key)) {
+        result[key] = "";
+        configuredSecrets[key] = value.trim().length > 0;
+      } else {
+        result[key] = value;
+      }
     }
-    res.json(result);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ ...result, _configuredSecrets: configuredSecrets });
   } catch (err) {
     res.status(500).json({ error: "Failed to load integrations" });
   }
@@ -1530,16 +1555,30 @@ router.get("/integrations", async (_req, res) => {
 
 router.put("/integrations", async (req, res) => {
   try {
-    const updates = req.body as Record<string, string>;
-    for (const [key, value] of Object.entries(updates)) {
-      if (!INTEGRATION_KEYS.includes(key)) continue;
-      await db.insert(platformSettingsTable)
-        .values({ key, value: value ?? "" })
-        .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: value ?? "", updatedAt: new Date() } });
+    const updates = req.body && typeof req.body === "object"
+      ? req.body as Record<string, unknown>
+      : {};
+    const clearKeys = Array.isArray(updates.clearKeys)
+      ? updates.clearKeys.filter((key): key is string =>
+          typeof key === "string" && SECRET_INTEGRATION_KEYS.has(key))
+      : [];
+
+    for (const key of clearKeys) {
+      await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, key));
     }
-    if ("changenow_api_key" in updates) invalidateCnKeyCache();
-    if ("swapzone_api_key"  in updates) invalidateSzKeyCache();
-    if ("letsexchange_api_key" in updates) invalidateLetsExchangeCredentialCache();
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (key === "clearKeys" || !INTEGRATION_KEYS.includes(key)) continue;
+      if (SECRET_INTEGRATION_KEYS.has(key) &&
+          (typeof value !== "string" || value.trim().length === 0)) continue;
+      if (typeof value !== "string") continue;
+      await db.insert(platformSettingsTable)
+        .values({ key, value })
+        .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+    }
+    if ("changenow_api_key" in updates || clearKeys.includes("changenow_api_key")) invalidateCnKeyCache();
+    if ("swapzone_api_key" in updates || clearKeys.includes("swapzone_api_key")) invalidateSzKeyCache();
+    if ("letsexchange_api_key" in updates || clearKeys.includes("letsexchange_api_key")) invalidateLetsExchangeCredentialCache();
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to save integrations" });

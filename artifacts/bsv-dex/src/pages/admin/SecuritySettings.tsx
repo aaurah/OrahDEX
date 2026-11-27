@@ -177,8 +177,8 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
-/* ─── SecretField ───────────────────────────────────────────────────────── */
-function SecretField({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
+/* ─── Public value display ───────────────────────────────────────────────── */
+function RevealableValue({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   const [visible, setVisible] = useState(false);
   return (
     <div className="py-4 border-b border-border last:border-0">
@@ -210,11 +210,8 @@ export function AdminSecuritySettings() {
     bsvWallet: {
       address: string;
       pubKeyHex?: string;
-      wif?: string;
-      privKeyHex?: string;
     };
     adminEmail: string | null;
-    totpSecret?: string | null;
   };
   const [vault, setVault]         = useState<Vault | null>(null);
   const [vaultLoading, setVaultLoading] = useState(false);
@@ -522,18 +519,11 @@ export function AdminSecuritySettings() {
                     </div>
                   </div>
 
-                  {vault.bsvWallet.wif ? (
-                    <SecretField label="Private Key — WIF (Wallet Import Format)" value={vault.bsvWallet.wif} />
-                  ) : (
-                    <p className="text-xs text-muted-foreground py-3">
-                      Raw WIF is not exposed via the admin API. Recover it from the server DB / env if needed.
-                    </p>
-                  )}
-                  {vault.bsvWallet.privKeyHex && (
-                    <SecretField label="Private Key — Raw Hex (32 bytes)" value={vault.bsvWallet.privKeyHex} />
-                  )}
+                  <p className="text-xs text-muted-foreground py-3">
+                    Settlement private keys are never displayed in the admin panel.
+                  </p>
                   {vault.bsvWallet.pubKeyHex && (
-                    <SecretField label="Public Key — Compressed Hex (33 bytes)" value={vault.bsvWallet.pubKeyHex} />
+                    <RevealableValue label="Public Key — Compressed Hex (33 bytes)" value={vault.bsvWallet.pubKeyHex} />
                   )}
                 </div>
 
@@ -557,13 +547,9 @@ export function AdminSecuritySettings() {
                       </div>
                     </div>
                   )}
-                  {vault.totpSecret ? (
-                    <SecretField label="TOTP Secret (2FA)" value={vault.totpSecret} />
-                  ) : (
-                    <p className="text-xs text-muted-foreground py-3">
-                      TOTP secret is loaded from server env and is not exposed via API.
-                    </p>
-                  )}
+                  <p className="text-xs text-muted-foreground py-3">
+                    The authenticator seed is not displayed in this panel. Use the dedicated 2FA enrollment flow to configure it.
+                  </p>
                 </div>
 
                 <div className="flex justify-end pt-2">

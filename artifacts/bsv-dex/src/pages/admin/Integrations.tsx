@@ -42,6 +42,45 @@ interface IntegrationSettings {
   sumsub_api_key: string;
 }
 
+type IntegrationKey = keyof IntegrationSettings;
+
+const SECRET_FIELD_KEYS: IntegrationKey[] = [
+  "dexscreener_api_key",
+  "geckoterm_api_key",
+  "moonpay_api_key",
+  "transak_api_key",
+  "banxa_api_key",
+  "simplex_api_key",
+  "ramp_api_key",
+  "whatsonchain_api_key",
+  "smtp_user",
+  "smtp_pass",
+  "recaptcha_secret_key",
+  "discord_webhook_url",
+  "telegram_bot_token",
+  "letsexchange_api_key",
+  "changenow_api_key",
+  "swapzone_api_key",
+  "sumsub_api_key",
+];
+const SECRET_FIELD_SET = new Set<IntegrationKey>(SECRET_FIELD_KEYS);
+
+interface IntegrationsResponse extends Partial<IntegrationSettings> {
+  _configuredSecrets?: Record<string, boolean>;
+}
+
+interface IntegrationSavePayload extends Partial<IntegrationSettings> {
+  clearKeys?: string[];
+}
+
+interface SecretFieldSecurityProps {
+  secret: true;
+  configured: boolean;
+  pendingRemoval: boolean;
+  onRemove: () => void;
+  onUndoRemove: () => void;
+}
+
 const DEFAULTS: IntegrationSettings = {
   reown_project_id: "",
   dexscreener_api_key: "",
@@ -71,18 +110,29 @@ const DEFAULTS: IntegrationSettings = {
   sumsub_api_key: "",
 };
 
-const fetchIntegrations = (): Promise<IntegrationSettings> =>
+const fetchIntegrations = (): Promise<IntegrationsResponse> =>
   adminFetch(`/api/admin/integrations`).then(r => r.json());
 
-const saveIntegrations = (data: IntegrationSettings) =>
+const saveIntegrations = (data: IntegrationSavePayload) =>
   adminFetch(`/api/admin/integrations`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   }).then(r => r.json());
 
-function StatusDot({ value }: { value: string }) {
-  const isSet = value.trim().length > 0;
+function StatusDot({ value, configured, pendingRemoval }: {
+  value: string;
+  configured?: boolean;
+  pendingRemoval?: boolean;
+}) {
+  const isSet = configured === true || value.trim().length > 0;
+  if (pendingRemoval) {
+    return (
+      <span className="flex items-center gap-1 text-[10px] text-amber-400 font-semibold">
+        <AlertTriangle className="w-3 h-3" /> Removal pending
+      </span>
+    );
+  }
   return isSet ? (
     <span className="flex items-center gap-1 text-[10px] text-green-400 font-semibold">
       <CheckCircle2 className="w-3 h-3" /> Configured
@@ -96,12 +146,16 @@ function StatusDot({ value }: { value: string }) {
 
 function MaskedField({
   label, value, onChange, placeholder, hint, required, type = "password",
+  secret, configured, pendingRemoval, onRemove, onUndoRemove,
 }: {
   label: string; value: string; onChange: (v: string) => void;
   placeholder?: string; hint?: string; required?: boolean; type?: "password" | "text" | "url" | "email" | "number";
+  secret?: boolean; configured?: boolean; pendingRemoval?: boolean;
+  onRemove?: () => void; onUndoRemove?: () => void;
 }) {
   const [visible, setVisible] = useState(false);
-  const isSecret = type === "password";
+  const isSecret = secret ?? type === "password";
+  const hasSavedSecret = isSecret && configured === true;
 
   return (
     <div className="space-y-1.5">
@@ -110,14 +164,14 @@ function MaskedField({
           {label}
           {required && <span className="text-red-400">*</span>}
         </label>
-        <StatusDot value={value} />
+          <StatusDot value={value} configured={configured} pendingRemoval={pendingRemoval} />
       </div>
       <div className="relative">
         <input
           type={isSecret && !visible ? "password" : type === "password" ? "text" : type}
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
+          placeholder={hasSavedSecret && !value ? "Saved securely — leave blank to keep" : placeholder}
           className="w-full bg-secondary/60 border border-border rounded-xl px-4 py-2.5 pr-10 text-sm font-mono focus:outline-none focus:border-primary transition-colors"
           autoComplete="off"
           spellCheck={false}
@@ -132,6 +186,24 @@ function MaskedField({
           </button>
         )}
       </div>
+      {hasSavedSecret && !value && !pendingRemoval && onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-[10px] text-red-400 hover:text-red-300 font-semibold"
+        >
+          Remove saved value on Save All
+        </button>
+      )}
+      {pendingRemoval && onUndoRemove && (
+        <button
+          type="button"
+          onClick={onUndoRemove}
+          className="text-[10px] text-amber-400 hover:text-amber-300 font-semibold"
+        >
+          Undo removal
+        </button>
+      )}
       {hint && <p className="text-[10px] text-muted-foreground/70 leading-relaxed">{hint}</p>}
     </div>
   );
@@ -219,11 +291,12 @@ function decodeLeJwtClient(jwt: string): { partnerId: string | null; email: stri
 }
 
 function LetsExchangeSection({
-  form, setKey, configuredCount,
+  form, setKey, configuredCount, secretField,
 }: {
   form: IntegrationSettings;
   setKey: (v: string) => void;
   configuredCount: number;
+  secretField: SecretFieldSecurityProps;
 }) {
   const { toast } = useToast();
   const { data: active, refetch } = useQuery<LeAffiliate>({
@@ -352,6 +425,7 @@ function LetsExchangeSection({
       </div>
 
       <MaskedField
+        {...secretField}
         label="Exchange API Key (JWT)"
         value={form.letsexchange_api_key}
         onChange={setKey}
@@ -363,7 +437,7 @@ function LetsExchangeSection({
         <button
           type="button"
           onClick={onTest}
-          disabled={testing || !form.letsexchange_api_key}
+          disabled={testing || secretField.pendingRemoval || (!form.letsexchange_api_key && !secretField.configured)}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold border border-primary/20 disabled:opacity-50"
         >
           {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
@@ -407,28 +481,71 @@ export function AdminIntegrations() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState<IntegrationSettings>(DEFAULTS);
+  const [configuredSecrets, setConfiguredSecrets] = useState<Record<string, boolean>>({});
+  const [clearKeys, setClearKeys] = useState<IntegrationKey[]>([]);
   const [saved, setSaved] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; error?: string } | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<IntegrationsResponse>({
     queryKey: ["admin-integrations"],
     queryFn: fetchIntegrations,
   });
 
   useEffect(() => {
-    if (data) setForm({ ...DEFAULTS, ...data });
+    if (!data) return;
+    const nextForm = { ...DEFAULTS };
+    const nextConfigured: Record<string, boolean> = {};
+    for (const key of Object.keys(DEFAULTS) as IntegrationKey[]) {
+      const remoteValue = data[key];
+      if (SECRET_FIELD_SET.has(key)) {
+        nextConfigured[key] = data._configuredSecrets?.[key] ??
+          (typeof remoteValue === "string" && remoteValue.trim().length > 0);
+        // Never retain a secret returned by an older API version in React state.
+        nextForm[key] = "";
+      } else if (typeof remoteValue === "string") {
+        nextForm[key] = remoteValue;
+      }
+    }
+    setForm(nextForm);
+    setConfiguredSecrets(nextConfigured);
   }, [data]);
 
   const set = (key: keyof IntegrationSettings) => (value: string) => {
     setSmtpTestResult(null); // Reset test result when credentials change
+    setClearKeys(keys => keys.filter(clearKey => clearKey !== key));
     setForm(f => ({ ...f, [key]: value }));
   };
 
+  const setSecretRemoval = (key: IntegrationKey, remove: boolean) => {
+    setClearKeys(keys => remove
+      ? (keys.includes(key) ? keys : [...keys, key])
+      : keys.filter(clearKey => clearKey !== key));
+    if (remove) setForm(f => ({ ...f, [key]: "" }));
+  };
+
+  const secretFieldProps = (key: IntegrationKey): SecretFieldSecurityProps => ({
+    secret: true,
+    configured: configuredSecrets[key] === true,
+    pendingRemoval: clearKeys.includes(key),
+    onRemove: () => setSecretRemoval(key, true),
+    onUndoRemove: () => setSecretRemoval(key, false),
+  });
+
+  const clearSecretDrafts = () => {
+    setForm(current => {
+      const next = { ...current };
+      for (const key of SECRET_FIELD_KEYS) next[key] = "";
+      return next;
+    });
+  };
+
   const mutation = useMutation({
-    mutationFn: saveIntegrations,
+    mutationFn: () => saveIntegrations({ ...form, clearKeys }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-integrations"] });
       qc.invalidateQueries({ queryKey: ["smtp-status"] });
+      setClearKeys([]);
+      clearSecretDrafts();
       setSaved(true);
       setSmtpTestResult(null);
       setTimeout(() => setSaved(false), 3000);
@@ -445,6 +562,7 @@ export function AdminIntegrations() {
       return adminFetch(`/api/admin/mail/test-smtp`, { method: "POST" }).then(r => r.json());
     },
     onSuccess: (data: { success: boolean; error?: string }) => {
+      clearSecretDrafts();
       setSmtpTestResult(data);
       qc.invalidateQueries({ queryKey: ["smtp-status"] });
       if (data.success) {
@@ -481,8 +599,14 @@ export function AdminIntegrations() {
     onError: () => toast({ title: "Failed to create test account", variant: "destructive" }),
   });
 
-  const countSet = (...keys: (keyof IntegrationSettings)[]) =>
-    keys.filter(k => form[k].trim().length > 0).length;
+  const countSet = (...keys: IntegrationKey[]) =>
+    keys.filter(key => !clearKeys.includes(key) &&
+      (form[key].trim().length > 0 || configuredSecrets[key] === true)).length;
+  const smtpReady = !!form.smtp_host &&
+    (Boolean(form.smtp_user.trim()) || configuredSecrets.smtp_user === true) &&
+    (Boolean(form.smtp_pass.trim()) || configuredSecrets.smtp_pass === true) &&
+    !clearKeys.includes("smtp_user") &&
+    !clearKeys.includes("smtp_pass");
 
   if (isLoading) {
     return (
@@ -500,7 +624,7 @@ export function AdminIntegrations() {
 
   const SaveBtn = ({ className }: { className?: string }) => (
     <button
-      onClick={() => mutation.mutate(form)}
+      onClick={() => mutation.mutate()}
       disabled={mutation.isPending}
       className={cn(
         "flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all shadow-lg",
@@ -529,7 +653,7 @@ export function AdminIntegrations() {
         <div>
           <h2 className="text-2xl font-bold">Integrations & API Keys</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            All third-party API keys and integration settings. Stored securely in the database — changes apply instantly without redeployment.
+            Secret values stay hidden. Leave a saved secret blank to keep it, or enter a replacement; changes apply without redeployment.
           </p>
         </div>
         <SaveBtn />
@@ -557,6 +681,7 @@ export function AdminIntegrations() {
           value={form.reown_project_id}
           onChange={set("reown_project_id")}
           placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          type="text"
           required
           hint="Get your free Project ID at cloud.reown.com → New Project → WalletKit. This is a public identifier — safe to expose in client code."
         />
@@ -583,6 +708,7 @@ export function AdminIntegrations() {
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <MaskedField
+            {...secretFieldProps("dexscreener_api_key")}
             label="DexScreener API Key"
             value={form.dexscreener_api_key}
             onChange={set("dexscreener_api_key")}
@@ -590,6 +716,7 @@ export function AdminIntegrations() {
             hint="DexScreener API for DEX pair discovery and Base chain tokens. Free tier available at dexscreener.com/api"
           />
           <MaskedField
+            {...secretFieldProps("geckoterm_api_key")}
             label="GeckoTerminal API Key"
             value={form.geckoterm_api_key}
             onChange={set("geckoterm_api_key")}
@@ -630,6 +757,7 @@ export function AdminIntegrations() {
             </p>
           </div>
           <MaskedField
+            {...secretFieldProps("whatsonchain_api_key")}
             label="WhatsOnChain API Key"
             value={form.whatsonchain_api_key}
             onChange={set("whatsonchain_api_key")}
@@ -651,6 +779,7 @@ export function AdminIntegrations() {
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <MaskedField
+            {...secretFieldProps("moonpay_api_key")}
             label="MoonPay API Key"
             value={form.moonpay_api_key}
             onChange={set("moonpay_api_key")}
@@ -658,6 +787,7 @@ export function AdminIntegrations() {
             hint="MoonPay publishable key (pk_live_...). Supports card, Apple Pay, bank. dashboard.moonpay.com"
           />
           <MaskedField
+            {...secretFieldProps("transak_api_key")}
             label="Transak API Key"
             value={form.transak_api_key}
             onChange={set("transak_api_key")}
@@ -665,6 +795,7 @@ export function AdminIntegrations() {
             hint="Transak partner API key. Low fees (0.99–2.5%). 100+ countries. dashboard.transak.com"
           />
           <MaskedField
+            {...secretFieldProps("banxa_api_key")}
             label="Banxa API Key"
             value={form.banxa_api_key}
             onChange={set("banxa_api_key")}
@@ -672,6 +803,7 @@ export function AdminIntegrations() {
             hint="Banxa partner key. Best for high-volume purchases (min $50). banxa.com/for-businesses"
           />
           <MaskedField
+            {...secretFieldProps("simplex_api_key")}
             label="Simplex API Key"
             value={form.simplex_api_key}
             onChange={set("simplex_api_key")}
@@ -679,6 +811,7 @@ export function AdminIntegrations() {
             hint="Simplex partner key. Credit/debit card processing worldwide. partners.simplex.com"
           />
           <MaskedField
+            {...secretFieldProps("ramp_api_key")}
             label="Ramp Network API Key"
             value={form.ramp_api_key}
             onChange={set("ramp_api_key")}
@@ -793,6 +926,7 @@ export function AdminIntegrations() {
             hint="587 (STARTTLS) or 465 (SSL)."
           />
           <MaskedField
+            {...secretFieldProps("smtp_user")}
             label="SMTP Username"
             value={form.smtp_user}
             onChange={set("smtp_user")}
@@ -801,6 +935,7 @@ export function AdminIntegrations() {
             hint="For SendGrid use 'apikey' as username."
           />
           <MaskedField
+            {...secretFieldProps("smtp_pass")}
             label="SMTP Password / API Key"
             value={form.smtp_pass}
             onChange={set("smtp_pass")}
@@ -821,10 +956,10 @@ export function AdminIntegrations() {
         <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <button
             onClick={() => testSmtpMutation.mutate()}
-            disabled={testSmtpMutation.isPending || !form.smtp_host || !form.smtp_user || !form.smtp_pass}
+            disabled={testSmtpMutation.isPending || !smtpReady}
             className={cn(
               "flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm border transition-all",
-              !form.smtp_host || !form.smtp_user || !form.smtp_pass
+              !smtpReady
                 ? "opacity-40 cursor-not-allowed border-border text-muted-foreground"
                 : "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
             )}
@@ -876,6 +1011,7 @@ export function AdminIntegrations() {
         form={form}
         setKey={set("letsexchange_api_key")}
         configuredCount={countSet("letsexchange_api_key")}
+        secretField={secretFieldProps("letsexchange_api_key")}
       />
 
       {/* ── Cross-chain Swaps — ChangeNOW ── */}
@@ -889,6 +1025,7 @@ export function AdminIntegrations() {
         totalCount={1}
       >
         <MaskedField
+          {...secretFieldProps("changenow_api_key")}
           label="ChangeNOW API Key"
           value={form.changenow_api_key}
           onChange={set("changenow_api_key")}
@@ -912,6 +1049,7 @@ export function AdminIntegrations() {
         totalCount={1}
       >
         <MaskedField
+          {...secretFieldProps("swapzone_api_key")}
           label="Swapzone API Key"
           value={form.swapzone_api_key}
           onChange={set("swapzone_api_key")}
@@ -936,6 +1074,7 @@ export function AdminIntegrations() {
         totalCount={1}
       >
         <MaskedField
+          {...secretFieldProps("sumsub_api_key")}
           label="Sumsub App Token"
           value={form.sumsub_api_key}
           onChange={set("sumsub_api_key")}
@@ -971,6 +1110,7 @@ export function AdminIntegrations() {
             hint="Public site key used in the browser. Get at google.com/recaptcha/admin"
           />
           <MaskedField
+            {...secretFieldProps("recaptcha_secret_key")}
             label="reCAPTCHA Secret Key (v3)"
             value={form.recaptcha_secret_key}
             onChange={set("recaptcha_secret_key")}
@@ -1025,6 +1165,7 @@ export function AdminIntegrations() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
             <MaskedField
+              {...secretFieldProps("discord_webhook_url")}
               label="Discord Webhook URL"
               value={form.discord_webhook_url}
               onChange={set("discord_webhook_url")}
@@ -1034,6 +1175,7 @@ export function AdminIntegrations() {
             />
           </div>
           <MaskedField
+            {...secretFieldProps("telegram_bot_token")}
             label="Telegram Bot Token"
             value={form.telegram_bot_token}
             onChange={set("telegram_bot_token")}
