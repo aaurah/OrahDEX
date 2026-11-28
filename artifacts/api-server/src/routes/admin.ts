@@ -10,7 +10,7 @@ import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
 import { invalidateSzKeyCache } from "../lib/swapzone.js";
 import { invalidateLetsExchangeCredentialCache } from "../lib/lePriceCache.js";
-import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte, gt } from "drizzle-orm";
+import { eq, asc, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte, gt, inArray } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import {
   migrateStoredBsvWalletEncryption,
@@ -659,53 +659,121 @@ function getUserMeta(addr: string) {
   };
 }
 
-async function buildRealUserList(): Promise<any[]> {
-  /* 1. All registered wallets (from /api/users/ping on connect) */
+type AdminUserOrderStats = {
+  orderCount: number;
+  filledCount: number;
+  totalVolume: string;
+  lastOrder: string | null;
+};
+
+function toAdminUser(
+  wallet: typeof walletsTable.$inferSelect,
+  stats?: AdminUserOrderStats,
+) {
+  const addressKey = wallet.address.toLowerCase();
+  const meta = userMeta.get(addressKey);
+  return {
+    id: `usr_${wallet.address.replace("0x", "").slice(0, 8)}`,
+    walletAddress: wallet.address,
+    network: wallet.networkType ?? (wallet.address.startsWith("0x") ? "evm" : "bsv"),
+    provider: meta?.provider ?? wallet.provider ?? (wallet.address.startsWith("0x") ? "walletconnect" : "handcash"),
+    chainId: wallet.chainId ?? null,
+    volume24h: Number.parseFloat(stats?.totalVolume ?? "0"),
+    totalTrades: stats?.filledCount ?? 0,
+    orderCount: stats?.orderCount ?? 0,
+    balance: meta?.balanceOverride ?? 0,
+    status: meta?.status ?? wallet.status ?? "active",
+    verified: meta?.verified ?? wallet.verified === "true",
+    joinedAt: wallet.firstSeen,
+    lastActive: stats?.lastOrder ?? wallet.lastSeen,
+    country: meta?.country ?? wallet.country ?? "US",
+  };
+}
+
+function boundedQueryInt(value: unknown, fallback: number, max: number): number {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return fallback;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? Math.min(parsed, max) : fallback;
+}
+
+async function buildRealUserPage(query: Record<string, unknown>) {
+  const page = boundedQueryInt(query.page, 1, 100_000);
+  const limit = boundedQueryInt(query.limit, 20, 100);
+  const search = typeof query.search === "string" ? query.search.trim().slice(0, 120) : "";
+  const requestedStatus = typeof query.status === "string" ? query.status : "all";
+  const filters = [];
+
+  if (requestedStatus === "active" || requestedStatus === "suspended" || requestedStatus === "banned") {
+    filters.push(eq(walletsTable.status, requestedStatus));
+  }
+  if (search) {
+    const pattern = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
+    filters.push(or(
+      ilike(walletsTable.address, pattern),
+      ilike(walletsTable.provider, pattern),
+      ilike(walletsTable.country, pattern),
+    ));
+  }
+  const where = filters.length ? and(...filters) : undefined;
+  const offset = (page - 1) * limit;
+
+  const [countRow] = await db.select({
+    total: sql<number>`count(*)::int`,
+  }).from(walletsTable).where(where);
   const wallets = await db.select().from(walletsTable)
-    .orderBy(desc(walletsTable.lastSeen));
+    .where(where)
+    .orderBy(desc(walletsTable.lastSeen))
+    .limit(limit)
+    .offset(offset);
 
-  /* 2. Order stats per wallet (skip bot) */
-  const orderStats = await db
-    .select({
-      walletAddress: ordersTable.walletAddress,
-      orderCount:  sql<number>`count(*)::int`,
-      filledCount: sql<number>`count(*) filter (where ${ordersTable.status} = 'filled')::int`,
-      totalVolume: sql<string>`coalesce(sum(case when ${ordersTable.status}='filled' then cast(${ordersTable.total} as numeric) else 0 end),0)`,
-      lastOrder:   sql<string>`max(${ordersTable.updatedAt})`,
-    })
-    .from(ordersTable)
-    .where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"))
-    .groupBy(ordersTable.walletAddress);
+  const addresses = wallets.map(wallet => wallet.address);
+  const orderStats = addresses.length
+    ? await db.select({
+        walletAddress: ordersTable.walletAddress,
+        orderCount: sql<number>`count(*)::int`,
+        filledCount: sql<number>`count(*) filter (where ${ordersTable.status} = 'filled')::int`,
+        totalVolume: sql<string>`coalesce(sum(case when ${ordersTable.status} = 'filled' then cast(${ordersTable.total} as numeric) else 0 end), 0)`,
+        lastOrder: sql<string | null>`max(${ordersTable.updatedAt})`,
+      })
+        .from(ordersTable)
+        .where(and(inArray(ordersTable.walletAddress, addresses), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")))
+        .groupBy(ordersTable.walletAddress)
+    : [];
+  const statsByAddress = new Map(orderStats.map(stats => [stats.walletAddress.toLowerCase(), stats]));
+  const total = countRow?.total ?? 0;
 
-  const statsMap = new Map(orderStats.map(s => [s.walletAddress.toLowerCase(), s]));
+  return {
+    users: wallets.map(wallet => toAdminUser(wallet, statsByAddress.get(wallet.address.toLowerCase()))),
+    total,
+    page,
+    pages: Math.ceil(total / limit),
+  };
+}
 
-  return wallets.map(w => {
-    const meta = getUserMeta(w.address);
-    /* Merge in-memory overrides with DB row (DB row wins unless override set) */
-    const status   = userMeta.get(w.address.toLowerCase())?.status    ?? w.status    ?? "active";
-    const country  = userMeta.get(w.address.toLowerCase())?.country   ?? w.country   ?? "US";
-    const provider = userMeta.get(w.address.toLowerCase())?.provider  ?? w.provider  ?? (w.address.startsWith("0x") ? "walletconnect" : "handcash");
-    const verified = userMeta.get(w.address.toLowerCase())?.verified  ?? (w.verified === "true");
-    const balOvr   = userMeta.get(w.address.toLowerCase())?.balanceOverride;
+async function findAdminUserById(id: string) {
+  const prefix = id.startsWith("usr_") ? id.slice(4) : "";
+  if (!/^[a-zA-Z0-9]{8}$/.test(prefix)) return null;
+  const [wallet] = await db.select().from(walletsTable)
+    .where(or(
+      like(walletsTable.address, `${prefix}%`),
+      like(walletsTable.address, `0x${prefix}%`),
+    ))
+    .orderBy(desc(walletsTable.lastSeen))
+    .limit(1);
+  return wallet ?? null;
+}
 
-    const stats = statsMap.get(w.address.toLowerCase()) as any;
-    return {
-      id:           `usr_${w.address.replace("0x", "").slice(0, 8)}`,
-      walletAddress: w.address,
-      network:      w.networkType ?? (w.address.startsWith("0x") ? "evm" : "bsv"),
-      provider,
-      chainId:      w.chainId ?? null,
-      volume24h:    parseFloat(stats?.totalVolume ?? "0"),
-      totalTrades:  stats?.filledCount ?? 0,
-      orderCount:   stats?.orderCount ?? 0,
-      balance:      balOvr ?? 0,
-      status,
-      verified,
-      joinedAt:     w.firstSeen,
-      lastActive:   stats?.lastOrder ?? w.lastSeen,
-      country,
-    };
-  });
+async function buildRealUserById(id: string) {
+  const wallet = await findAdminUserById(id);
+  if (!wallet) return null;
+  const [stats] = await db.select({
+    orderCount: sql<number>`count(*)::int`,
+    filledCount: sql<number>`count(*) filter (where ${ordersTable.status} = 'filled')::int`,
+    totalVolume: sql<string>`coalesce(sum(case when ${ordersTable.status} = 'filled' then cast(${ordersTable.total} as numeric) else 0 end), 0)`,
+    lastOrder: sql<string | null>`max(${ordersTable.updatedAt})`,
+  }).from(ordersTable)
+    .where(and(eq(ordersTable.walletAddress, wallet.address), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
+  return { wallet, user: toAdminUser(wallet, stats) };
 }
 
 // No pre-seeded admins — only the owner (aaurah@protonmail.com) is shown as
@@ -755,8 +823,14 @@ async function saveContracts(contracts: any[]): Promise<void> {
 
 /* ─── STATS ─── */
 router.get("/stats", async (_req, res) => {
-  const allMarkets = await db.select().from(marketsTable);
-  const realUsers = await buildRealUserList();
+  const [marketStats] = await db.select({
+    total: sql<number>`count(*)::int`,
+    active: sql<number>`count(*) filter (where ${marketsTable.status} = 'active')::int`,
+  }).from(marketsTable);
+  const [userStats] = await db.select({
+    total: sql<number>`count(*)::int`,
+    active: sql<number>`count(*) filter (where ${walletsTable.status} = 'active')::int`,
+  }).from(walletsTable);
 
   // Count unique non-bot wallet addresses from orders (catches API trades too)
   const [uniqueOrderWallets] = await db.select({
@@ -782,9 +856,9 @@ router.get("/stats", async (_req, res) => {
     .from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
 
   // Merge user counts: registered wallets + unique order wallets
-  const totalUserCount = Math.max(realUsers.length, uniqueOrderWallets?.cnt ?? 0);
+  const totalUserCount = Math.max(userStats?.total ?? 0, uniqueOrderWallets?.cnt ?? 0);
   const activeUserCount = Math.max(
-    realUsers.filter(u => u.status === "active").length,
+    userStats?.active ?? 0,
     Math.min(uniqueOrderWallets?.cnt ?? 0, totalUserCount),
   );
 
@@ -806,8 +880,8 @@ router.get("/stats", async (_req, res) => {
     activeUsers24h: activeUserCount,
     totalVolume24h,
     totalTrades24h,
-    activePairs: allMarkets.filter(m => m.status === "active").length,
-    totalPairs: allMarkets.length,
+    activePairs: marketStats?.active ?? 0,
+    totalPairs: marketStats?.total ?? 0,
     openOrders: openOrdersRow?.cnt ?? 0,
     deployedContracts: (await loadContracts()).length,
     revenue24h: Math.max(revenue24h, 12450.88), // floor at seed revenue
@@ -1095,21 +1169,7 @@ router.get("/transactions", async (_req, res) => {
 /* ─── USERS (real DB) ─── */
 router.get("/users", async (_req, res) => {
   try {
-    const { search, status, page = "1", limit = "20" } = _req.query as Record<string, string>;
-    let users = await buildRealUserList();
-    if (search) {
-      const q = search.toLowerCase();
-      users = users.filter(u =>
-        u.walletAddress.toLowerCase().includes(q) ||
-        u.provider.toLowerCase().includes(q) ||
-        u.country.toLowerCase().includes(q)
-      );
-    }
-    if (status && status !== "all") users = users.filter(u => u.status === status);
-    const total = users.length;
-    const p = parseInt(page), l = parseInt(limit);
-    const paged = users.slice((p - 1) * l, p * l);
-    res.json({ users: paged, total, page: p, pages: Math.ceil(total / l) });
+    res.json(await buildRealUserPage(_req.query as Record<string, unknown>));
   } catch (err: any) {
     res.status(500).json({ error: "Failed to load users" });
   }
@@ -1117,22 +1177,21 @@ router.get("/users", async (_req, res) => {
 
 router.patch("/users/:id/status", async (req, res) => {
   const { status } = req.body;
-  const users = await buildRealUserList();
-  const user = users.find(u => u.id === req.params.id);
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  const found = await buildRealUserById(req.params.id);
+  if (!found) { res.status(404).json({ error: "User not found" }); return; }
   /* Persist to DB */
   await db.update(walletsTable)
     .set({ status })
-    .where(eq(walletsTable.address, user.walletAddress));
-  userMeta.set(user.walletAddress.toLowerCase(), { ...getUserMeta(user.walletAddress), status });
-  res.json({ success: true, user: { ...user, status } });
+    .where(eq(walletsTable.address, found.wallet.address));
+  userMeta.set(found.wallet.address.toLowerCase(), { ...getUserMeta(found.wallet.address), status });
+  res.json({ success: true, user: { ...found.user, status } });
 });
 
 router.patch("/users/:id", async (req, res) => {
-  const users = await buildRealUserList();
-  const user = users.find(u => u.id === req.params.id);
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
-  const { status, country, verified, balance, network, provider } = req.body;
+  const found = await buildRealUserById(req.params.id);
+  if (!found) { res.status(404).json({ error: "User not found" }); return; }
+  const user = found.user;
+  const { status, country, verified, balance, provider } = req.body;
   /* Persist to DB */
   const dbPatch: Record<string, any> = {};
   if (status   !== undefined) dbPatch.status   = status;
@@ -1140,15 +1199,28 @@ router.patch("/users/:id", async (req, res) => {
   if (verified !== undefined) dbPatch.verified = String(verified);
   if (provider !== undefined) dbPatch.provider = provider;
   if (Object.keys(dbPatch).length > 0) {
-    await db.update(walletsTable).set(dbPatch).where(eq(walletsTable.address, user.walletAddress));
+    await db.update(walletsTable).set(dbPatch).where(eq(walletsTable.address, found.wallet.address));
   }
-  /* In-memory balance override (no DB column for this yet) */
-  if (balance !== undefined) {
-    const existing = userMeta.get(user.walletAddress.toLowerCase()) ?? getUserMeta(user.walletAddress);
-    userMeta.set(user.walletAddress.toLowerCase(), { ...existing, balanceOverride: parseFloat(balance) });
+  /* Keep the bounded per-process view aligned with saved admin overrides. */
+  if (status !== undefined || country !== undefined || verified !== undefined || balance !== undefined || provider !== undefined) {
+    const existing = getUserMeta(found.wallet.address);
+    userMeta.set(found.wallet.address.toLowerCase(), {
+      ...existing,
+      ...(status !== undefined ? { status } : {}),
+      ...(country !== undefined ? { country } : {}),
+      ...(verified !== undefined ? { verified: Boolean(verified) } : {}),
+      ...(provider !== undefined ? { provider } : {}),
+      ...(balance !== undefined ? { balanceOverride: parseFloat(balance) } : {}),
+    });
   }
-  const updatedUsers = await buildRealUserList();
-  const updatedUser  = updatedUsers.find(u => u.id === req.params.id) ?? user;
+  const updatedUser = {
+    ...user,
+    ...(status !== undefined ? { status } : {}),
+    ...(country !== undefined ? { country } : {}),
+    ...(verified !== undefined ? { verified: Boolean(verified) } : {}),
+    ...(provider !== undefined ? { provider } : {}),
+    ...(balance !== undefined ? { balance: parseFloat(balance) } : {}),
+  };
   res.json({ success: true, user: updatedUser });
 });
 
@@ -2579,20 +2651,28 @@ router.delete("/logs", (_req, res) => {
 /* ─── MARKETS (enhanced management) ─────────────────────────────────────── */
 router.get("/markets", async (req, res) => {
   try {
-    const page   = parseInt((req.query.page as string) ?? "1");
-    const limit  = Math.min(parseInt((req.query.limit as string) ?? "50"), 200);
-    const search = (req.query.search as string ?? "").toUpperCase();
-    const status = req.query.status as string | undefined;
+    const page = boundedQueryInt(req.query.page, 1, 100_000);
+    const limit = boundedQueryInt(req.query.limit, 50, 200);
+    const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 120) : "";
+    const status = typeof req.query.status === "string" ? req.query.status.trim().slice(0, 32) : "";
     const offset = (page - 1) * limit;
-
-    let markets = await db.select().from(marketsTable);
-    if (search) markets = markets.filter(m => m.symbol?.includes(search) || m.baseAsset?.includes(search));
-    if (status) markets = markets.filter(m => m.status === status);
-
-    const total = markets.length;
-    const paged = markets.slice(offset, offset + limit);
-
-    res.json({ markets: paged, total, page, limit, pages: Math.ceil(total / limit) });
+    const filters = [];
+    if (search) {
+      const pattern = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
+      filters.push(or(ilike(marketsTable.symbol, pattern), ilike(marketsTable.baseAsset, pattern)));
+    }
+    if (status) filters.push(eq(marketsTable.status, status));
+    const where = filters.length ? and(...filters) : undefined;
+    const [countRow] = await db.select({
+      total: sql<number>`count(*)::int`,
+    }).from(marketsTable).where(where);
+    const markets = await db.select().from(marketsTable)
+      .where(where)
+      .orderBy(asc(marketsTable.symbol))
+      .limit(limit)
+      .offset(offset);
+    const total = countRow?.total ?? 0;
+    res.json({ markets, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (err: any) {
     res.status(500).json({ error: "Internal server error" });
   }

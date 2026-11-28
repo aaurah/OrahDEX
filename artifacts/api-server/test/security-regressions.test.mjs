@@ -588,3 +588,29 @@ test("API heap usage is observable and its default heap budget is bounded", asyn
   assert.match(startSrc, /max-old-space-size=\$\{API_HEAP_MB\}/);
   assert.doesNotMatch(startSrc, /max-old-space-size=4096/);
 });
+
+test("admin user and dashboard endpoints keep database result sets bounded", async () => {
+  const src = await read(adminRoutesPath);
+  const userRoute = src.match(/router\.get\("\/users"[\s\S]*?\n\}\);/)?.[0];
+  const statsRoute = src.match(/router\.get\("\/stats"[\s\S]*?\n\}\);/)?.[0];
+  const marketsRoute = src.match(/router\.get\("\/markets"[\s\S]*?\n\}\);/)?.[0];
+  const userPageBuilder = src.match(/async function buildRealUserPage[\s\S]*?\n\}/)?.[0];
+  const boundedIntParser = src.match(/function boundedQueryInt[\s\S]*?\n\}/)?.[0];
+
+  assert.ok(userRoute, "admin users endpoint exists");
+  assert.ok(statsRoute, "admin stats endpoint exists");
+  assert.ok(marketsRoute, "admin markets endpoint exists");
+  assert.ok(userPageBuilder, "bounded admin user query exists");
+  assert.ok(boundedIntParser, "admin pagination inputs are bounded");
+  assert.match(userRoute, /buildRealUserPage/);
+  assert.doesNotMatch(userRoute, /buildRealUserList/);
+  assert.match(userPageBuilder, /\.limit\(limit\)/);
+  assert.match(userPageBuilder, /\.offset\(offset\)/);
+  assert.match(userPageBuilder, /inArray\(ordersTable\.walletAddress, addresses\)/);
+  assert.match(boundedIntParser, /Math\.min\(parsed, max\)/);
+  assert.match(statsRoute, /count\(\*\)/);
+  assert.doesNotMatch(statsRoute, /db\.select\(\)\.from\(marketsTable\)|buildRealUserList/);
+  assert.match(marketsRoute, /\.limit\(limit\)/);
+  assert.match(marketsRoute, /\.offset\(offset\)/);
+  assert.doesNotMatch(marketsRoute, /let markets = await db\.select\(\)\.from\(marketsTable\)/);
+});
