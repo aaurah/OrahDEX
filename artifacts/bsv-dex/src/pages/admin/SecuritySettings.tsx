@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -198,12 +199,17 @@ function RevealableValue({ label, value, mono = true }: { label: string; value: 
 
 export function AdminSecuritySettings() {
   const { toast } = useToast();
+  const logoutAdmin = useAdminAuthStore(state => state.logout);
   const [tab, setTab] = useState<Tab>("auth");
   const [sec, setSec] = useState<Sec>(() => {
     try { return { ...DEFAULT_SEC, ...JSON.parse(localStorage.getItem("orahdex_security") ?? "{}") }; }
     catch { return DEFAULT_SEC; }
   });
   const [saving, setSaving] = useState(false);
+  const [revokeAllPassword, setRevokeAllPassword] = useState("");
+  const [revokeAllTotpCode, setRevokeAllTotpCode] = useState("");
+  const [revokeAllConfirmation, setRevokeAllConfirmation] = useState("");
+  const [revokingAllSessions, setRevokingAllSessions] = useState(false);
 
   // ── Private Keys tab state ─────────────────────────────────────────────
   type Vault = {
@@ -386,6 +392,40 @@ export function AdminSecuritySettings() {
     } finally { setWlSaving(false); }
   };
 
+  const revokeAllAdminSessions = async () => {
+    if (revokeAllConfirmation !== "REVOKE_ALL_ADMIN_SESSIONS") return;
+    setRevokingAllSessions(true);
+    try {
+      const response = await adminFetch(`/api/admin/auth/revoke-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmation: revokeAllConfirmation,
+          password: revokeAllPassword,
+          totpCode: revokeAllTotpCode,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast({
+          title: "Sessions were not revoked",
+          description: result.error ?? "Re-authentication failed.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "All administrator sessions revoked", description: "Sign in again to continue." });
+      setRevokeAllPassword("");
+      setRevokeAllTotpCode("");
+      setRevokeAllConfirmation("");
+      logoutAdmin();
+    } catch {
+      toast({ title: "Session revocation failed", description: "The server could not complete the request.", variant: "destructive" });
+    } finally {
+      setRevokingAllSessions(false);
+    }
+  };
+
   const set = <K extends keyof Sec>(key: K) => (val: Sec[K]) => setSec(s => ({ ...s, [key]: val }));
 
   const save = async () => {
@@ -526,13 +566,58 @@ export function AdminSecuritySettings() {
         )}
 
         {tab === "sessions" && (
-          <>
+          <div className="space-y-5">
             <NumberInput value={sec.sessionTimeoutMin} onChange={set("sessionTimeoutMin")} label="User Session Timeout" description="Idle session expires after this duration" min={5} suffix="minutes" />
             <NumberInput value={sec.adminSessionTimeoutMin} onChange={set("adminSessionTimeoutMin")} label="Admin Session Timeout" description="Admin panel session expires faster for security" min={5} suffix="minutes" />
             <NumberInput value={sec.accessTokenExpiryMin} onChange={set("accessTokenExpiryMin")} label="Access Token Expiry" description="JWT access token lifetime" min={1} suffix="minutes" />
             <NumberInput value={sec.refreshTokenExpiryDays} onChange={set("refreshTokenExpiryDays")} label="Refresh Token Expiry" description="Sliding session / refresh token lifetime" min={1} suffix="days" />
             <StringInput value={sec.jwtSecret} onChange={set("jwtSecret")} label="JWT Secret Override" description="Leave blank to use server-generated secret. Changing this invalidates all sessions." placeholder="my-super-secret-key-64-chars-minimum" />
-          </>
+
+            <div className="rounded-2xl border border-red-500/25 bg-red-500/5 p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+                <div>
+                  <p className="text-sm font-semibold text-red-300">Revoke all administrator sessions</p>
+                  <p className="mt-1 text-xs text-red-200/70">
+                    This signs out every administrator, including you. Re-authenticate with the admin password and current 2FA code afterward.
+                  </p>
+                </div>
+              </div>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={revokeAllPassword}
+                onChange={event => setRevokeAllPassword(event.target.value)}
+                placeholder="Re-enter admin password"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              />
+              <input
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={revokeAllTotpCode}
+                onChange={event => setRevokeAllTotpCode(event.target.value.replace(/\D/g, ""))}
+                placeholder="Current 2FA code, if enabled"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              />
+              <label className="block text-xs text-muted-foreground">
+                Type <code className="font-mono text-foreground">REVOKE_ALL_ADMIN_SESSIONS</code> to confirm
+                <input
+                  value={revokeAllConfirmation}
+                  onChange={event => setRevokeAllConfirmation(event.target.value)}
+                  autoComplete="off"
+                  className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs text-foreground"
+                />
+              </label>
+              <button
+                onClick={revokeAllAdminSessions}
+                disabled={revokingAllSessions || !revokeAllPassword || revokeAllConfirmation !== "REVOKE_ALL_ADMIN_SESSIONS"}
+                className="rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {revokingAllSessions ? "Revoking sessions…" : "Revoke all administrator sessions"}
+              </button>
+            </div>
+          </div>
         )}
 
         {/* ── Private Keys Vault ── */}
@@ -791,8 +876,19 @@ export function AdminSecuritySettings() {
             )}
 
             <div className="flex items-center justify-between pt-2">
-              <p className="text-xs text-muted-foreground">{whitelist.length} address{whitelist.length !== 1 ? "es" : ""} whitelisted</p>
+              <div>
+                <p className="text-xs text-muted-foreground">{whitelist.length} address{whitelist.length !== 1 ? "es" : ""} whitelisted</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Clearing this list disables wallet sign-in; email/password access remains available.</p>
+              </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
+                {whitelist.length > 0 && (
+                  <button
+                    onClick={() => setWhitelist([])}
+                    className="rounded-xl border border-red-500/30 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-500/10"
+                  >
+                    Clear all
+                  </button>
+                )}
                 <input
                   type="password"
                   autoComplete="current-password"

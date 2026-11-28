@@ -539,7 +539,7 @@ router.post("/copy/vaults/:id/sync-price", async (req, res) => {
   try {
     const { newTvl, secret, status } = req.body ?? {};
     const adminToken = req.headers["x-admin-token"];
-    if (!isValidAdminToken(adminToken) && !verifyOrchestratorSecret(secret)) {
+    if (!await isValidAdminToken(adminToken) && !verifyOrchestratorSecret(secret)) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }

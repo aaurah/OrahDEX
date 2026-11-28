@@ -165,6 +165,30 @@ test("admin API is private by default except for login and challenge routes", as
   assert.doesNotMatch(src, /"POST \/security-vault\/regenerate-bsv"/);
 });
 
+test("admin session revocation requires re-authentication and clears persisted tokens", async () => {
+  const [routesSrc, authSrc, pageSrc] = await Promise.all([
+    read(adminRoutesPath),
+    read(adminAuthPath),
+    read(adminSecuritySettingsPath),
+  ]);
+  const route = routesSrc.match(/router\.post\("\/auth\/revoke-all"[\s\S]*?\n\}\);/)?.[0];
+
+  assert.ok(route, "bulk admin session revocation route exists");
+  assert.match(route, /REVOKE_ALL_ADMIN_SESSIONS/);
+  assert.match(route, /crypto\.timingSafeEqual/);
+  assert.match(route, /verifyTOTPServer/);
+  assert.match(route, /await revokeAllAdminTokens\(\)/);
+  assert.match(authSrc, /export async function revokeAllAdminTokens/);
+  assert.match(authSrc, /\.delete\(platformSettingsTable\)[\s\S]*?TOKEN_PREFIX/);
+  assert.match(authSrc, /async function verifyPersistedAdminToken/);
+  assert.match(authSrc, /The database row is authoritative/);
+  assert.match(authSrc, /await verifyPersistedAdminToken\(tokenHash\)/);
+  assert.match(authSrc, /Admin session verification is temporarily unavailable/);
+  assert.match(pageSrc, /Revoke all administrator sessions/);
+  assert.match(pageSrc, /revokeAllAdminSessions/);
+  assert.match(pageSrc, /Clear all/);
+});
+
 test("admin integration secrets are not returned to the browser", async () => {
   const [routesSrc, pageSrc] = await Promise.all([
     read(adminRoutesPath),

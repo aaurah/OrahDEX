@@ -804,7 +804,7 @@ router.get("/withdrawals/:walletAddress", async (req, res) => {
   const headerToken = req.headers["x-admin-token"] as string | undefined;
   const rawWallet = req.params.walletAddress?.trim() ?? "";
   const paramWallet = /^0x[0-9a-fA-F]{40}$/.test(rawWallet) ? rawWallet.toLowerCase() : rawWallet;
-  const isAdmin = isValidAdminToken(cookieToken || headerToken);
+  const isAdmin = await isValidAdminToken(cookieToken || headerToken);
   if (!isAdmin) {
     try {
       await verifyWalletRequestProof({

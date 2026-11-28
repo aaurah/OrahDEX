@@ -4,7 +4,7 @@ import { BoundedMap } from "../lib/boundedMap.js";
 import { db, pool } from "@workspace/db";
 import { getWatcherState, getWatcherSummary } from "../lib/errorWatcher.js";
 
-import { generateAdminToken, revokeAdminToken, requireAdminToken } from "../middleware/adminAuth.js";
+import { generateAdminToken, revokeAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, leSwapsTable, routingProfilesTable, keeperEarningsTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
@@ -525,6 +525,57 @@ router.post("/auth/logout", requireAdminToken, async (req, res) => {
   // Clear the HttpOnly session cookie on the client as well
   res.clearCookie("admin_session", { path: "/" });
   res.json({ success: true });
+});
+
+router.post("/auth/revoke-all", requireAdminToken, async (req, res) => {
+  const body = (req.body ?? {}) as {
+    confirmation?: unknown;
+    password?: unknown;
+    totpCode?: unknown;
+  };
+  if (body.confirmation !== "REVOKE_ALL_ADMIN_SESSIONS") {
+    res.status(400).json({ error: "Enter the confirmation phrase to revoke all administrator sessions." });
+    return;
+  }
+
+  const expectedPassword = process.env.ADMIN_PASSWORD;
+  if (!expectedPassword) {
+    res.status(503).json({ error: "Admin password is not configured on this server." });
+    return;
+  }
+  const password = typeof body.password === "string" ? body.password : "";
+  const passwordOk = password.length > 0 && crypto.timingSafeEqual(
+    crypto.createHash("sha256").update(password).digest(),
+    crypto.createHash("sha256").update(expectedPassword).digest(),
+  );
+  if (!passwordOk) {
+    res.status(401).json({ error: "Re-enter the admin password to revoke sessions." });
+    return;
+  }
+
+  if (await isAdminTotpEnabled()) {
+    const totpSecret = process.env.ADMIN_TOTP_SECRET;
+    const totpCode = typeof body.totpCode === "string" ? body.totpCode : "";
+    if (!totpSecret) {
+      res.status(503).json({ error: "Two-factor authentication is enabled but not configured on this server." });
+      return;
+    }
+    if (!/^\d{6}$/.test(totpCode) || !await verifyTOTPServer(totpCode, totpSecret)) {
+      res.status(401).json({ error: "Enter the current authenticator code to revoke sessions." });
+      return;
+    }
+  }
+
+  try {
+    await revokeAllAdminTokens();
+    pendingTotpChallenges.clear();
+    pendingNonces.clear();
+    res.clearCookie("admin_session", { path: "/" });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true });
+  } catch {
+    res.status(503).json({ error: "Could not revoke all administrator sessions. No success was recorded." });
+  }
 });
 
 /* ─── WALLET WHITELIST ────────────────────────────────────────────────────── */

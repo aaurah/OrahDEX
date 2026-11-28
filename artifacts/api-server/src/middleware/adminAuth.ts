@@ -12,6 +12,7 @@ const MAX_ADMIN_SESSIONS = 1_000;
 
 const adminTokens = new Set<string>();
 const adminTokenExpirations = new Map<string, number>();
+const verifiedAdminRequests = new WeakSet<Request>();
 
 function hasTokenExpired(token: string): boolean {
   const expiresAt = adminTokenExpirations.get(token);
@@ -135,20 +136,55 @@ export async function revokeAdminToken(token: string): Promise<void> {
 }
 
 export async function revokeAllAdminTokens(): Promise<void> {
+  await db
+    .delete(platformSettingsTable)
+    .where(or(
+      like(platformSettingsTable.key, `${TOKEN_PREFIX}%`),
+      like(platformSettingsTable.key, `${LEGACY_TOKEN_PREFIX}%`),
+    ));
   adminTokens.clear();
   adminTokenExpirations.clear();
+}
+
+type PersistedTokenStatus = "valid" | "missing" | "invalid" | "unavailable";
+
+async function verifyPersistedAdminToken(tokenHash: string): Promise<PersistedTokenStatus> {
+  const key = `${TOKEN_PREFIX}${tokenHash}`;
   try {
     const rows = await db
-      .select()
+      .select({ value: platformSettingsTable.value })
       .from(platformSettingsTable)
-      .where(or(
-        like(platformSettingsTable.key, `${TOKEN_PREFIX}%`),
-        like(platformSettingsTable.key, `${LEGACY_TOKEN_PREFIX}%`),
-      ));
-    for (const row of rows) {
-      await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, row.key));
+      .where(eq(platformSettingsTable.key, key))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return "missing";
+
+    let parsed: { tokenHash?: unknown; expiresAt?: unknown };
+    try {
+      parsed = JSON.parse(row.value) as { tokenHash?: unknown; expiresAt?: unknown };
+    } catch {
+      await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+      return "invalid";
     }
-  } catch { /* best-effort */ }
+
+    const expiresAt = parsed.expiresAt;
+    if (parsed.tokenHash !== tokenHash || typeof expiresAt !== "number" ||
+        !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+      adminTokens.delete(tokenHash);
+      adminTokenExpirations.delete(tokenHash);
+      return "invalid";
+    }
+
+    // The database row is authoritative so sessions can be created and revoked
+    // consistently across API instances, not only in the process-local cache.
+    adminTokens.add(tokenHash);
+    adminTokenExpirations.set(tokenHash, expiresAt);
+    return "valid";
+  } catch (err) {
+    logger.warn({ err }, "adminAuth: persisted session verification failed");
+    return "unavailable";
+  }
 }
 
 function hasMatchingAdminToken(token: string): boolean {
@@ -168,34 +204,49 @@ function hasMatchingAdminToken(token: string): boolean {
   return found;
 }
 
-export function requireAdminToken(req: Request, res: Response, next: NextFunction): void {
+export async function requireAdminToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (verifiedAdminRequests.has(req)) {
+    next();
+    return;
+  }
+
   // Accept token from HttpOnly cookie (preferred) or X-Admin-Token header (legacy).
   // cookie-parser must be wired in app.ts for req.cookies to be populated.
   const cookieToken  = (req.cookies as Record<string, string> | undefined)?.admin_session ?? "";
   const headerToken  = (req.headers["x-admin-token"] as string | undefined) ?? "";
   const token        = cookieToken || headerToken;
 
-  if (!token || !hasMatchingAdminToken(token)) {
+  if (!token) {
     res.status(401).json({ error: "Admin authentication required." });
     return;
   }
   const tokenHash = hashToken(token);
-  if (hasTokenExpired(tokenHash)) {
+  if (hasMatchingAdminToken(token) && hasTokenExpired(tokenHash)) {
     purgeExpiredToken(tokenHash);
     res.status(401).json({ error: "Admin session expired. Please log in again." });
     return;
   }
+  const persistedStatus = await verifyPersistedAdminToken(tokenHash);
+  if (persistedStatus === "unavailable") {
+    res.status(503).json({ error: "Admin session verification is temporarily unavailable." });
+    return;
+  }
+  if (persistedStatus !== "valid") {
+    res.status(401).json({ error: "Admin session expired or revoked. Please log in again." });
+    return;
+  }
+  verifiedAdminRequests.add(req);
   next();
 }
 
-export function isValidAdminToken(token: unknown): boolean {
-  if (typeof token !== "string" || token.length === 0 || !hasMatchingAdminToken(token)) return false;
+export async function isValidAdminToken(token: unknown): Promise<boolean> {
+  if (typeof token !== "string" || token.length === 0) return false;
   const tokenHash = hashToken(token);
-  if (hasTokenExpired(tokenHash)) {
+  if (hasMatchingAdminToken(token) && hasTokenExpired(tokenHash)) {
     purgeExpiredToken(tokenHash);
     return false;
   }
-  return true;
+  return await verifyPersistedAdminToken(tokenHash) === "valid";
 }
 
 /**
