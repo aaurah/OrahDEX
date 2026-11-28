@@ -27,7 +27,7 @@ import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
 import { hasEscrow, chainLabel, checkEscrowDeposit, readEscrowDeposit, resolveEscrowAsset, lockOrderbookOrder, cancelOrderbookOrder } from "@/lib/escrow";
-import { cancelEvmOrderbookOrder } from "@/lib/orderbookCancellation";
+import { cancelEvmOrderbookOrder, hasPendingEvmOrderbookCancellation, reconcileEvmOrderbookCancellation, retryPendingEvmOrderbookCancellations } from "@/lib/orderbookCancellation";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 import { buildOrderIntentMessage, buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
@@ -473,6 +473,52 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // price: null and need lastPrice as a fallback to compute the correct spend amount.
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [syncingCancellationId, setSyncingCancellationId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!address) return;
+    let stopped = false;
+    let busy = false;
+    const sync = async () => {
+      if (busy || document.hidden || stopped) return;
+      busy = true;
+      try {
+        const completed = await retryPendingEvmOrderbookCancellations(address);
+        if (completed.length && !stopped) {
+          void queryClient.invalidateQueries({ queryKey: ["orders"] });
+          void queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
+          void queryClient.invalidateQueries({ queryKey: ["orderbook"] });
+        }
+      } finally { busy = false; }
+    };
+    void sync();
+    const timer = window.setInterval(() => void sync(), 20_000);
+    window.addEventListener("focus", sync);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", sync);
+    };
+  }, [address, queryClient]);
+
+  const syncCompletedCancellation = async (order: any) => {
+    if (syncingCancellationId) return;
+    const txHash = window.prompt("Paste the public Ethereum transaction hash of the completed cancellation. This only syncs the order; it sends no wallet transaction.");
+    if (!txHash?.trim()) return;
+    setSyncingCancellationId(String(order.id));
+    try {
+      await reconcileEvmOrderbookCancellation({
+        orderId: String(order.id),
+        walletAddress: String(order.walletAddress || order.ownerWalletAddress || ""),
+        txHash: txHash.trim(),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["orderbook"] });
+      toast({ title: "Cancellation synced", description: "The confirmed cancellation has been recorded. No new wallet transaction was sent." });
+    } catch (error) {
+      toast({ title: "Cancellation not synced yet", description: error instanceof Error ? error.message : "Could not verify cancellation.", variant: "destructive" });
+    } finally { setSyncingCancellationId(null); }
+  };
   const [recoveringEvmOrders, setRecoveringEvmOrders] = useState(false);
   const getOrderWalletAddress = (order: any) => (
     String(order?.walletAddress || order?.ownerWalletAddress || "")
@@ -581,7 +627,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         queryClient.setQueryData(["orders", altAddress], context.prevAlt);
       }
       toast({
-        title: "Cancel failed",
+        title: hasPendingEvmOrderbookCancellation(_vars.orderId, _vars.walletAddress) ? "Cancellation sync pending" : "Cancel failed",
         description: String(err?.message ?? "Could not cancel order"),
         variant: "destructive",
       });
@@ -2176,7 +2222,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     <div className="px-4 pt-3 pb-1 flex items-center justify-between">
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Open Orders ({openOrders.length})</span>
                       <button
-                        onClick={() => openOrders.forEach(handleCancelOrder)}
+                        onClick={() => {
+                          void (async () => {
+                            for (const order of openOrders) {
+                              const walletAddress = getOrderWalletAddress(order);
+                              if (!walletAddress) break;
+                              try {
+                                await cancelMutation.mutateAsync({ orderId: String(order.id), walletAddress, fundingRef: order.fundingRef });
+                              } catch { break; }
+                            }
+                          })();
+                        }}
+                        disabled={cancelMutation.isPending || !!syncingCancellationId}
                         className="text-[10px] font-semibold text-red-400 hover:text-red-300"
                       >
                         Cancel All
@@ -2210,13 +2267,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                             )}
                           </div>
                         </div>
+                        <div className="flex shrink-0 flex-col items-end gap-2">
                         <button
                           onClick={() => handleCancelOrder(o)}
-                          disabled={cancellingId === String(o.id)}
+                          disabled={cancelMutation.isPending || !!syncingCancellationId}
                           className="shrink-0 px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                         >
-                          {cancellingId === String(o.id) ? "…" : "Cancel"}
+                          {cancellingId === String(o.id) ? "…" : hasPendingEvmOrderbookCancellation(String(o.id), getOrderWalletAddress(o)) ? "Retry sync" : "Cancel"}
                         </button>
+                        {String(o.fundingRef ?? "").startsWith("evm-order:1:") && (
+                          <button
+                            onClick={() => void syncCompletedCancellation(o)}
+                            disabled={cancelMutation.isPending || !!syncingCancellationId}
+                            className="text-[10px] text-primary underline disabled:opacity-40"
+                          >
+                            {syncingCancellationId === String(o.id) ? "Syncing…" : "Already cancelled? Sync"}
+                          </button>
+                        )}
+                        </div>
                       </div>
                     ))}
                   </>

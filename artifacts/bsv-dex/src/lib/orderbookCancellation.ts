@@ -70,6 +70,7 @@ async function submitCancellationProof(params: {
   txHash: string;
 }): Promise<Record<string, unknown>> {
   const response = await fetch(`${BASE}/api/orders/${encodeURIComponent(params.orderId)}`, {
+    signal: AbortSignal.timeout(12_000),
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -164,9 +165,8 @@ export async function retryPendingEvmOrderbookCancellations(
       });
       completed.push(item.orderId);
     } catch (error) {
-      if (!isRetryableCancellationSyncError(error)) {
-        clearPendingCancellation(item.orderId, item.walletAddress);
-      }
+      // Keep submitted hashes even after a verification failure. A provider
+      // can lag behind the wallet; losing the hash could trigger a second tx.
     }
   }
   return completed;
@@ -205,6 +205,7 @@ export async function cancelEvmOrderbookOrder(params: {
   const readServerOrder = async () => {
     const response = await fetch(`${BASE}/api/orders/${encodeURIComponent(params.orderId)}`, {
       cache: "no-store",
+      signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) throw new Error("Could not verify this order before cancellation.");
     return response.json();
@@ -227,6 +228,12 @@ export async function cancelEvmOrderbookOrder(params: {
     from: params.walletAddress,
     chainId: 1,
     isOrahWallet: params.isOrahWallet,
+    onSubmitted: (txHash) => savePendingCancellation({
+      orderId: params.orderId,
+      walletAddress: params.walletAddress,
+      txHash,
+      createdAt: Date.now(),
+    }),
   });
 
   savePendingCancellation({
@@ -250,7 +257,6 @@ export async function cancelEvmOrderbookOrder(params: {
     };
   } catch (error) {
     if (!isRetryableCancellationSyncError(error)) {
-      clearPendingCancellation(params.orderId, params.walletAddress);
       throw error;
     }
     const message = error instanceof Error ? error.message : "The API could not sync the cancellation yet.";

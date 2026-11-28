@@ -754,6 +754,7 @@ export async function cancelOrderbookOrder(params: {
   from: string;
   chainId: number;
   isOrahWallet: boolean;
+  onSubmitted?: (hash: `0x${string}`) => void;
 }): Promise<{ txHash: `0x${string}`; explorerUrl: string }> {
   if (params.chainId !== 1) throw new Error("Order escrow cancellation is available on Ethereum mainnet only");
   const txHash = await sendOrderbookWalletTx({
@@ -767,6 +768,7 @@ export async function cancelOrderbookOrder(params: {
     chainId: params.chainId,
     isOrahWallet: params.isOrahWallet,
     confirmations: 3,
+    onSubmitted: params.onSubmitted,
   });
   return { txHash, explorerUrl: `https://etherscan.io/tx/${txHash}` };
 }
