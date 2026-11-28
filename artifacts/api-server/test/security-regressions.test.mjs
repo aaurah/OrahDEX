@@ -129,7 +129,7 @@ test("exchange-account deposit APIs are disabled while legacy records remain rea
   const src = await read(depositRoutesPath);
 
   assert.match(src, /const LEGACY_DEPOSIT_READ_PATHS = new Set\([\s\S]*?"\/deposit\/history"[\s\S]*?"\/deposit\/bsv-pending"/);
-  assert.match(src, /router\.use\(\(req, res, next\) => \{[\s\S]*?LEGACY_DEPOSIT_READ_PATHS\.has\(req\.path\)[\s\S]*?EXCHANGE_DEPOSITS_DISABLED/);
+  assert.match(src, /router\.use\(\(req, res, next\) => \{[\s\S]*?path !== "\/deposit" && !path\.startsWith\("\/deposit\/"\)[\s\S]*?LEGACY_DEPOSIT_READ_PATHS\.has\(path\)[\s\S]*?EXCHANGE_DEPOSITS_DISABLED/);
   assert.match(src, /router\.get\("\/deposit\/history"/);
   assert.match(src, /router\.get\("\/deposit\/bsv-pending"/);
 });

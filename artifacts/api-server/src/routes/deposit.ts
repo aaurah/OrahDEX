@@ -33,7 +33,14 @@ const LEGACY_DEPOSIT_READ_PATHS = new Set([
 ]);
 
 router.use((req, res, next) => {
-  if (req.method === "GET" && LEGACY_DEPOSIT_READ_PATHS.has(req.path)) {
+  // This router is mounted at the API root. Do not intercept sibling routers
+  // (swap providers, staking, RPC, etc.) that are mounted after it.
+  const path = req.path.toLowerCase().replace(/\/+$/, "") || "/";
+  if (path !== "/deposit" && !path.startsWith("/deposit/")) {
+    next();
+    return;
+  }
+  if (req.method === "GET" && LEGACY_DEPOSIT_READ_PATHS.has(path)) {
     next();
     return;
   }
