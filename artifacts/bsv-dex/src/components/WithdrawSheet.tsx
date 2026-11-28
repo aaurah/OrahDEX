@@ -1,12 +1,8 @@
 /**
  * WithdrawSheet.tsx
  *
- * Three-tab dialog: Deposit · Withdraw · History
- *
- * Deposit tab  — unique per-user deposit address + QR, network selector,
- *                and TX-hash verifier.
- * Withdraw tab — amount + recipient form, instant on-chain settlement.
- * History tab  — past withdrawals with status badges, gas-shortage banner.
+ * Wallet send, withdrawal, and history dialog.
+ * Exchange-account top-ups are disabled; legacy history remains available.
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -360,9 +356,9 @@ export interface WithdrawSheetProps {
   addressPlaceholder?: string;
   color?:              string;
   /** Open directly on a specific tab */
-  initialTab?:         "deposit" | "withdraw" | "history";
-  /** Restrict which tabs are visible in the tab bar. Defaults to all three. */
-  visibleTabs?:        ("deposit" | "withdraw" | "history")[];
+  initialTab?:         "withdraw" | "history";
+  /** Restrict which tabs are visible in the tab bar. Defaults to both. */
+  visibleTabs?:        ("withdraw" | "history")[];
   /** Whether this is a passkey / orah-wallet — enables "Send from Wallet" mode */
   isOrahWallet?:       boolean;
   /** EVM address of the OrahWallet passkey — required for BSV/non-EVM wallet signing. */
@@ -1533,6 +1529,10 @@ export function WithdrawSheet({
     return "text-yellow-400 bg-yellow-400/10 border-yellow-400/20";
   };
 
+  const tabsToShow = visibleTabs?.length
+    ? visibleTabs
+    : (["withdraw", "history"] as const);
+
   // ── render ───────────────────────────────────────────────────────────────
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
@@ -1545,26 +1545,17 @@ export function WithdrawSheet({
             >
               {(withdrawChainMode !== "evm" ? withdrawChainMode.toUpperCase() : asset)[0]}
             </div>
-            <span>
-              {!visibleTabs || visibleTabs.length === 3
-                ? "Deposit & Withdraw"
-                : visibleTabs.includes("deposit") && !visibleTabs.includes("withdraw")
-                  ? "Deposit"
-                  : visibleTabs.includes("withdraw") && !visibleTabs.includes("deposit")
-                    ? "Withdraw"
-                    : "Deposit & Withdraw"}
-            </span>
+            <span>{tabsToShow.includes("history") ? "Wallet Transfers" : "Send / Withdraw"}</span>
           </DialogTitle>
         </DialogHeader>
 
         {/* Tab bar — hidden when only one tab is shown */}
-        {(!visibleTabs || visibleTabs.length > 1) && (
+        {tabsToShow.length > 1 && (
           <div className="flex gap-1 p-1 rounded-xl bg-secondary/30">
             {([
-              { key: "deposit",  label: "Deposit",  icon: <Download className="w-3.5 h-3.5" /> },
-              { key: "withdraw", label: "Withdraw", icon: <Upload    className="w-3.5 h-3.5" /> },
-              { key: "history",  label: "History",  icon: <History   className="w-3.5 h-3.5" />, badge: history.length },
-            ] as const).filter(t => !visibleTabs || visibleTabs.includes(t.key)).map(t => (
+              { key: "withdraw", label: "Send / Withdraw", icon: <Upload className="w-3.5 h-3.5" /> },
+              { key: "history",  label: "History",          icon: <History className="w-3.5 h-3.5" />, badge: history.length },
+            ] as const).filter(t => tabsToShow.includes(t.key)).map(t => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
@@ -1587,6 +1578,12 @@ export function WithdrawSheet({
               </button>
             ))}
           </div>
+        )}
+
+        {tab === "withdraw" && (
+          <p className="text-xs text-muted-foreground">
+            Exchange-account top-ups are disabled. You can withdraw an existing balance or send directly from your wallet.
+          </p>
         )}
 
         {/* ── DEPOSIT TAB ──────────────────────────────────────────────────── */}

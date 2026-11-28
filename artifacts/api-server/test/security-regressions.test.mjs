@@ -54,6 +54,11 @@ const apiPackagePath = path.join(__dirname, "..", "package.json");
 const apiWatchdogPath = path.join(__dirname, "..", "watchdog.sh");
 const apiStartPath = path.join(__dirname, "..", "..", "..", "start.mjs");
 const supportSettingsPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "SupportSettings.tsx");
+const depositRoutesPath = path.join(__dirname, "..", "src", "routes", "deposit.ts");
+const withdrawSheetPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "WithdrawSheet.tsx");
+const mobileCoinWalletPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "mobile", "MobileCoinWallet.tsx");
+const mobileTradePath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "mobile", "MobileTrade.tsx");
+const orderFormPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "trading", "OrderForm.tsx");
 
 async function read(filePath) {
   return readFile(filePath, "utf8");
@@ -118,6 +123,45 @@ test("trade router does not expose withdraw endpoints", async () => {
 
   assert.doesNotMatch(src, /router\.post\("\/withdraw\/challenge"/);
   assert.doesNotMatch(src, /router\.post\("\/withdraw"/);
+});
+
+test("exchange-account deposit APIs are disabled while legacy records remain readable", async () => {
+  const src = await read(depositRoutesPath);
+
+  assert.match(src, /const LEGACY_DEPOSIT_READ_PATHS = new Set\([\s\S]*?"\/deposit\/history"[\s\S]*?"\/deposit\/bsv-pending"/);
+  assert.match(src, /router\.use\(\(req, res, next\) => \{[\s\S]*?LEGACY_DEPOSIT_READ_PATHS\.has\(req\.path\)[\s\S]*?EXCHANGE_DEPOSITS_DISABLED/);
+  assert.match(src, /router\.get\("\/deposit\/history"/);
+  assert.match(src, /router\.get\("\/deposit\/bsv-pending"/);
+});
+
+test("wallet transfer sheet does not expose exchange-account deposits", async () => {
+  const src = await read(withdrawSheetPath);
+
+  assert.doesNotMatch(src, /initialTab\?:\s*"deposit"/);
+  assert.doesNotMatch(src, /visibleTabs\?:\s*\("deposit"/);
+  assert.doesNotMatch(src, /\{\s*key:\s*"deposit",\s*label:\s*"Deposit"/);
+  assert.match(src, /Exchange-account top-ups are disabled/);
+});
+
+test("mobile receive flow only displays the connected wallet address", async () => {
+  const src = await read(mobileCoinWalletPath);
+
+  assert.doesNotMatch(src, /\/deposit\/(?:address|bitcoin-address|solana-address|altchain-address)/);
+  assert.match(src, /return networkMatches \? address : undefined/);
+  assert.match(src, /It does not issue exchange deposit addresses/);
+  assert.match(src, /not credited to an OrahDEX exchange balance/);
+});
+
+test("trading screens do not recommend exchange-account top-ups", async () => {
+  const [mobile, desktop] = await Promise.all([
+    read(mobileTradePath),
+    read(orderFormPath),
+  ]);
+
+  assert.doesNotMatch(mobile, /Deposit funds to your OrahDEX trading balance|deposit on-chain|deposit to trade on the order book/i);
+  assert.match(mobile, /label: "Receive"/);
+  assert.match(mobile, /Exchange-account top-ups are disabled/);
+  assert.match(desktop, /Do not send funds to an exchange account/);
 });
 
 test("funding verifier fails closed for unverifiable external EVM funding", async () => {

@@ -945,10 +945,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           ? "No matching sellers found. Place a limit order to set your price instead."
           : code === "DEPOSIT_REQUIRED"
           ? (usesApiBalance
-            ? "Deposit funds to your OrahDEX trading balance before trading."
+            ? "This route needs an existing trading balance. Exchange-account top-ups are disabled; use a wallet-funded route instead."
             : isSelfCustodyEvm
-              ? "Insufficient on-chain balance. Add funds to your wallet before trading."
-              : "Deposit funds to your wallet before trading.")
+              ? "Insufficient wallet balance. Receive funds into your connected wallet before trading."
+              : "Receive funds into your connected wallet from another wallet before trading.")
           : code === "INSUFFICIENT_FUNDS"
           ? (usesApiBalance
             ? "Insufficient balance. Check your trading balance."
@@ -2334,7 +2334,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <span className="text-primary/80 font-medium">
                   {walletOrderbookAvailable
                     ? "Ethereum limit orders lock the required wallet funds until the order fills or you cancel it."
-                    : "Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds."}
+                    : "Wallet-funded order-book trading is unavailable on this network. Use an enabled wallet-escrow market or a wallet-to-wallet swap."}
                 </span>
               </div>
             )}
@@ -2808,7 +2808,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     >
                       Bridge
                     </a>
-                    {" "}or deposit on-chain.
+                    {" "}or receive funds into your connected wallet.
                   </span>
                 </div>
               )}
@@ -2817,7 +2817,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <span>
                     {formatBalance(walletAvailable)} {availableSym} is in your wallet, not your trading balance. Use{" "}
                     <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold">Swap</a>
-                    {" "}or deposit to trade on the order book.
+                    {" "}or use a wallet-funded P2P market where available.
                   </span>
                 </div>
               )}
@@ -3023,7 +3023,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       {orderError.code === "NO_LIQUIDITY"
                         ? "No matching sellers"
                         : orderError.code === "DEPOSIT_REQUIRED"
-                        ? (isSelfCustodyEvm ? "Insufficient on-chain balance" : "Deposit required to trade")
+                        ? (isSelfCustodyEvm ? "Insufficient on-chain balance" : "Wallet funding required")
                         : orderError.code === "INSUFFICIENT_FUNDS"
                         ? (usesApiBalance ? "Insufficient trading balance" : "Insufficient wallet balance")
                         : "Order failed"}
@@ -3037,14 +3037,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       ? "No sellers at this price in the order book. Place a limit order to set your price, or use OrahBridge for an instant cross-chain swap below."
                       : orderError.code === "DEPOSIT_REQUIRED"
                       ? (usesApiBalance
-                        ? `Your ${side === "sell" ? base : quote} trading balance is empty. Use Bridge to fund it, or deposit on-chain.`
+                        ? `This route requires an existing ${side === "sell" ? base : quote} trading balance. Exchange-account top-ups are disabled; use a wallet-funded route instead.`
                         : isSelfCustodyEvm
                           ? `Not enough ${side === "sell" ? base : quote} in your connected wallet. Use Bridge to swap for more.`
-                          : `No ${side === "sell" ? base : quote} on-chain. Get it via Bridge or deposit from another wallet.`)
+                          : `No ${side === "sell" ? base : quote} on-chain. Use Bridge to swap into your connected wallet or receive it from another wallet.`)
                       : orderError.code === "INSUFFICIENT_FUNDS"
                       ? (usesApiBalance
-                        ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Top up via Bridge or check Portfolio.`
-                        : `Not enough ${side === "sell" ? base : quote} on-chain. Use Bridge to swap for more, or deposit.`)
+                        ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Exchange-account top-ups are disabled; use a wallet-funded route instead.`
+                        : `Not enough ${side === "sell" ? base : quote} on-chain. Use Bridge to swap into your wallet or receive it from another wallet.`)
                       : orderError.message}
                   </p>
                   {orderError.code === "DEPOSIT_REQUIRED" && (
@@ -3246,8 +3246,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               },
               {
                 icon: <Download size={20} />,
-                label: "Deposit",
-                desc: "Receive funds directly to your wallet address",
+                label: "Receive",
+                desc: "Show your connected wallet address for direct transfers",
                 href: coinWalletHref,
               },
               {

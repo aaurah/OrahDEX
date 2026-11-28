@@ -359,8 +359,8 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const [coinHistoryOpen, setCoinHistoryOpen] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
-  const [withdrawInitialTab, setWithdrawInitialTab] = useState<"deposit" | "withdraw" | "history">("withdraw");
-  const [withdrawVisibleTabs, setWithdrawVisibleTabs] = useState<("deposit" | "withdraw" | "history")[] | undefined>(undefined);
+  const [withdrawInitialTab, setWithdrawInitialTab] = useState<"withdraw" | "history">("withdraw");
+  const [withdrawVisibleTabs, setWithdrawVisibleTabs] = useState<("withdraw" | "history")[] | undefined>(undefined);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 

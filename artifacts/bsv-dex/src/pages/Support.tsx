@@ -19,7 +19,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const CATEGORIES = [
   { value: "general",    label: "General Inquiry" },
   { value: "trading",    label: "Trading & Orders" },
-  { value: "wallet",     label: "Wallet & Deposits" },
+  { value: "wallet",     label: "Wallet & P2P Trading" },
   { value: "withdrawal", label: "Withdrawals" },
   { value: "kyc",        label: "KYC / Verification" },
   { value: "technical",  label: "Technical Issue" },
@@ -65,6 +65,12 @@ const DEFAULT_FAQS = [
     answer: "CopyVault lets you automatically mirror elite traders. Deposit USDT into a vault and your capital proportionally copies the leader's trades. You pay a performance fee only on profits — no upfront cost.",
     category: "trading",
   },
+  {
+    id: 7,
+    question: "Can I deposit into an OrahDEX exchange balance?",
+    answer: "No. Exchange-account top-ups are disabled. P2P orders are placed from your connected wallet, and any smart-contract escrow is shown for your wallet approval. Existing deposit data is not deleted, and you can withdraw any balance already on your account.",
+    category: "wallet",
+  },
 ];
 
 function FaqItem({ question, answer }: { question: string; answer: string }) {
@@ -93,8 +99,8 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
 export function SupportPage() {
   useSEO({
     title: "Support — OrahDEX",
-    description: "Get help with OrahDEX — deposits, withdrawals, trading, wallets, and account issues. Contact our support team or browse the knowledge base.",
-    keywords: "OrahDEX support, crypto exchange help, trading support, deposit help, withdrawal support, OrahDEX contact",
+    description: "Get help with OrahDEX wallet-to-wallet P2P trading, withdrawals, wallets, and account issues. Contact support or browse the knowledge base.",
+    keywords: "OrahDEX support, wallet-to-wallet P2P trading, wallet support, withdrawal support, OrahDEX contact",
   });
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();

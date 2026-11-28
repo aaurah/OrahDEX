@@ -1351,12 +1351,12 @@ export function OrderForm({
         )}
         {walletOrderbookWrongChain && (
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300" role="status">
-            Wallet-funded order-book trading for this pair is verified on Ethereum mainnet only. Switch networks or use an already-funded trading balance.
+            Wallet-funded order-book trading for this pair is verified on Ethereum mainnet only. Switch to Ethereum or use a wallet-to-wallet swap.
           </div>
         )}
         {walletOrderbookUnavailable && (
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300" role="status">
-            Ethereum wallet escrow is currently unavailable. This order can use only an already-funded trading balance; wallet-held funds will not be credited to the order book.
+            Ethereum wallet escrow is currently unavailable. Do not send funds to an exchange account; use a wallet-to-wallet swap or try again when escrow is available.
           </div>
         )}
         {submittedOrderbookTx && (
@@ -1450,7 +1450,7 @@ export function OrderForm({
         {isEvm && !!address && !walletOrderbookAvailable && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-primary/8 border border-primary/20">
             <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
-            <span className="text-primary/80 font-medium">Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds.</span>
+            <span className="text-primary/80 font-medium">Wallet-funded order-book trading is unavailable for this route. Use Swap for wallet-held funds or select a supported wallet-escrow market.</span>
           </div>
         )}
 
@@ -1458,7 +1458,7 @@ export function OrderForm({
         {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-amber-500/8 border border-amber-500/20">
             <span className="text-amber-400/80">
-              No {availableSym} in {usesApiBalance ? "trading balance" : "wallet"} — bridge from any chain below, or{" "}
+              No {availableSym} in {usesApiBalance ? "trading balance" : "wallet"} — bridge into your connected wallet, or{" "}
               <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold hover:text-cyan-300">
                 swap
               </a>

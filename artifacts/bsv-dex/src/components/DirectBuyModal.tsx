@@ -999,7 +999,7 @@ export function DirectBuyModal({
                     <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                     <div>
                       <p className="font-semibold">Action required</p>
-                      <p className="mt-0.5 opacity-80">Send USDT (ERC-20) to the exchange deposit address to complete delivery. Contact support with your Order ID if you need help.</p>
+                      <p className="mt-0.5 opacity-80">Send USDT (ERC-20) to the third-party swap provider address to complete delivery. This is not an OrahDEX account deposit; the purchased asset is sent to the wallet shown above.</p>
                     </div>
                   </div>
                 )}

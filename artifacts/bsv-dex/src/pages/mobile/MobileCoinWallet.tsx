@@ -337,7 +337,7 @@ export function MobileCoinWallet({ coin }: Props) {
   const { data: onchainTxs = [], isLoading: onchainLoading, refetch: refetchOnchain } = useOnChainTxHistory(
     tab === "history" && isEvmCoin ? (evmAddress ?? null) : null,
   );
-  // isEvmNet defined below at deposit-address section; isEvmCoin is the same value
+  // isEvmCoin identifies the wallet network used for this asset.
 
   // ── withdrawal history ────────────────────────────────────────────────────────
   const { data: history = [] } = useQuery<Array<{
@@ -355,68 +355,18 @@ export function MobileCoinWallet({ coin }: Props) {
     staleTime: 30_000,
   });
 
-  // ── deposit address queries ───────────────────────────────────────────────────
-  const isEvmNet  = assetNet.network === "evm";
-  const isBsvNet  = assetNet.network === "bsv";
-  const isSolNet  = assetNet.network === "sol";
-  const isAltNet  = !isEvmNet && !isBsvNet && !isSolNet;
-
-  // EVM deposit address
-  const { data: evmDepositData } = useQuery<{ address: string }>({
-    queryKey: ["evm-deposit", address, 1],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/deposit/address?walletAddress=${address}&chainId=1`);
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
-    enabled: !!address && isEvmNet && receiveOpen,
-    staleTime: 300_000,
-  });
-
-  // BSV deposit address
-  const { data: bsvDepositData } = useQuery<{ supported: boolean; address?: string }>({
-    queryKey: ["bsv-deposit", coinUpper],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/deposit/bitcoin-address?network=${assetNet.network}`);
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
-    enabled: (isBsvNet || coinUpper === "BCH" || coinUpper === "BTC") && receiveOpen,
-    staleTime: 300_000,
-  });
-
-  // Solana deposit address
-  const { data: solDepositData } = useQuery<{ supported: boolean; address?: string }>({
-    queryKey: ["sol-deposit"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/deposit/solana-address`);
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
-    enabled: isSolNet && receiveOpen,
-    staleTime: 300_000,
-  });
-
-  // AltChain deposit address
-  const { data: altDepositData } = useQuery<{ supported: boolean; address?: string; symbol?: string; minDeposit?: string }>({
-    queryKey: ["altchain-deposit", assetNet.network],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/deposit/altchain-address?network=${assetNet.network}`);
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
-    enabled: isAltNet && receiveOpen,
-    staleTime: 300_000,
-  });
-
-  // Resolve the actual deposit address to show in QR
+  // Receive only to the connected wallet. Never show a platform deposit address.
   const receiveAddress = useMemo(() => {
-    if (receiveNetwork?.network === "evm" || isEvmNet) return evmDepositData?.address;
-    if (isBsvNet) return bsvDepositData?.supported ? bsvDepositData.address : undefined;
-    if (isSolNet) return solDepositData?.supported ? solDepositData.address : undefined;
-    if (isAltNet) return altDepositData?.supported ? altDepositData.address : undefined;
-    return undefined;
-  }, [receiveNetwork, isEvmNet, isBsvNet, isSolNet, isAltNet, evmDepositData, bsvDepositData, solDepositData, altDepositData]);
+    if (!receiveNetwork || !address) return undefined;
+    const selectedNetwork = receiveNetwork.network.toLowerCase();
+    const connectedNetwork = (walletNetwork ?? "").toLowerCase();
+    const networkMatches = selectedNetwork === "evm"
+      ? connectedNetwork === "evm"
+      : selectedNetwork === "bsv"
+        ? connectedNetwork === "bsv" || connectedNetwork === "bsv-test"
+        : connectedNetwork === selectedNetwork;
+    return networkMatches ? address : undefined;
+  }, [receiveNetwork, address, walletNetwork]);
 
   // ── address validation ────────────────────────────────────────────────────────
   const isValidSendAddress = useMemo(() => {
@@ -932,19 +882,15 @@ export function MobileCoinWallet({ coin }: Props) {
               </div>
 
               {!receiveAddress ? (
-                /* Loading / coming soon */
+                /* Never issue a platform deposit address. */
                 <div className="bg-[#1a1a1a] rounded-2xl p-8 flex flex-col items-center gap-4">
-                  {(isEvmNet ? !evmDepositData : isAltNet ? altDepositData === undefined : !bsvDepositData && !solDepositData) ? (
-                    <Loader2 className="w-8 h-8 animate-spin text-white/30" />
-                  ) : (
-                    <>
-                      <AlertCircle className="w-12 h-12 text-yellow-400 opacity-60" />
-                      <div className="text-center">
-                        <p className="text-sm font-bold text-yellow-400 mb-1">{coinUpper} Deposits Coming Soon</p>
-                        <p className="text-xs text-white/50 leading-relaxed">Exchange deposits for {assetName} are being configured. Please check back soon or contact support.</p>
-                      </div>
-                    </>
-                  )}
+                  <AlertCircle className="w-12 h-12 text-yellow-400 opacity-60" />
+                  <div className="text-center">
+                    <p className="text-sm font-bold text-yellow-400 mb-1">Connect a wallet on this network</p>
+                    <p className="text-xs text-white/50 leading-relaxed">
+                      OrahDEX only shows your connected wallet address here. It does not issue exchange deposit addresses.
+                    </p>
+                  </div>
                 </div>
               ) : (
                 /* QR + address display */
@@ -968,15 +914,11 @@ export function MobileCoinWallet({ coin }: Props) {
                     </div>
                   </div>
 
-                  {/* Processing notice */}
+                  {/* Non-custodial receive notice */}
                   <div className="bg-[#1a3a5c] rounded-2xl p-4 flex gap-3">
                     <Info className="w-4 h-4 text-[#4A9EF5] shrink-0 mt-0.5" />
                     <p className="text-xs text-white/70 leading-relaxed">
-                      {isBsvNet
-                        ? "BSV deposits are typically credited within a few minutes after 1 block confirmation."
-                        : isEvmNet
-                          ? "EVM deposits are credited automatically after on-chain confirmation."
-                          : "Your deposit will be credited within 24 hours after network confirmation."}
+                      This is your connected wallet address. Incoming funds go directly to that wallet and are not credited to an OrahDEX exchange balance.
                     </p>
                   </div>
                 </>

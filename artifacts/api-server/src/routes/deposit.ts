@@ -24,6 +24,26 @@ import { eq } from "drizzle-orm";
 
 const router = Router();
 
+// Exchange-account top-ups are disabled for the wallet-to-wallet P2P model.
+// Keep legacy records and pending status readable so users can still audit
+// transfers made before the deposit UI was removed.
+const LEGACY_DEPOSIT_READ_PATHS = new Set([
+  "/deposit/history",
+  "/deposit/bsv-pending",
+]);
+
+router.use((req, res, next) => {
+  if (req.method === "GET" && LEGACY_DEPOSIT_READ_PATHS.has(req.path)) {
+    next();
+    return;
+  }
+
+  res.status(410).json({
+    code: "EXCHANGE_DEPOSITS_DISABLED",
+    error: "Exchange-account deposits are disabled. Trade from your connected wallet instead.",
+  });
+});
+
 // ── GET /deposit/address ──────────────────────────────────────────────────────
 // Provisions (or returns) the user's dedicated OrahDEX deposit address.
 // The address is unique per user wallet — funds sent here are credited to the
