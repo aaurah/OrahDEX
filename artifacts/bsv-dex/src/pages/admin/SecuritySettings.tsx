@@ -217,6 +217,14 @@ export function AdminSecuritySettings() {
   const [vaultLoading, setVaultLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [confirmRegen, setConfirmRegen] = useState(false);
+  const [checkingBsvEncryption, setCheckingBsvEncryption] = useState(false);
+  const [bsvEncryptionCheck, setBsvEncryptionCheck] = useState<{
+    status: "verified" | "failed" | "empty";
+    checked: number;
+    verified: number;
+    failed: number;
+    sampleLimit: number;
+  } | null>(null);
 
   const loadVault = async () => {
     setVaultLoading(true);
@@ -225,6 +233,37 @@ export function AdminSecuritySettings() {
       const d = await r.json();
       if (r.ok) setVault(d);
     } finally { setVaultLoading(false); }
+  };
+
+  const checkBsvEncryption = async () => {
+    setCheckingBsvEncryption(true);
+    setBsvEncryptionCheck(null);
+    try {
+      const response = await adminFetch(`/api/admin/security-vault/bsv-wallet-encryption-check`);
+      const result = await response.json();
+      if (!response.ok) {
+        toast({
+          title: "Wallet check could not run",
+          description: result.error ?? "Try again later.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setBsvEncryptionCheck(result);
+      toast({
+        title: result.status === "verified" ? "Wallet encryption verified" : "Wallet check finished",
+        description: result.status === "verified"
+          ? `Verified ${result.verified} stored wallet${result.verified === 1 ? "" : "s"} without exposing private keys.`
+          : result.status === "empty"
+            ? "No encrypted internal BSV wallets were found."
+            : `${result.failed} sampled wallet record${result.failed === 1 ? "" : "s"} could not be verified.`,
+        variant: result.status === "failed" ? "destructive" : "default",
+      });
+    } catch {
+      toast({ title: "Wallet check failed", description: "The server could not complete the check.", variant: "destructive" });
+    } finally {
+      setCheckingBsvEncryption(false);
+    }
   };
 
   useEffect(() => {
@@ -524,6 +563,39 @@ export function AdminSecuritySettings() {
                   </p>
                   {vault.bsvWallet.pubKeyHex && (
                     <RevealableValue label="Public Key — Compressed Hex (33 bytes)" value={vault.bsvWallet.pubKeyHex} />
+                  )}
+                </div>
+
+                <div className="bg-background border border-border rounded-2xl p-5 space-y-3 mb-4">
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Internal BSV Wallet Encryption</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Read-only check of up to 10 stored wallet records. Only counts are returned; private keys stay on the server.
+                    </p>
+                  </div>
+                  <button
+                    onClick={checkBsvEncryption}
+                    disabled={checkingBsvEncryption}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/10 disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", checkingBsvEncryption && "animate-spin")} />
+                    {checkingBsvEncryption ? "Checking…" : "Verify stored wallets"}
+                  </button>
+                  {bsvEncryptionCheck && (
+                    <p
+                      role="status"
+                      className={cn(
+                        "text-xs",
+                        bsvEncryptionCheck.status === "verified" ? "text-green-400" :
+                          bsvEncryptionCheck.status === "failed" ? "text-red-400" : "text-muted-foreground",
+                      )}
+                    >
+                      {bsvEncryptionCheck.status === "verified"
+                        ? `Verified ${bsvEncryptionCheck.verified} of ${bsvEncryptionCheck.checked} checked records.`
+                        : bsvEncryptionCheck.status === "failed"
+                          ? `${bsvEncryptionCheck.failed} of ${bsvEncryptionCheck.checked} checked records failed verification.`
+                          : "No encrypted internal BSV wallet records found."}
+                    </p>
                   )}
                 </div>
 

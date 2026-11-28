@@ -50,6 +50,57 @@ export function decrypt(stored: string): string {
   return Buffer.concat([d.update(enc), d.final()]).toString("utf8");
 }
 
+/**
+ * Read-only check of up to ten stored internal wallet keys.
+ * Only aggregate results leave the server; plaintext keys and addresses are
+ * never returned or logged.
+ */
+export async function verifyStoredBsvWalletEncryption(): Promise<{
+  status: "verified" | "failed" | "empty";
+  checked: number;
+  verified: number;
+  failed: number;
+  sampleLimit: number;
+}> {
+  const sampleLimit = 10;
+  const { rows } = await pool.query<{ bsv_address: string; encrypted_key: string }>(
+    `SELECT bsv_address, encrypted_key
+     FROM internal_bsv_wallets
+     WHERE encrypted_key <> 'phantom-native'
+     ORDER BY created_at ASC
+     LIMIT $1`,
+    [sampleLimit],
+  );
+  let verified = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    try {
+      const privateKeyHex = decrypt(row.encrypted_key);
+      if (!/^[0-9a-fA-F]{64}$/.test(privateKeyHex)) {
+        failed++;
+        continue;
+      }
+      const compressedPublicKey = secp.getPublicKey(Buffer.from(privateKeyHex, "hex"), true);
+      if (pubKeyToLegacyAddress(compressedPublicKey) !== row.bsv_address) {
+        failed++;
+        continue;
+      }
+      verified++;
+    } catch {
+      failed++;
+    }
+  }
+
+  return {
+    status: rows.length === 0 ? "empty" : failed === 0 ? "verified" : "failed",
+    checked: rows.length,
+    verified,
+    failed,
+    sampleLimit,
+  };
+}
+
 // ── Hash utilities ────────────────────────────────────────────────────────────
 
 function hash256(buf: Buffer): Buffer {

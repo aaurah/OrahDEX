@@ -12,6 +12,7 @@ import { invalidateSzKeyCache } from "../lib/swapzone.js";
 import { invalidateLetsExchangeCredentialCache } from "../lib/lePriceCache.js";
 import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte, gt } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
+import { verifyStoredBsvWalletEncryption } from "../lib/internalBsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { createPublicClient, createWalletClient, http as viemHttp, parseEther, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -590,6 +591,22 @@ router.get("/security-vault", async (_req, res) => {
       adminEmail: process.env.ADMIN_EMAIL ?? null,
     });
   } catch { res.status(500).json({ error: "Failed to load security vault" }); }
+});
+
+let lastBsvEncryptionCheckAt = 0;
+router.get("/security-vault/bsv-wallet-encryption-check", async (_req, res) => {
+  if (Date.now() - lastBsvEncryptionCheckAt < 30_000) {
+    res.status(429).json({ error: "Please wait before running this check again." });
+    return;
+  }
+  lastBsvEncryptionCheckAt = Date.now();
+  try {
+    const result = await verifyStoredBsvWalletEncryption();
+    res.setHeader("Cache-Control", "no-store");
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: "Could not verify stored BSV wallet encryption." });
+  }
 });
 
 router.post("/security-vault/regenerate-bsv", async (_req, res) => {
