@@ -218,6 +218,12 @@ export function AdminSecuritySettings() {
       pubKeyHex?: string;
     };
     adminEmail: string | null;
+    runtimeEnvironment: string;
+    environmentSecrets: Array<{
+      name: string;
+      category: string;
+      configured: boolean;
+    }>;
   };
   const [vault, setVault]         = useState<Vault | null>(null);
   const [vaultLoading, setVaultLoading] = useState(false);
@@ -234,6 +240,42 @@ export function AdminSecuritySettings() {
     failed: number;
     migrated?: number;
   } | null>(null);
+  const [checkingRelayer, setCheckingRelayer] = useState(false);
+  type RelayerPreflightAccount = {
+    configured: boolean;
+    valid: boolean;
+    address: string | null;
+    balanceEth: string | null;
+    balanceAvailable: boolean;
+  };
+  type RelayerPreflight =
+    | { status: "production_only"; active: null; staged: null; sameAddress: null; transactionSent: false }
+    | { status: "checked"; active: RelayerPreflightAccount; staged: RelayerPreflightAccount; sameAddress: boolean | null; transactionSent: false };
+  const [relayerPreflight, setRelayerPreflight] = useState<RelayerPreflight | null>(null);
+
+  const checkEvmRelayer = async () => {
+    setCheckingRelayer(true);
+    setRelayerPreflight(null);
+    try {
+      const response = await adminFetch("/api/admin/security-vault/evm-orderbook-relayer-preflight");
+      const result = await response.json();
+      if (!response.ok) {
+        toast({ title: "Relayer check could not run", description: result.error ?? "Try again later.", variant: "destructive" });
+        return;
+      }
+      setRelayerPreflight(result);
+      toast({
+        title: result.status === "checked" ? "Relayer preflight finished" : "Production-only check",
+        description: result.status === "checked"
+          ? "Only public addresses and ETH balances were checked. No transaction was sent."
+          : "This check only runs in the published production app.",
+      });
+    } catch {
+      toast({ title: "Relayer check failed", description: "The server could not complete the check.", variant: "destructive" });
+    } finally {
+      setCheckingRelayer(false);
+    }
+  };
 
   const loadVault = async () => {
     setVaultLoading(true);
@@ -640,6 +682,108 @@ export function AdminSecuritySettings() {
 
             {vault && (
               <>
+                <div className="bg-background border border-border rounded-2xl p-5 space-y-3 mb-4">
+                  <div>
+                    <p className="text-sm font-bold text-foreground">EVM Orderbook Relayer Preflight</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Production-only, read-only check of public signer addresses and ETH balances. Private keys are never returned; no transaction is sent.
+                    </p>
+                  </div>
+                  <button
+                    onClick={checkEvmRelayer}
+                    disabled={checkingRelayer}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/10 disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", checkingRelayer && "animate-spin")} />
+                    {checkingRelayer ? "Checking…" : "Check production relayer readiness"}
+                  </button>
+                  {relayerPreflight?.status === "production_only" && (
+                    <p role="status" className="text-xs text-amber-300">
+                      Preview does not read relayer keys. Run this check in the published app’s admin panel.
+                    </p>
+                  )}
+                  {relayerPreflight?.status === "checked" && (
+                    <div role="status" className="space-y-3 rounded-xl border border-border bg-secondary/40 p-4 text-xs">
+                      {(["active", "staged"] as const).map((key) => {
+                        const account = relayerPreflight[key];
+                        return (
+                          <div key={key} className="space-y-1">
+                            <p className="font-semibold text-foreground">
+                              {key === "active" ? "Active signer" : "Staged signer"}
+                            </p>
+                            {!account.configured ? (
+                              <p className="text-amber-300">Not configured in Production app secrets.</p>
+                            ) : !account.valid ? (
+                              <p className="text-red-400">Configured value is not a valid EVM private key.</p>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <code className="break-all font-mono text-foreground">{account.address}</code>
+                                  {account.address && <CopyBtn text={account.address} />}
+                                </div>
+                                <p className="text-muted-foreground">
+                                  {account.balanceAvailable && account.balanceEth !== null
+                                    ? `${account.balanceEth} ETH`
+                                    : "ETH balance could not be checked"}
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {relayerPreflight.sameAddress === true && (
+                        <p className="text-red-400">The staged key matches the active signer; generate a different key.</p>
+                      )}
+                      <p className="text-muted-foreground">
+                        A nonzero balance does not guarantee enough gas. This check never activates the staged key.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-background border border-border rounded-2xl p-5 space-y-4 mb-4">
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-bold text-foreground">Server Secret Inventory</p>
+                      <span className="rounded-full bg-secondary px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Runtime: {vault.runtimeEnvironment}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Names and configured status only. Secret values are never shown, and this panel cannot change Replit Secrets.
+                      Set development/shared values in Tools → Secrets; set live values in Publishing → Adjust settings → Production app secrets.
+                    </p>
+                  </div>
+                  {Object.entries(
+                    vault.environmentSecrets.reduce<Record<string, typeof vault.environmentSecrets>>((groups, secret) => {
+                      (groups[secret.category] ??= []).push(secret);
+                      return groups;
+                    }, {}),
+                  ).map(([category, secrets]) => (
+                    <details key={category} className="rounded-xl border border-border bg-secondary/30">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-semibold text-foreground">
+                        <span>{category}</span>
+                        <span className="text-muted-foreground">
+                          {secrets.filter(secret => secret.configured).length}/{secrets.length} configured
+                        </span>
+                      </summary>
+                      <div className="border-t border-border px-4 py-2">
+                        {secrets.map(secret => (
+                          <div key={secret.name} className="flex items-center justify-between gap-3 border-b border-border/60 py-2 last:border-0">
+                            <code className="break-all text-[11px] font-mono text-foreground">{secret.name}</code>
+                            <span className={cn(
+                              "shrink-0 text-[10px] font-semibold",
+                              secret.configured ? "text-emerald-400" : "text-amber-300",
+                            )}>
+                              {secret.configured ? "Configured" : "Not set"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+
                 {/* BSV Settlement Wallet */}
                 <div className="bg-background border border-border rounded-2xl p-5 space-y-0.5 mb-4">
                   <div className="flex items-center justify-between mb-3">

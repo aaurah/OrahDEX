@@ -3,6 +3,7 @@ import {
   createWalletClient,
   decodeEventLog,
   encodeAbiParameters,
+  formatEther,
   formatUnits,
   http,
   isAddress,
@@ -565,6 +566,88 @@ function getRelayerAccount() {
     throw new Error("EVM order settlement relayer is not configured");
   }
   return privateKeyToAccount(key);
+}
+
+type RelayerPreflightAccount = {
+  configured: boolean;
+  valid: boolean;
+  address: Address | null;
+  balanceWei: string | null;
+  balanceEth: string | null;
+  balanceAvailable: boolean;
+};
+
+async function inspectRelayerKey(rawValue: string | undefined, client: ReturnType<typeof publicClient>): Promise<RelayerPreflightAccount> {
+  const raw = rawValue?.trim() ?? "";
+  if (!raw) {
+    return { configured: false, valid: false, address: null, balanceWei: null, balanceEth: null, balanceAvailable: false };
+  }
+
+  const key = (raw.startsWith("0x") ? raw : `0x${raw}`) as Hex;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    return { configured: true, valid: false, address: null, balanceWei: null, balanceEth: null, balanceAvailable: false };
+  }
+
+  let address: Address;
+  try {
+    address = privateKeyToAccount(key).address;
+  } catch {
+    return { configured: true, valid: false, address: null, balanceWei: null, balanceEth: null, balanceAvailable: false };
+  }
+
+  try {
+    const balance = await client.getBalance({ address });
+    return {
+      configured: true,
+      valid: true,
+      address,
+      balanceWei: balance.toString(),
+      balanceEth: formatEther(balance),
+      balanceAvailable: true,
+    };
+  } catch {
+    return {
+      configured: true,
+      valid: true,
+      address,
+      balanceWei: null,
+      balanceEth: null,
+      balanceAvailable: false,
+    };
+  }
+}
+
+/**
+ * Read-only key readiness check. It is deliberately disabled outside the
+ * published production process so a shared project secret is never used by
+ * the development preview. It derives only public addresses and ETH balances.
+ */
+export async function getEvmOrderbookRelayerPreflight() {
+  if (process.env.NODE_ENV !== "production") {
+    return {
+      status: "production_only" as const,
+      active: null,
+      staged: null,
+      sameAddress: null,
+      transactionSent: false as const,
+    };
+  }
+
+  const client = publicClient();
+  const [active, staged] = await Promise.all([
+    inspectRelayerKey(process.env.EVM_ORDERBOOK_RELAYER_KEY ?? process.env.EVM_WALLET_SECRET, client),
+    inspectRelayerKey(process.env.EVM_ORDERBOOK_RELAYER_KEY_NEXT, client),
+  ]);
+
+  return {
+    status: "checked" as const,
+    active,
+    staged,
+    sameAddress: active.address && staged.address
+      ? active.address.toLowerCase() === staged.address.toLowerCase()
+      : null,
+    transactionSent: false as const,
+  };
 }
 
 export async function settleEvmOrderFill(params: {

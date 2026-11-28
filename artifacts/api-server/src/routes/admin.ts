@@ -37,6 +37,7 @@ import {
   logTopics,
 } from "../lib/evmWebhook.js";
 import { getAllChains, saveCustomChain, removeCustomChain } from "../lib/chainRegistry.js";
+import { getEvmOrderbookRelayerPreflight } from "../lib/evmOrderbookEscrow.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export { serviceState } from "../lib/serviceState.js";
@@ -631,18 +632,77 @@ router.put("/wallet-whitelist", requireAdminToken, async (req, res) => {
 
 /* ─── SECURITY VAULT ──────────────────────────────────────────────────────── */
 
+const ENVIRONMENT_SECRET_CATALOG = [
+  { name: "ADMIN_PASSWORD", category: "Admin access" },
+  { name: "ADMIN_TOTP_SECRET", category: "Admin access" },
+  { name: "ADMIN_TOKEN", category: "Admin access" },
+  { name: "SESSION_SECRET", category: "Admin access" },
+  { name: "API_KEY_HMAC_SECRET", category: "API security" },
+  { name: "INTERNAL_API_TOKEN", category: "API security" },
+  { name: "ORCHESTRATOR_SECRET", category: "API security" },
+  { name: "EVM_WEBHOOK_SECRET", category: "Webhook verification" },
+  { name: "QUICKNODE_WEBHOOK_SECRET", category: "Webhook verification" },
+  { name: "STRIPE_WEBHOOK_SECRET", category: "Webhook verification" },
+  { name: "EMAIL_INBOUND_WEBHOOK_SECRET", category: "Webhook verification" },
+  { name: "BSV_WALLET_SECRET", category: "Wallet encryption and signing" },
+  { name: "BSV_WALLET_SECRET_NEXT", category: "Wallet encryption and signing" },
+  { name: "EVM_WALLET_SECRET", category: "Wallet encryption and signing" },
+  { name: "EVM_RELAYER_KEY", category: "Wallet encryption and signing" },
+  { name: "EVM_ORDERBOOK_RELAYER_KEY", category: "Wallet encryption and signing" },
+  { name: "EVM_ORDERBOOK_RELAYER_KEY_NEXT", category: "Wallet encryption and signing" },
+  { name: "EVM_ORDERBOOK_RELAYER_SEPOLIA_KEY", category: "Wallet encryption and signing" },
+  { name: "EXCHANGE_HOT_WALLET_KEY", category: "Wallet encryption and signing" },
+  { name: "SOLANA_HOT_WALLET_PRIVATE_KEY", category: "Wallet encryption and signing" },
+  { name: "DEPLOYER_PRIVATE_KEY", category: "Wallet encryption and signing" },
+  { name: "SEPOLIA_DEPLOYER_PRIVATE_KEY", category: "Wallet encryption and signing" },
+  { name: "VAULT_DEPLOYER_KEY", category: "Wallet encryption and signing" },
+  { name: "VAULT_OWNER_KEY", category: "Wallet encryption and signing" },
+  { name: "CEX_ENCRYPT_KEY", category: "Wallet encryption and signing" },
+  { name: "ALCHEMY_API_KEY", category: "Provider access" },
+  { name: "CMC_API_KEY", category: "Provider access" },
+  { name: "COINGECKO_API_KEY", category: "Provider access" },
+  { name: "NEON_API_KEY", category: "Provider access" },
+  { name: "LETSEXCHANGE_API_KEY", category: "Provider access" },
+  { name: "CHANGENOW_API_KEY", category: "Provider access" },
+  { name: "Changenow_API", category: "Provider access" },
+  { name: "SOLVER_API_KEY", category: "Provider access" },
+  { name: "CHANGELLY_API_KEY", category: "Provider access" },
+  { name: "CHANGELLY_PRIVATE_KEY", category: "Provider access" },
+  { name: "SIMPLESWAP_API_KEY", category: "Provider access" },
+  { name: "SWAPZONE_API_KEY", category: "Provider access" },
+  { name: "STEALTHEX_API_KEY", category: "Provider access" },
+  { name: "WHATSONCHAIN_API_KEY", category: "Provider access" },
+  { name: "WOC_API_KEY", category: "Provider access" },
+  { name: "ARC_API_KEY", category: "Provider access" },
+  { name: "COINBASE_CDP_KEY_SECRET", category: "Provider access" },
+  { name: "HANDCASH_APP_SECRET", category: "Provider access" },
+  { name: "LND_MACAROON", category: "Provider access" },
+  { name: "POSTMARK_SERVER_TOKEN", category: "Provider access" },
+  { name: "AWS_ACCESS_KEY_ID", category: "Provider access" },
+  { name: "AWS_SECRET_ACCESS_KEY", category: "Provider access" },
+  { name: "STRIPE_SECRET_KEY", category: "Payments" },
+  { name: "AI_INTEGRATIONS_ANTHROPIC_API_KEY", category: "AI integrations" },
+  { name: "AI_INTEGRATIONS_OPENAI_API_KEY", category: "AI integrations" },
+] as const;
+
 router.get("/security-vault", async (_req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
     const wallet = await getOrCreateWallet();
-    // Only public metadata is returned. Private keys and TOTP seeds never leave
-    // their server-side storage through this endpoint.
+    // Only public metadata and secret-presence bits are returned. Secret values,
+    // private keys, and TOTP seeds never leave server-side storage.
     res.json({
       bsvWallet: {
         address:   wallet.address,
         pubKeyHex: wallet.pubKeyHex,
       },
       adminEmail: process.env.ADMIN_EMAIL ?? null,
+      runtimeEnvironment: process.env.NODE_ENV ?? "unknown",
+      environmentSecrets: ENVIRONMENT_SECRET_CATALOG.map(({ name, category }) => ({
+        name,
+        category,
+        configured: Boolean(process.env[name]?.trim()),
+      })),
     });
   } catch { res.status(500).json({ error: "Failed to load security vault" }); }
 });
@@ -3848,6 +3908,7 @@ router.put("/routing-profiles/:id", requireAdminToken, async (req, res) => {
 // GET  /api/admin/evm/webhook-info — show webhook URL and env var status
 // GET  /api/admin/evm/rpc-config   — show which RPC endpoints are configured
 // GET  /api/admin/evm/filter-fn    — generate a filter function for a webhook provider
+// GET  /api/admin/security-vault/evm-orderbook-relayer-preflight — read-only signer check
 
 // Also kept under /quicknode/ paths for backwards compatibility with any
 // existing admin tooling or bookmarks.
@@ -3944,6 +4005,14 @@ router.get(["/evm/rpc-config", "/quicknode/rpc-config"], (_req, res) => {
     note: "Chains without a custom URL fall back to public nodes. Set env vars to use your own nodes.",
     chains,
   });
+});
+
+router.get("/security-vault/evm-orderbook-relayer-preflight", async (_req, res) => {
+  try {
+    res.json(await getEvmOrderbookRelayerPreflight());
+  } catch {
+    res.status(503).json({ error: "Relayer preflight is temporarily unavailable." });
+  }
 });
 
 router.get(["/evm/filter-fn", "/quicknode/filter-fn"], (req, res) => {

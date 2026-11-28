@@ -373,6 +373,43 @@ test("Ethereum orderbook orders require confirmed escrow proof and settlement pa
   assert.match(escrowSrc, /configuredEscrow\.toLowerCase\(\) !== params\.escrowAddress\.toLowerCase\(\)/);
 });
 
+test("EVM relayer preflight is production-only and never returns private keys", async () => {
+  const [escrowSrc, adminSrc, securityUiSrc] = await Promise.all([
+    read(path.join(__dirname, "..", "src", "lib", "evmOrderbookEscrow.ts")),
+    read(path.join(__dirname, "..", "src", "routes", "admin.ts")),
+    read(path.join(__dirname, "../../bsv-dex/src/pages/admin/SecuritySettings.tsx")),
+  ]);
+  const preflight = escrowSrc.match(/export async function getEvmOrderbookRelayerPreflight\(\)[\s\S]*?\n\}/)?.[0];
+
+  assert.ok(preflight, "read-only EVM relayer preflight exists");
+  assert.match(preflight, /process\.env\.NODE_ENV !== "production"/);
+  assert.match(preflight, /EVM_ORDERBOOK_RELAYER_KEY_NEXT/);
+  assert.match(preflight, /transactionSent: false/);
+  assert.doesNotMatch(preflight, /privateKey:\s*key|rawKey|secretValue/);
+  assert.match(adminSrc, /router\.get\("\/security-vault\/evm-orderbook-relayer-preflight"/);
+  assert.match(securityUiSrc, /Check production relayer readiness/);
+  assert.match(securityUiSrc, /Private keys are never returned/);
+  assert.match(securityUiSrc, /never activates the staged key/);
+});
+
+test("admin security vault lists secret presence only and never returns secret values", async () => {
+  const [adminSrc, securityUiSrc] = await Promise.all([
+    read(path.join(__dirname, "..", "src", "routes", "admin.ts")),
+    read(path.join(__dirname, "../../bsv-dex/src/pages/admin/SecuritySettings.tsx")),
+  ]);
+  const catalog = adminSrc.match(/const ENVIRONMENT_SECRET_CATALOG = \[[\s\S]*?\] as const;/)?.[0];
+  const vaultRoute = adminSrc.match(/router\.get\("\/security-vault"[\s\S]*?\n\}\);/)?.[0];
+
+  assert.ok(catalog, "server-side secret inventory catalog exists");
+  assert.ok(vaultRoute, "admin security vault endpoint exists");
+  assert.match(vaultRoute, /environmentSecrets:\s*ENVIRONMENT_SECRET_CATALOG\.map/);
+  assert.match(vaultRoute, /configured:\s*Boolean\(process\.env\[name\]\?\.trim\(\)\)/);
+  assert.doesNotMatch(vaultRoute, /value:\s*process\.env|secretValue|privateKey/);
+  assert.match(securityUiSrc, /Server Secret Inventory/);
+  assert.match(securityUiSrc, /Secret values are never shown/);
+  assert.match(securityUiSrc, /cannot change Replit Secrets/);
+});
+
 test("withdrawal history and notification reads require single-use wallet proofs", async () => {
   const [withdrawalsSrc, routesSrc, socialSrc] = await Promise.all([
     read(withdrawalPath),
