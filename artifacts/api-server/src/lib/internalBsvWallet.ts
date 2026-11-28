@@ -14,91 +14,165 @@ import * as secp from "@noble/secp256k1";
 import {
   randomBytes,
   createHash,
-  createCipheriv,
-  createDecipheriv,
-  scryptSync,
 } from "node:crypto";
 import { pool } from "@workspace/db";
+import {
+  decryptBsvWalletKey,
+  encryptBsvWalletKey,
+  prepareBsvWalletReencryption,
+  verifyBsvWalletRecords,
+  type BsvWalletCipherRecord,
+} from "./bsvWalletCrypto.mjs";
 
 // ── Encryption helpers ────────────────────────────────────────────────────────
 
-function deriveKey(): Buffer {
-  const walletSecret = process.env.BSV_WALLET_SECRET?.trim();
-  if (!walletSecret) {
-    throw new Error("BSV_WALLET_SECRET is not configured; refusing to encrypt or decrypt internal BSV wallet keys.");
-  }
-  return scryptSync(walletSecret, "orahdex-bsv-salt-v1", 32) as Buffer;
+function configuredWalletSecrets(): string[] {
+  return [
+    process.env.BSV_WALLET_SECRET_NEXT?.trim(),
+    process.env.BSV_WALLET_SECRET?.trim(),
+  ].filter((secret): secret is string => Boolean(secret));
 }
 
 function encrypt(plaintext: string): string {
-  const key    = deriveKey();
-  const iv     = randomBytes(16);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const enc    = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag    = cipher.getAuthTag();
-  return [iv.toString("hex"), tag.toString("hex"), enc.toString("hex")].join(":");
+  const [activeSecret] = configuredWalletSecrets();
+  if (!activeSecret) {
+    throw new Error("BSV_WALLET_SECRET is not configured; refusing to encrypt internal BSV wallet keys.");
+  }
+  return encryptBsvWalletKey(plaintext, activeSecret);
 }
 
 export function decrypt(stored: string): string {
-  const [ivHex, tagHex, encHex] = stored.split(":");
-  const key = deriveKey();
-  const iv  = Buffer.from(ivHex, "hex");
-  const tag = Buffer.from(tagHex, "hex");
-  const enc = Buffer.from(encHex, "hex");
-  const d   = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
-  d.setAuthTag(tag);
-  return Buffer.concat([d.update(enc), d.final()]).toString("utf8");
+  let lastError: unknown;
+  for (const secret of configuredWalletSecrets()) {
+    try {
+      return decryptBsvWalletKey(stored, secret);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!configuredWalletSecrets().length) {
+    throw new Error("BSV_WALLET_SECRET is not configured; refusing to decrypt internal BSV wallet keys.");
+  }
+  throw new Error("Could not decrypt internal BSV wallet key with configured secrets.", { cause: lastError });
 }
 
-/**
- * Read-only check of up to ten stored internal wallet keys.
- * Only aggregate results leave the server; plaintext keys and addresses are
- * never returned or logged.
- */
-export async function verifyStoredBsvWalletEncryption(): Promise<{
-  status: "verified" | "failed" | "empty";
-  checked: number;
-  verified: number;
-  failed: number;
-  sampleLimit: number;
-}> {
-  const sampleLimit = 10;
-  const { rows } = await pool.query<{ bsv_address: string; encrypted_key: string }>(
-    `SELECT bsv_address, encrypted_key
+const MAX_BSV_WALLETS_PER_ROTATION = 500;
+
+async function getEncryptedBsvWalletRows(client: Pick<typeof pool, "query"> = pool): Promise<BsvWalletCipherRecord[]> {
+  const { rows } = await client.query<BsvWalletCipherRecord>(
+    `SELECT evm_address, bsv_address, encrypted_key
      FROM internal_bsv_wallets
      WHERE encrypted_key <> 'phantom-native'
      ORDER BY created_at ASC
      LIMIT $1`,
-    [sampleLimit],
+    [MAX_BSV_WALLETS_PER_ROTATION + 1],
   );
-  let verified = 0;
-  let failed = 0;
-
-  for (const row of rows) {
-    try {
-      const privateKeyHex = decrypt(row.encrypted_key);
-      if (!/^[0-9a-fA-F]{64}$/.test(privateKeyHex)) {
-        failed++;
-        continue;
-      }
-      const compressedPublicKey = secp.getPublicKey(Buffer.from(privateKeyHex, "hex"), true);
-      if (pubKeyToLegacyAddress(compressedPublicKey) !== row.bsv_address) {
-        failed++;
-        continue;
-      }
-      verified++;
-    } catch {
-      failed++;
-    }
+  if (rows.length > MAX_BSV_WALLETS_PER_ROTATION) {
+    throw new Error("BSV wallet count exceeds the safe per-run migration limit.");
   }
+  return rows;
+}
 
-  return {
-    status: rows.length === 0 ? "empty" : failed === 0 ? "verified" : "failed",
-    checked: rows.length,
-    verified,
-    failed,
-    sampleLimit,
-  };
+function getCurrentAndNextWalletSecrets(): { current: string; next: string } {
+  const current = process.env.BSV_WALLET_SECRET?.trim() ?? "";
+  const next = process.env.BSV_WALLET_SECRET_NEXT?.trim() ?? "";
+  if (!current || !next) {
+    throw new Error("Both the current and staged BSV wallet secrets must be configured.");
+  }
+  if (current === next) {
+    throw new Error("The staged BSV wallet secret must differ from the current secret.");
+  }
+  return { current, next };
+}
+
+/** Read-only preflight: verify every eligible row and its stored address. */
+export async function preflightStoredBsvWalletReencryption(): Promise<{
+  status: "ready" | "empty" | "failed";
+  checked: number;
+  verified: number;
+  failed: number;
+}> {
+  const { current, next } = getCurrentAndNextWalletSecrets();
+  const rows = await getEncryptedBsvWalletRows();
+  const sourceVerification = verifyBsvWalletRecords(rows, [current, next]);
+  if (sourceVerification.failed > 0) {
+    return {
+      status: "failed",
+      checked: sourceVerification.checked,
+      verified: sourceVerification.verified,
+      failed: sourceVerification.failed,
+    };
+  }
+  try {
+    const prepared = prepareBsvWalletReencryption(rows, current, next);
+    const verification = verifyBsvWalletRecords(
+      rows.map((row, index) => ({ ...row, encrypted_key: prepared[index].encrypted_key })),
+      [next],
+    );
+    return {
+      status: rows.length === 0 ? "empty" : verification.failed === 0 ? "ready" : "failed",
+      checked: verification.checked,
+      verified: verification.verified,
+      failed: verification.failed,
+    };
+  } catch {
+    return {
+      status: rows.length === 0 ? "empty" : "failed",
+      checked: rows.length,
+      verified: Math.max(0, rows.length - 1),
+      failed: rows.length === 0 ? 0 : 1,
+    };
+  }
+}
+
+/**
+ * Atomically re-encrypt all eligible records with the staged key.
+ * Addresses and plaintext keys are verified server-side and never returned.
+ */
+export async function migrateStoredBsvWalletEncryption(): Promise<{
+  status: "migrated" | "empty";
+  checked: number;
+  migrated: number;
+}> {
+  const { current, next } = getCurrentAndNextWalletSecrets();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("LOCK TABLE internal_bsv_wallets IN SHARE ROW EXCLUSIVE MODE");
+    const rows = await getEncryptedBsvWalletRows(client);
+    const prepared = prepareBsvWalletReencryption(rows, current, next);
+    const verified = verifyBsvWalletRecords(
+      rows.map((row, index) => ({ ...row, encrypted_key: prepared[index].encrypted_key })),
+      [next],
+    );
+    if (verified.failed > 0 || verified.verified !== rows.length) {
+      throw new Error("Staged BSV wallet ciphertext verification failed.");
+    }
+
+    for (const update of prepared) {
+      const result = await client.query(
+        `UPDATE internal_bsv_wallets
+         SET encrypted_key = $1
+         WHERE evm_address = $2 AND encrypted_key = $3`,
+        [update.encrypted_key, update.evm_address, update.expected_ciphertext],
+      );
+      if (result.rowCount !== 1) {
+        throw new Error("A BSV wallet row changed during migration.");
+      }
+    }
+
+    await client.query("COMMIT");
+    return {
+      status: rows.length === 0 ? "empty" : "migrated",
+      checked: rows.length,
+      migrated: prepared.length,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ── Hash utilities ────────────────────────────────────────────────────────────

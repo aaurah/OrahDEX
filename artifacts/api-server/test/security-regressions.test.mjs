@@ -275,24 +275,36 @@ test("wallet encryption requires configured secrets and has no hard-coded fallba
   assert.match(depositSrc, /process\.env\.EVM_WALLET_SECRET/);
 });
 
-test("BSV wallet encryption verification returns only safe aggregate results", async () => {
-  const [walletSrc, adminSrc, securityUiSrc] = await Promise.all([
+test("BSV wallet migration verifies records and requires explicit admin confirmation", async () => {
+  const [walletSrc, cryptoSrc, adminSrc, securityUiSrc] = await Promise.all([
     read(path.join(__dirname, "..", "src", "lib", "internalBsvWallet.ts")),
+    read(path.join(__dirname, "..", "src", "lib", "bsvWalletCrypto.mjs")),
     read(path.join(__dirname, "..", "src", "routes", "admin.ts")),
     read(path.join(__dirname, "../../bsv-dex/src/pages/admin/SecuritySettings.tsx")),
   ]);
   const verificationRoute = adminSrc.match(
     /router\.get\("\/security-vault\/bsv-wallet-encryption-check"[\s\S]*?\n\}\);/,
   )?.[0];
+  const migrationRoute = adminSrc.match(
+    /router\.post\("\/security-vault\/bsv-wallet-encryption-migrate"[\s\S]*?\n\}\);/,
+  )?.[0];
 
-  assert.match(walletSrc, /export async function verifyStoredBsvWalletEncryption/);
-  assert.match(walletSrc, /ORDER BY created_at ASC\s+LIMIT \$1/);
-  assert.match(walletSrc, /status: rows\.length === 0 \? "empty" : failed === 0 \? "verified" : "failed"/);
+  assert.match(walletSrc, /export async function preflightStoredBsvWalletReencryption/);
+  assert.match(walletSrc, /LOCK TABLE internal_bsv_wallets IN SHARE ROW EXCLUSIVE MODE/);
+  assert.match(walletSrc, /await client\.query\("ROLLBACK"\)/);
+  assert.match(cryptoSrc, /privateKeyMatchesBsvAddress/);
+  assert.match(cryptoSrc, /prepareBsvWalletReencryption/);
   assert.ok(verificationRoute, "admin verification endpoint exists");
-  assert.match(verificationRoute, /verifyStoredBsvWalletEncryption/);
+  assert.match(verificationRoute, /preflightStoredBsvWalletReencryption/);
   assert.doesNotMatch(verificationRoute, /privateKeyHex|encrypted_key|\.wif/);
-  assert.match(securityUiSrc, /Verify stored wallets/);
-  assert.match(securityUiSrc, /Only counts are returned; private keys stay on the server/);
+  assert.ok(migrationRoute, "admin migration endpoint exists");
+  assert.match(migrationRoute, /MIGRATE_BSV_WALLET_ENCRYPTION/);
+  assert.match(migrationRoute, /recoveryConfirmed !== true/);
+  assert.match(migrationRoute, /migrateStoredBsvWalletEncryption/);
+  assert.doesNotMatch(migrationRoute, /privateKeyHex|encrypted_key|\.wif/);
+  assert.match(securityUiSrc, /Run read-only preflight/);
+  assert.match(securityUiSrc, /MIGRATE_BSV_WALLET_ENCRYPTION/);
+  assert.match(securityUiSrc, /Private keys never leave the server/);
 });
 
 test("hot-wallet generator cannot create or print private keys", async () => {

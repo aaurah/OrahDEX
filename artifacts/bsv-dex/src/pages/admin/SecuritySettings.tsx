@@ -218,12 +218,15 @@ export function AdminSecuritySettings() {
   const [regenerating, setRegenerating] = useState(false);
   const [confirmRegen, setConfirmRegen] = useState(false);
   const [checkingBsvEncryption, setCheckingBsvEncryption] = useState(false);
+  const [migratingBsvEncryption, setMigratingBsvEncryption] = useState(false);
+  const [bsvMigrationConfirmation, setBsvMigrationConfirmation] = useState("");
+  const [bsvRecoveryConfirmed, setBsvRecoveryConfirmed] = useState(false);
   const [bsvEncryptionCheck, setBsvEncryptionCheck] = useState<{
-    status: "verified" | "failed" | "empty";
+    status: "ready" | "failed" | "empty" | "migrated";
     checked: number;
     verified: number;
     failed: number;
-    sampleLimit: number;
+    migrated?: number;
   } | null>(null);
 
   const loadVault = async () => {
@@ -251,18 +254,60 @@ export function AdminSecuritySettings() {
       }
       setBsvEncryptionCheck(result);
       toast({
-        title: result.status === "verified" ? "Wallet encryption verified" : "Wallet check finished",
-        description: result.status === "verified"
-          ? `Verified ${result.verified} stored wallet${result.verified === 1 ? "" : "s"} without exposing private keys.`
+        title: result.status === "ready" ? "Wallet migration preflight passed" : "Wallet check finished",
+        description: result.status === "ready"
+          ? `Verified all ${result.verified} encrypted wallet${result.verified === 1 ? "" : "s"} with the staged key.`
           : result.status === "empty"
             ? "No encrypted internal BSV wallets were found."
-            : `${result.failed} sampled wallet record${result.failed === 1 ? "" : "s"} could not be verified.`,
+            : `${result.failed} wallet record${result.failed === 1 ? "" : "s"} could not be verified. Nothing was changed.`,
         variant: result.status === "failed" ? "destructive" : "default",
       });
     } catch {
       toast({ title: "Wallet check failed", description: "The server could not complete the check.", variant: "destructive" });
     } finally {
       setCheckingBsvEncryption(false);
+    }
+  };
+
+  const migrateBsvEncryption = async () => {
+    if (bsvMigrationConfirmation !== "MIGRATE_BSV_WALLET_ENCRYPTION") return;
+    setMigratingBsvEncryption(true);
+    try {
+      const response = await adminFetch(`/api/admin/security-vault/bsv-wallet-encryption-migrate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmation: bsvMigrationConfirmation,
+          recoveryConfirmed: bsvRecoveryConfirmed,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        toast({
+          title: "BSV wallet migration aborted",
+          description: result.error ?? "No wallet changes were committed.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setBsvEncryptionCheck({
+        status: result.status === "migrated" ? "migrated" : "empty",
+        checked: result.checked ?? 0,
+        verified: result.migrated ?? 0,
+        failed: 0,
+        migrated: result.migrated ?? 0,
+      });
+      setBsvMigrationConfirmation("");
+      toast({
+        title: result.status === "migrated" ? "BSV wallet keys re-encrypted" : "No encrypted wallets to migrate",
+        description: result.status === "migrated"
+          ? `Re-encrypted ${result.migrated} wallet records. Keep the staged secret until you promote it.`
+          : "No wallet records were changed.",
+      });
+    } catch {
+      toast({ title: "BSV wallet migration failed", description: "No wallet changes were committed.", variant: "destructive" });
+    } finally {
+      setMigratingBsvEncryption(false);
     }
   };
 
@@ -570,31 +615,73 @@ export function AdminSecuritySettings() {
                   <div>
                     <p className="text-sm font-bold text-foreground">Internal BSV Wallet Encryption</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Read-only check of up to 10 stored wallet records. Only counts are returned; private keys stay on the server.
+                      Preflight verifies all stored encrypted wallet records against their public addresses. Private keys never leave the server.
                     </p>
                   </div>
                   <button
                     onClick={checkBsvEncryption}
-                    disabled={checkingBsvEncryption}
+                    disabled={checkingBsvEncryption || migratingBsvEncryption}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/10 disabled:opacity-50"
                   >
                     <RefreshCw className={cn("w-4 h-4", checkingBsvEncryption && "animate-spin")} />
-                    {checkingBsvEncryption ? "Checking…" : "Verify stored wallets"}
+                    {checkingBsvEncryption ? "Checking…" : "Run read-only preflight"}
                   </button>
                   {bsvEncryptionCheck && (
                     <p
                       role="status"
                       className={cn(
                         "text-xs",
-                        bsvEncryptionCheck.status === "verified" ? "text-green-400" :
+                        bsvEncryptionCheck.status === "ready" || bsvEncryptionCheck.status === "migrated" ? "text-green-400" :
                           bsvEncryptionCheck.status === "failed" ? "text-red-400" : "text-muted-foreground",
                       )}
                     >
-                      {bsvEncryptionCheck.status === "verified"
-                        ? `Verified ${bsvEncryptionCheck.verified} of ${bsvEncryptionCheck.checked} checked records.`
+                      {bsvEncryptionCheck.status === "ready"
+                        ? `All ${bsvEncryptionCheck.verified} of ${bsvEncryptionCheck.checked} records passed. No changes were made.`
+                        : bsvEncryptionCheck.status === "migrated"
+                          ? `Re-encrypted ${bsvEncryptionCheck.migrated ?? 0} records.`
                         : bsvEncryptionCheck.status === "failed"
                           ? `${bsvEncryptionCheck.failed} of ${bsvEncryptionCheck.checked} checked records failed verification.`
                           : "No encrypted internal BSV wallet records found."}
+                    </p>
+                  )}
+                  {bsvEncryptionCheck?.status === "ready" && (
+                    <div className="space-y-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
+                      <p className="text-xs text-amber-200">
+                        The next step rewrites encrypted key data in one database transaction. Wallet addresses and keys remain the same; no funds move. Keep both secrets until the new one is promoted.
+                      </p>
+                      <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={bsvRecoveryConfirmed}
+                          onChange={event => setBsvRecoveryConfirmed(event.target.checked)}
+                          className="mt-0.5 accent-primary"
+                        />
+                        <span>
+                          I confirmed a recent production recovery point in Database → Production → Settings → Advanced → Point-in-time recovery.
+                        </span>
+                      </label>
+                      <label className="block text-xs text-muted-foreground">
+                        Type <code className="font-mono text-foreground">MIGRATE_BSV_WALLET_ENCRYPTION</code> to confirm
+                        <input
+                          value={bsvMigrationConfirmation}
+                          onChange={event => setBsvMigrationConfirmation(event.target.value)}
+                          autoComplete="off"
+                          className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs text-foreground"
+                        />
+                      </label>
+                      <button
+                        onClick={migrateBsvEncryption}
+                        disabled={migratingBsvEncryption || !bsvRecoveryConfirmed || bsvMigrationConfirmation !== "MIGRATE_BSV_WALLET_ENCRYPTION"}
+                        className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
+                      >
+                        <RefreshCw className={cn("w-4 h-4", migratingBsvEncryption && "animate-spin")} />
+                        {migratingBsvEncryption ? "Re-encrypting…" : "Re-encrypt wallet records"}
+                      </button>
+                    </div>
+                  )}
+                  {bsvEncryptionCheck?.status === "migrated" && (
+                    <p className="text-xs text-muted-foreground">
+                      Keep <code>BSV_WALLET_SECRET_NEXT</code> set. Promote that exact value to <code>BSV_WALLET_SECRET</code> before removing the staged secret.
                     </p>
                   )}
                 </div>

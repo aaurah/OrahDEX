@@ -12,7 +12,10 @@ import { invalidateSzKeyCache } from "../lib/swapzone.js";
 import { invalidateLetsExchangeCredentialCache } from "../lib/lePriceCache.js";
 import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte, gt } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
-import { verifyStoredBsvWalletEncryption } from "../lib/internalBsvWallet.js";
+import {
+  migrateStoredBsvWalletEncryption,
+  preflightStoredBsvWalletReencryption,
+} from "../lib/internalBsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { createPublicClient, createWalletClient, http as viemHttp, parseEther, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -601,11 +604,34 @@ router.get("/security-vault/bsv-wallet-encryption-check", async (_req, res) => {
   }
   lastBsvEncryptionCheckAt = Date.now();
   try {
-    const result = await verifyStoredBsvWalletEncryption();
+    const result = await preflightStoredBsvWalletReencryption();
     res.setHeader("Cache-Control", "no-store");
     res.json(result);
   } catch {
     res.status(500).json({ error: "Could not verify stored BSV wallet encryption." });
+  }
+});
+
+let lastBsvEncryptionMigrationAt = 0;
+router.post("/security-vault/bsv-wallet-encryption-migrate", async (req, res) => {
+  const body = req.body as { confirmation?: unknown; recoveryConfirmed?: unknown } | undefined;
+  if (body?.confirmation !== "MIGRATE_BSV_WALLET_ENCRYPTION" || body.recoveryConfirmed !== true) {
+    res.status(400).json({ error: "Confirm the recovery point and migration phrase before proceeding." });
+    return;
+  }
+  if (Date.now() - lastBsvEncryptionMigrationAt < 60_000) {
+    res.status(429).json({ error: "Please wait before retrying the BSV wallet migration." });
+    return;
+  }
+  lastBsvEncryptionMigrationAt = Date.now();
+  try {
+    const result = await migrateStoredBsvWalletEncryption();
+    res.setHeader("Cache-Control", "no-store");
+    res.json(result);
+  } catch {
+    res.status(409).json({
+      error: "BSV wallet migration was aborted. No wallet changes were committed.",
+    });
   }
 });
 
